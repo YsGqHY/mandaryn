@@ -1,0 +1,46 @@
+/* 全局基础样式（替代原 MUI CssBaseline 覆盖）。
+   必须在 @mantine/core/styles.css 之后引入（见 main.tsx / child.tsx）。
+   颜色只用 --fd-* 变量（由 FoundationThemeProvider 注入）。 */
+
+/* 标题栏高度：macOS 与系统红绿灯垂直居中对齐（见 internal/app/window_darwin.go macTitleBar），
+   其它平台 36px（Windows Fluent caption 按钮高度）。data-platform 由 index.html 首帧前写入。 */
+:root {
+  --fd-titlebar-h: 36px;
+}
+:root[data-platform='darwin'] {
+  --fd-titlebar-h: 40px;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+
+body {
+  background-color: var(--fd-bg-content);
+  color: var(--fd-text-primary);
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root,
+#child-root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--fd-divider);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background-color: transparent;
+}

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Foundation - Systray</title>
+    <style>
+      /* 首帧底色：与 index.html 的启动骨架共用同一组 --fdn-* 变量（light / dark preset 对齐），
+         React mount 后由 Mantine + --fd-* 主题变量接管（SystrayPanel.module.css）。 */
+      :root {
+        --fdn-bg-base: #ffffff;
+        color-scheme: light;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --fdn-bg-base: #0b0d10;
+          color-scheme: dark;
+        }
+      }
+      html, body, #systray-root {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background-color: var(--fdn-bg-base);
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="systray-root"></div>
+    <script type="module" src="/src/systrayEntry.tsx"></script>
+  </body>
+</html>

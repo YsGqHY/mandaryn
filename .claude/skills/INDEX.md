@@ -1,0 +1,102 @@
+# Wails v3 Skills 索引
+
+本项目附带的 Wails v3 知识库，按功能拆分为 12 个内容 SKILL + 1 个维护/SOP SKILL，覆盖官方文档全部内容（约 30000+ 行）。
+
+调用方式：在对话中直接使用 `/<skill-name>`，或由 Claude 根据任务匹配自动加载。
+
+> **升级 Wails 版本 / 同步 skill / 发版** → 走 `/wails-upgrade-sop`（完整标准流程，见文末「维护」章节）。
+
+| Skill | 触发场景 | 主要内容 |
+|-------|---------|---------|
+| [wails-overview](./wails-overview/SKILL.md) | 理解架构、生命周期、桥接、构建系统、版本对比、FAQ、Changelog | concepts/* + quick-start 概念部分 + faq + changelog |
+| [wails-quickstart](./wails-quickstart/SKILL.md) | 安装 wails3、新建项目、首个应用、项目结构 | getting-started/* + quick-start/installation + project-structure |
+| [wails-cli](./wails-cli/SKILL.md) | wails3 CLI 命令查询与使用 | reference/cli + reference/overview + guides/cli |
+| [wails-application](./wails-application/SKILL.md) | application.New 配置、生命周期钩子、Quit/Hide | reference/application |
+| [wails-window](./wails-window/SKILL.md) | 窗口创建、frameless、多窗口、事件、自定义 | features/windows/* + reference/window + customising-windows |
+| [wails-bindings](./wails-bindings/SKILL.md) | Service 编写、绑定生成、模型/枚举/方法 | features/bindings/* + tutorials/01-creating-a-service |
+| [wails-events](./wails-events/SKILL.md) | 应用事件、窗口事件、ApplicationEvent 列表 | features/events + features/windows/events + reference/events + events-reference |
+| [wails-menus-dialogs](./wails-menus-dialogs/SKILL.md) | 应用菜单、上下文菜单、systray、对话框 | features/menus/* + features/dialogs/* + reference/menu + reference/dialogs |
+| [wails-runtime-features](./wails-runtime-features/SKILL.md) | 剪贴板、通知、屏幕、自启动、平台 API、键盘、拖放、浏览器、环境、前端 runtime | features/clipboard/notifications/screens/autostart/platform/keyboard/drag-and-drop/browser/environment + reference/frontend-runtime |
+| [wails-build](./wails-build/SKILL.md) | 跨平台构建、签名、混淆、安装包、服务器模式、UAC、故障排查 | guides/build/* + installers + server-build + windows-uac + troubleshooting |
+| [wails-advanced](./wails-advanced/SKILL.md) | 自定义传输、单实例、文件关联、协议、更新器、性能、安全、panic、raw msg、路由、Gin、测试、自定义模板 | guides/* (高级与杂项) |
+| [wails-tutorials-migration](./wails-tutorials-migration/SKILL.md) | 完整教程（todo/notes/self-update）+ v2→v3 迁移 | tutorials/* + migration/* |
+| [wails-upgrade-sop](./wails-upgrade-sop/SKILL.md) | **维护/SOP**：升级 Wails 版本 + 同步 skill + 发版的完整标准流程 | 拉参考源码 → 核对 API 变更 → 升后端/前端/bindings → 同步 skill → 构建验证 → 发布；含本机代理/pnpm/GOBIN 坑 |
+| [foundation-theme](./foundation-theme/SKILL.md) | **本项目**：主题注册系统使用与扩展 | 注册新主题、切换主题、`mantineOverrides`、消费 `--fd-*` / `FOUNDATION_CSS_VARS` / `useFoundationPalette`、跨窗口同步（`appsettings:changed`） |
+| [foundation-i18n](./foundation-i18n/SKILL.md) | **本项目**：国际化系统（注册式 + 页面级语言包） | 注册新语言、写页面级语言包、消费 `useT()`、铁律：人类可见字符串必须走 `t()` |
+| [foundation-persistence](./foundation-persistence/SKILL.md) | **本项目**：持久化层（SQLite + GORM + AutoMigrate） | 加新表三步、业务 service 接入 Holder、前端 service 包装、路径切换、表统计与清空、PRAGMA / 并发、Provider 异步化模式 |
+| [foundation-utils](./foundation-utils/SKILL.md) | **本项目**：工具层（httpx / procx / cryptox / logx / filex） | HTTP 客户端、子进程（含 Windows JobObject）、AES-GCM、slog 日志、原子写；含 subprocess 白名单 service |
+| [foundation-mantine](./foundation-mantine/SKILL.md) | **本项目**：前端 UI 总入口（Mantine 9.7.5）—— 写任何组件 / module.css / 从 MUI 迁移时先读 | 全部 UI 铁律（`--fd-*` 配色、CSS Modules、圆角、Tabler 图标、`t()`、NativeDialogs、禁 localStorage）、`buildMantineTheme` 编译原理（foundation 色阶 / cssVariablesResolver / 全局组件覆盖）、MUI→Mantine 对照表 + Mantine 官方主题 / 样式文档 |
+| [foundation-mantine-components](./foundation-mantine-components/SKILL.md) | **本项目**：Mantine 核心组件实战（布局 / 输入 / 浮层反馈 / 导航 / 数据展示 / hooks） | 项目式示例、onChange 签名对照、新组件检查清单 + 78 篇 Mantine 官方组件 / hooks 文档（9.7.5） |
+| [foundation-mantine-icons](./foundation-mantine-icons/SKILL.md) | **本项目**：图标规范（@tabler/icons-react 3.50） | 尺寸 / stroke 约定、在 node_modules 查图标名、路由 `Icon` 类型、MUI 图标 → Tabler 对照 |
+| [foundation-mantine-charts](./foundation-mantine-charts/SKILL.md) | **本项目**：图表（@mantine/charts 9.7.5 + x-pro 图表） | 配色规则（`FOUNDATION_CSS_VARS` / `useChartColors`）、Bar/Donut/Line… 用法、x-pro Heatmap/Funnel/Radar/Candlestick/Sankey/Gantt/Treemap/Zoomable props + 官方 charts 文档 |
+| [foundation-mantine-datatable](./foundation-mantine-datatable/SKILL.md) | **本项目**：数据表格（mantine-datatable 9.4.0 + x-pro DataGridPro/Premium） | DataTable 用法与主题色 props、DataGridColumn、钉住 / 树形 / 主从 / 懒加载 / 表头筛选 / 粘贴 / 拖拽 / 分组 / 聚合 / 单元格选择 / 导出 + 完整 d.ts |
+| [foundation-layout](./foundation-layout/SKILL.md) | **本项目**：布局系统（布局预设 + CSS Grid 外壳 + 导航形态） | 9 个内置预设（`nav.variant × nav.placement × frame`）、加预设 / `layoutRegistry.register`、加导航形态、`AppLayout` 网格区域与 `data-*`、`TitleBar` `leading` / `center` 插槽、`--fd-titlebar-h` 与 macOS 红绿灯对齐、悬浮 Dock 约束 + E2E |
+| [foundation-childwindow](./foundation-childwindow/SKILL.md) | **本项目**：子窗口系统 | `ChildWindowService.{open,close,list}`、事件总线（定向 / 广播）、预设类型 confirm / message / blank、新增子窗口类型 |
+| [foundation-systray](./foundation-systray/SKILL.md) | **本项目**：系统托盘 | `SystrayService.{Enable,Disable,IsEnabled,SetMenuLabels}`（开关持久化 + 启动恢复）、托盘面板模块注册、右键菜单 i18n |
+
+## 内容来源
+
+所有 SKILL 内容源自官方仓库 `wailsapp/wails` 的 `docs/mpress/content/`（M-Press，纯 `.md`；只取英文，不含翻译 / blog / community）。beta.21 起官方文档站由 Astro Starlight（`docs/src/content/docs/*.mdx`）迁到 M-Press，主题目录（concepts / features / guides / reference / tutorials / migration / getting-started / quick-start / troubleshooting）不变，另有根级 `changelog.md` / `whats-new.md` / `faq.md` / `status.md`。
+最新基准：`v3.1.0`（2026-11-06 同步；v3.1.0 于 2026-11-01 发布，为 v3.0.0 GA 后首个 weekly）。此前基准：`v3.0.0-beta.9`（tag `9b3cd78`，2026-08-17，Starlight 布局）、master @ `6329e9d2bec9`（2026-05-28，对应 alpha.96）。
+
+每个 SKILL 文件夹结构：
+
+```
+wails-<name>/
+├── SKILL.md          # 入口：触发条件 + 关键摘要 + references 索引
+└── references/       # 完整原文（按主题拆分的 .md 文件）
+```
+
+## 与官方文档对应表
+
+路径均相对 `docs/mpress/content/`（下表沿用的 `.mdx` 后缀在新布局中均为 `.md`）。
+
+| 文档目录 | 归属 SKILL |
+|---------|-----------|
+| concepts/architecture, lifecycle, manager-api, bridge, build-system | wails-overview |
+| quick-start/why-wails, first-app, next-steps | wails-overview |
+| faq.mdx, changelog.mdx | wails-overview |
+| getting-started/installation, your-first-app | wails-quickstart |
+| quick-start/installation | wails-quickstart |
+| guides/dev/project-structure | wails-quickstart |
+| reference/cli, reference/overview | wails-cli |
+| guides/cli | wails-cli |
+| reference/application | wails-application |
+| features/windows/*, reference/window | wails-window |
+| guides/customising-windows | wails-window |
+| features/bindings/* | wails-bindings |
+| tutorials/01-creating-a-service | wails-bindings |
+| features/events/*, features/windows/events | wails-events |
+| reference/events, guides/events-reference | wails-events |
+| features/menus/*, features/dialogs/* | wails-menus-dialogs |
+| reference/menu, reference/dialogs | wails-menus-dialogs |
+| guides/menus | wails-menus-dialogs |
+| features/clipboard/notifications/screens/autostart/platform/keyboard/drag-and-drop/browser/environment | wails-runtime-features |
+| reference/frontend-runtime | wails-runtime-features |
+| guides/build/*, guides/installers, guides/server-build, guides/windows-uac | wails-build |
+| troubleshooting/mac-syso | wails-build |
+| guides/custom-transport, single-instance, file-associations | wails-advanced |
+| guides/distribution/custom-protocols, updater | wails-advanced |
+| guides/performance, security, panic-handling, raw-messages, routing | wails-advanced |
+| guides/gin-routing, gin-services | wails-advanced |
+| guides/e2e-testing, testing | wails-advanced |
+| guides/advanced/custom-templates | wails-advanced |
+| tutorials/02..04, tutorials/overview | wails-tutorials-migration |
+| migration/v2-to-v3 | wails-tutorials-migration |
+
+## 维护：升级 Wails 版本 + 同步 skill + 发版
+
+跟进 Wails 新版本、同步本知识库、发布新版本，走 **`/wails-upgrade-sop`**（完整标准流程 + 本机已知坑）。要点：
+
+```sh
+# 每次升级重新 shallow clone 参考源码到上级目录，用完即删
+cd /Users/ray_hughes/Documents/CodeSpase/wails && gh repo clone wailsapp/wails -- --depth 1 --branch <TARGET_TAG>
+# 所有 go 命令带镜像代理（本机 proxy.golang.org 直连不稳）
+export GOPROXY="https://goproxy.cn,direct" GOSUMDB="sum.golang.google.cn"
+# 详细流程见 wails-upgrade-sop/SKILL.md
+```
+
+## 版本
+
+当前基准 `v3.1.0`（见上方"内容来源"）。跟进新版本走 `/wails-upgrade-sop`。
+

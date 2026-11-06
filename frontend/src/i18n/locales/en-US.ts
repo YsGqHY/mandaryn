@@ -1,0 +1,52 @@
+import type { Locale } from '../types';
+
+// English (US) — shared / framework-level keys only.
+// Page-level copy lives in each page's own lang/ directory.
+export const enUS: Locale = {
+  code: 'en-US',
+  englishName: 'English (US)',
+  nativeName: 'English',
+  messages: {
+    app: {
+      // 托盘原生右键菜单（主窗口推送给后端 SystrayService.SetMenuLabels）
+      trayMenu: {
+        showWindow: 'Show Window',
+        quit: 'Quit',
+      },
+      title: 'Foundation',
+    },
+    sidebar: {
+      brand: 'F',
+      navAriaLabel: 'Primary navigation',
+      collapse: 'Collapse sidebar',
+      expand: 'Expand sidebar',
+      openMenu: 'Open navigation menu',
+      closeMenu: 'Close navigation menu',
+      dragDock: 'Drag to move the dock (arrow keys to nudge, ←/→ to switch side)',
+    },
+    titleBar: {
+      controls: {
+        minimise: 'Minimise',
+        maximise: 'Maximise / Restore',
+        close: 'Close',
+      },
+    },
+    route: {
+      home: 'Home',
+      xProDemo: 'X-Pro Components',
+      settings: 'Settings',
+    },
+    common: {
+      save: 'Save',
+      cancel: 'Cancel',
+      remove: 'Remove',
+      reset: 'Reset',
+      yes: 'Yes',
+      no: 'No',
+      loading: 'Loading…',
+      error: 'Error',
+      followSystem: 'Follow system',
+      auto: 'Auto',
+    },
+  },
+};
