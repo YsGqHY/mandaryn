@@ -26,8 +26,15 @@ const CRASH_PORT = Number(process.env.E2E_CRASH_PORT ?? 9356);
 // product-flow 与 crash-recovery 都依赖**真实音频设备**做设备回环录制 —— 容器与 CI runner
 // 没有音频端点，捕获层在这些环境里是桩（返回 ERR_CAPTURE_UNAVAILABLE），用例会**失败而非跳过**。
 // 因此把这两个文件在 portable 模式下排除；它们仍需在带声卡的机器（本地或 self-hosted）上跑。
+// screenshots 同理排除：它是**截图归档**用例，用系统 `sqlite3` CLI 直接改库来产出确定性图片，
+// 而 CI runner 与容器里没有该命令（spawnSync sqlite3 ENOENT）；它不验证产品行为，
+// 因而留在本地 `pnpm e2e` / `pnpm e2e:screenshots` 跑。
 const PORTABLE = process.env.E2E_PORTABLE === '1';
-const PORTABLE_EXCLUDE = [/product-flow\.spec\.ts/, /crash-recovery\.spec\.ts/];
+const PORTABLE_EXCLUDE = [
+  /product-flow\.spec\.ts/,
+  /crash-recovery\.spec\.ts/,
+  /screenshots\.spec\.ts/,
+];
 
 const ISOLATED_SPECS = [
   /crash-recovery\.spec\.ts/,
