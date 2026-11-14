@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -75,8 +76,11 @@ func TestSchedulerRejectsWhileQueued(t *testing.T) {
 	st, path, _ := twoSentenceStore(t)
 	eng := newFakeEngine()
 	// 前台一直忙：任务只能排队、不会开始 → 稳定复现「queued 期间重复发起」。
-	busy := true
-	runner := mustRunner(t, st, eng, openerFor(path), Options{Idle: func() bool { return !busy }})
+	// Idle 由调度器 goroutine 调用，本函数在测试 goroutine 改写它，
+	// 因此必须用原子量（`-race` 下普通 bool 会被判为数据竞争）。
+	var busy atomic.Bool
+	busy.Store(true)
+	runner := mustRunner(t, st, eng, openerFor(path), Options{Idle: func() bool { return !busy.Load() }})
 	sched := newTestScheduler(t, runner)
 
 	ctx := context.Background()
@@ -96,7 +100,7 @@ func TestSchedulerRejectsWhileQueued(t *testing.T) {
 	if session.TranscriptionStatus != StatusQueued {
 		t.Errorf("状态 = %q, want queued（前台忙，只排队不执行）", session.TranscriptionStatus)
 	}
-	busy = false
+	busy.Store(false)
 }
 
 // TestSchedulerConcurrencyLimitOne 并发上限 1：两个会话不会同时跑。
@@ -217,8 +221,9 @@ func TestSchedulerYieldThenResumeWhenIdle(t *testing.T) {
 func TestSchedulerCancelQueued(t *testing.T) {
 	st, path, _ := twoSentenceStore(t)
 	eng := newFakeEngine()
-	busy := true
-	runner := mustRunner(t, st, eng, openerFor(path), Options{Idle: func() bool { return !busy }})
+	var busy atomic.Bool
+	busy.Store(true)
+	runner := mustRunner(t, st, eng, openerFor(path), Options{Idle: func() bool { return !busy.Load() }})
 	sched := newTestScheduler(t, runner)
 	ctx := context.Background()
 
@@ -241,7 +246,7 @@ func TestSchedulerCancelQueued(t *testing.T) {
 	if eng.Calls() != 0 {
 		t.Errorf("取消后不应调用引擎：%d", eng.Calls())
 	}
-	busy = false
+	busy.Store(false)
 }
 
 // TestSchedulerCancelStaleQueued 清理残留：库里是 queued 但内存里没有任务（重启场景）。

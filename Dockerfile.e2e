@@ -66,20 +66,20 @@ RUN test -x bin/mandaryn-server
 # ---------------------------------------------------------------------------
 # 阶段 2：运行 E2E
 # ---------------------------------------------------------------------------
-FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble AS runtime
+# 为什么不用 mcr.microsoft.com/playwright:*：该镜像预装了 chromium + firefox + webkit
+# 三套浏览器（解包近 2GB），GitHub 托管 runner 在导出镜像时直接 `no space left on device`。
+# E2E 只用 chromium（E2E_CHANNEL=chromium），因此基于精简的 node 镜像按需安装。
+FROM node:${NODE_VERSION}-bookworm-slim AS runtime
 
-ARG NODE_VERSION
 ARG PNPM_VERSION
+ARG PLAYWRIGHT_VERSION
 
-# 覆盖镜像自带的 Node：E2E 用到 `node:sqlite`（需 Node ≥ 22.5），
-# 且要与本地 / CI 的固定版本一致，否则可能出现只在容器里才复现的差异。
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+# 只装 chromium 及它需要的系统库（--with-deps 走 apt，不拉 ffmpeg/其他浏览器）
 RUN apt-get update \
- && apt-get install -y --no-install-recommends curl xz-utils ca-certificates \
- && rm -rf /var/lib/apt/lists/* \
- && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz \
- && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
- && rm /tmp/node.tar.xz \
- && node -v
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && npx --yes "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium \
+ && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g pnpm@${PNPM_VERSION} && pnpm -v
 
@@ -94,7 +94,7 @@ COPY --from=server /src/frontend/package.json /src/frontend/pnpm-lock.yaml /app/
 COPY --from=server /src/frontend/playwright.config.ts /app/frontend/
 COPY --from=server /src/frontend/e2e /app/frontend/e2e
 
-# 容器里没有 msedge，用 Playwright 镜像自带的 chromium
+# 容器里没有 msedge，用上面装好的 chromium
 ENV E2E_CHANNEL=chromium
 # 报告写到挂载卷，便于本地查看与 CI 上传
 ENV PLAYWRIGHT_JSON_OUTPUT_NAME=/reports/e2e-report.json
