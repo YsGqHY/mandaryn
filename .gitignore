@@ -1,6 +1,10 @@
 .task
 bin
-frontend/dist
+# 用 dist/* 而不是 dist：忽略目录本身会让 git 不进入目录，下面的例外规则就失效。
+frontend/dist/*
+# 例外：占位文件必须入库。main.go 用 `//go:embed all:frontend/dist`，该目录不存在时
+# 连 `go build ./...` 都会失败（CI 的纯 Go 门禁没有前端构建产物）。
+!frontend/dist/.gitkeep
 frontend/node_modules
 frontend/bindings
 build/linux/appimage/build

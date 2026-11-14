@@ -26,8 +26,13 @@ ARG NODE_VERSION
 ARG PNPM_VERSION
 ARG WAILS_VERSION
 
+# 注：`server` 标签只让**产物**不需要 GTK；`wails3` **CLI 自身**仍会编译
+#   Wails 的 Linux 平台代码（pkg-config 找 gtk4 / webkitgtk-6.0），bookworm 只有
+#   GTK3 栈，因此下面装 GTK3 头文件并用 `-tags gtk3` 编译 CLI。
 RUN apt-get update \
- && apt-get install -y --no-install-recommends curl xz-utils ca-certificates \
+ && apt-get install -y --no-install-recommends \
+      curl xz-utils ca-certificates \
+      libgtk-3-dev libwebkit2gtk-4.1-dev \
  && rm -rf /var/lib/apt/lists/*
 
 # 前端构建需要 Node：版本与本地 / CI 固定值一致（见 .github/workflows/ci.yml 的 env）
@@ -39,7 +44,8 @@ RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-l
 RUN npm install -g pnpm@${PNPM_VERSION} && pnpm -v
 
 ENV PATH="/root/go/bin:${PATH}"
-RUN go install github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}
+# -tags gtk3：CLI 在 Debian 12 上按 GTK3 + WebKit2GTK 4.1 编译（v3.1.0 仍支持该过渡栈）
+RUN go install -tags gtk3 github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}
 
 WORKDIR /src
 COPY . .

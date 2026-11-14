@@ -152,7 +152,7 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: 生成前端 bindings（被 .gitignore 排除，不生成则 typecheck 必失败）
-        run: wails3 task generate:bindings
+        run: wails3 task common:generate:bindings
 
       - name: pnpm install
         working-directory: frontend
@@ -247,7 +247,7 @@ jobs:
           cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: 生成前端 bindings（被 .gitignore 排除，不生成则 typecheck/build 必失败）
-        run: wails3 task generate:bindings
+        run: wails3 task common:generate:bindings
 
       - name: 安装前端依赖
         working-directory: frontend
