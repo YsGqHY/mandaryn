@@ -6,6 +6,10 @@ import { Personalization } from './personalization';
 import { Layout } from './layout';
 import { Language } from './language';
 import { Database } from './database';
+import { Performance } from './performance';
+import { Privacy } from './privacy';
+import { Hotkeys } from './hotkeys';
+import { Audio } from './audio';
 
 // 设置页（两列）：
 //   左列：选项列表（personalization / layout / language / database）
@@ -60,6 +64,10 @@ export const SettingsPage = () => {
         {vm.activeItem.id === 'layout' && <Layout />}
         {vm.activeItem.id === 'language' && <Language />}
         {vm.activeItem.id === 'database' && <Database />}
+        {vm.activeItem.id === 'performance' && <Performance />}
+        {vm.activeItem.id === 'audio' && <Audio />}
+        {vm.activeItem.id === 'privacy' && <Privacy />}
+        {vm.activeItem.id === 'hotkeys' && <Hotkeys />}
       </div>
     </div>
   );

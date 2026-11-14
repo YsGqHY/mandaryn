@@ -1,8 +1,9 @@
-// Package logx 是 Foundation 的统一日志门面。
+// Package logx 是 Mandaryn 的统一日志门面。
 //
 // 设计：基于标准库 log/slog（结构化日志），同时输出到：
 //   - 控制台（dev 期）—— 文本格式，带颜色友好的级别
 //   - 文件（持久）—— JSON 格式，自动按大小滚动
+//   - 调试日志（仅调试模式开启时）—— 同目录 debug.log，JSON Lines，见 debug_sink.go
 //
 // 业务约束：
 //   - 不要 fmt.Println / log.Printf —— 这些没结构化字段，dev 期看着方便，
@@ -15,14 +16,17 @@ package logx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
+
+	"vip.oberon.mandaryn/internal/paths"
 )
 
 // Config 控制日志输出。在 internal/app.Run 早期调一次 Init，业务代码后续用 For()。
@@ -49,7 +53,8 @@ const (
 	defaultBackups      = 3
 )
 
-const AppDirName = "Foundation" // 与 storage / cryptox 保持一致
+// AppDirName 与应用标识保持一致（唯一来源 internal/paths）。
+const AppDirName = paths.AppDirName
 
 var (
 	initOnce  sync.Once
@@ -102,6 +107,11 @@ func doInit(cfg Config) error {
 	rotator = rot
 	logCloser = rot
 
+	// 调试日志与 app.log 同目录，默认关闭；启动时先按保留期清理旧文件（与开关无关）。
+	sink := newDebugSink(dir)
+	(&fileRotator{path: sink.path(), backups: DebugMaxFiles - 1, maxAge: DebugMaxAge}).pruneExpired(true)
+	dbg.Store(sink)
+
 	handlers := []slog.Handler{}
 	handlers = append(handlers, slog.NewJSONHandler(rot, &slog.HandlerOptions{
 		Level:     cfg.Level,
@@ -113,6 +123,7 @@ func doInit(cfg Config) error {
 			AddSource: cfg.AddSource,
 		}))
 	}
+	handlers = append(handlers, &debugHandler{sink: sink, inner: sink.withSource, origin: OriginBackend})
 
 	rootMu.Lock()
 	root = slog.New(&fanoutHandler{handlers: handlers})
@@ -125,6 +136,10 @@ func doInit(cfg Config) error {
 func Close() {
 	if logCloser != nil {
 		_ = logCloser.Close()
+	}
+	// 调试日志只关文件、不改用户开关（开关的持久化值在数据库里）。
+	if s := dbg.Load(); s != nil {
+		_ = s.setEnabled(false)
 	}
 }
 
@@ -151,36 +166,16 @@ func Error(msg string, args ...any) { For("").Error(msg, args...) }
 func Debug(msg string, args ...any) { For("").Debug(msg, args...) }
 
 func defaultLogDir() (string, error) {
-	// 与 storage.DataDirEnv 一致：设置后日志写到 <该目录>/logs
-	if v := os.Getenv("FOUNDATION_DATA_DIR"); v != "" {
-		return filepath.Join(v, "logs"), nil
+	// 正常路径：由 internal/app 用 paths.Resolver 的结果填 Config.Dir 传进来
+	// （保证日志与数据库、密钥同根）。这里是「未显式指定」时的兜底。
+	if v := os.Getenv(paths.EnvDataRoot); v != "" {
+		return filepath.Join(v, paths.LogsDirName), nil
 	}
-	switch runtime.GOOS {
-	case "windows":
-		if v := os.Getenv("AppData"); v != "" {
-			return filepath.Join(v, AppDirName, "logs"), nil
-		}
-		base, err := os.UserConfigDir()
-		if err != nil {
-			return "", err
-		}
-		return filepath.Join(base, AppDirName, "logs"), nil
-	case "darwin":
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		return filepath.Join(home, "Library", "Logs", AppDirName), nil
-	default:
-		if v := os.Getenv("XDG_STATE_HOME"); v != "" {
-			return filepath.Join(v, AppDirName, "logs"), nil
-		}
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		return filepath.Join(home, ".local", "state", AppDirName, "logs"), nil
+	base, err := paths.DefaultDataRoot()
+	if err != nil {
+		return "", err
 	}
+	return filepath.Join(base, paths.LogsDirName), nil
 }
 
 // fanoutHandler 把一条记录广播到多个 slog.Handler。
@@ -237,11 +232,17 @@ type fileRotator struct {
 	path    string
 	maxSize int64
 	backups int
+	// maxAge > 0 时，打开与每次滚动后删除修改时间早于 now-maxAge 的文件（调试日志用；app.log 不设）。
+	maxAge time.Duration
+	now    func() time.Time
 
 	mu  sync.Mutex
 	f   *os.File
 	cur atomic.Int64
 }
+
+// renameFn 是滚动用的重命名函数（测试注入失败用）。
+var renameFn = os.Rename
 
 func (w *fileRotator) open() error {
 	w.mu.Lock()
@@ -285,14 +286,24 @@ func (w *fileRotator) rotateLocked() error {
 		_ = w.f.Close()
 		w.f = nil
 	}
-	// path -> path.1, .1 -> .2, ... 滚到 backups
-	for i := w.backups; i >= 1; i-- {
-		from := w.path
-		if i > 1 {
-			from = fmt.Sprintf("%s.%d", w.path, i-1)
+	// path -> path.1, .1 -> .2, ... 滚到 backups（最旧的被覆盖）；backups == 0 时直接截断重写。
+	if w.backups > 0 {
+		for i := w.backups; i >= 2; i-- {
+			_ = renameFn(fmt.Sprintf("%s.%d", w.path, i-1), fmt.Sprintf("%s.%d", w.path, i))
 		}
-		to := fmt.Sprintf("%s.%d", w.path, i)
-		_ = os.Rename(from, to)
+		if err := renameFn(w.path, w.path+".1"); err != nil && !errors.Is(err, os.ErrNotExist) {
+			// 当前文件挪不走（Windows 上常见于正被别的进程打开读取）：继续往它后面追加，
+			// 下次写入再试。绝不能像以前那样带 O_TRUNC 重开 —— 那会把当前文件的内容清掉。
+			f, oerr := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+			if oerr != nil {
+				return oerr
+			}
+			w.f = f
+			if st, serr := f.Stat(); serr == nil {
+				w.cur.Store(st.Size())
+			}
+			return nil
+		}
 	}
 	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
@@ -300,7 +311,29 @@ func (w *fileRotator) rotateLocked() error {
 	}
 	w.f = f
 	w.cur.Store(0)
+	w.pruneExpired(false)
 	return nil
+}
+
+// pruneExpired 删除修改时间超过 maxAge 的滚动文件；includeCurrent 时当前文件也在其列
+// （只在打开之前调用：长期没写过的旧调试日志不该被续写）。maxAge <= 0 时不做任何事。
+func (w *fileRotator) pruneExpired(includeCurrent bool) {
+	if w.maxAge <= 0 {
+		return
+	}
+	now := time.Now
+	if w.now != nil {
+		now = w.now
+	}
+	cutoff := now().Add(-w.maxAge)
+	for i, p := range rotationPaths(w.path, w.backups) {
+		if i == 0 && !includeCurrent {
+			continue
+		}
+		if st, err := os.Stat(p); err == nil && st.ModTime().Before(cutoff) {
+			_ = os.Remove(p)
+		}
+	}
 }
 
 func (w *fileRotator) Close() error {

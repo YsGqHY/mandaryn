@@ -1,0 +1,289 @@
+/* 快捷键子页面样式。颜色一律取 --fd-*（禁止硬编码十六进制）。 */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.toolbarHint {
+  flex: 1;
+  min-width: 200px;
+  font-size: 12px;
+  color: var(--fd-text-muted);
+  line-height: 1.55;
+}
+
+/* —— 平台不支持提示 —— */
+.warnBox {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--fd-warning);
+  background-color: var(--fd-bg-hover);
+}
+
+.warnIcon {
+  flex-shrink: 0;
+  color: var(--fd-warning);
+}
+
+.warnTexts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.warnTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fd-warning);
+}
+
+.warnBody {
+  font-size: 12px;
+  color: var(--fd-text-secondary);
+  line-height: 1.55;
+}
+
+/* —— 分组 —— */
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.groupTitle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--fd-text-muted);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* —— 动作行 —— */
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--fd-divider);
+  border-radius: 8px;
+  background-color: var(--fd-bg-elevated);
+}
+
+.row[data-error] {
+  border-color: var(--fd-danger);
+}
+
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.rowTitleLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rowLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fd-text-primary);
+}
+
+.scopeTag {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--fd-text-muted);
+  border: 1px solid var(--fd-divider);
+}
+.scopeTag[data-scope='global'] {
+  color: var(--fd-accent);
+  border-color: var(--fd-accent);
+}
+.scopeTag[data-scope='unwired'] {
+  color: var(--fd-warning);
+  border-color: var(--fd-warning);
+}
+
+.rowValues {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.accel {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--fd-divider);
+  background-color: var(--fd-bg-content);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fd-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.accel[data-disabled] {
+  color: var(--fd-text-muted);
+  border-style: dashed;
+}
+
+.defaultHint {
+  font-size: 11px;
+  color: var(--fd-text-muted);
+}
+
+.rowError {
+  font-size: 11px;
+  color: var(--fd-danger);
+  line-height: 1.5;
+}
+
+.rowActions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+/* —— 组合键录入控件 —— */
+.captureField {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+  padding: 6px 10px;
+  border: 1px dashed var(--fd-accent);
+  border-radius: 6px;
+  background-color: var(--fd-bg-active);
+  cursor: text;
+  outline: none;
+}
+.captureField:focus-visible {
+  border-style: solid;
+}
+
+.captureText {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fd-accent);
+}
+
+.captureHint {
+  font-size: 10px;
+  color: var(--fd-text-muted);
+}
+
+/* —— 冲突 / 错误提示 —— */
+.issueLine {
+  display: flex;
+  gap: 6px;
+  color: var(--fd-danger);
+}
+
+.issueTexts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.issueText {
+  font-size: 11px;
+  color: var(--fd-danger);
+  line-height: 1.5;
+}
+
+.issueMeta {
+  font-size: 11px;
+  color: var(--fd-text-secondary);
+  line-height: 1.5;
+}
+
+/* —— 精简模式卡片 —— */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--fd-divider);
+  border-radius: 8px;
+  background-color: var(--fd-bg-elevated);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cardIcon {
+  color: var(--fd-accent);
+}
+
+.cardTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fd-text-primary);
+}
+
+.cardHint {
+  font-size: 12px;
+  color: var(--fd-text-muted);
+  line-height: 1.55;
+}
+
+.leanGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.leanColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px;
+  border: 1px solid var(--fd-divider);
+  border-radius: 8px;
+  background-color: var(--fd-bg-content);
+}
+
+.leanColumn[data-tone='ok'] {
+  border-color: var(--fd-success);
+}
+
+.leanTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fd-text-primary);
+}
+
+.leanColumn[data-tone='ok'] .leanTitle {
+  color: var(--fd-success);
+}
+
+.leanItem {
+  font-size: 12px;
+  color: var(--fd-text-secondary);
+  line-height: 1.6;
+}

@@ -9,7 +9,7 @@ import (
 	"errors"
 	"strings"
 
-	"foundation/internal/storage"
+	"vip.oberon.mandaryn/internal/storage"
 
 	"gorm.io/gorm"
 )

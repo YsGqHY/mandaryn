@@ -10,7 +10,7 @@ export type LocaleCode = string;
 
 // 嵌套消息字典：
 //   {
-//     app: { title: 'Foundation' },
+//     app: { title: 'Mandaryn' },
 //     settings: { theme: { title: '主题' } },
 //   }
 // 节点既可以是 string，也可以是 { [k]: Messages | string }，递归。

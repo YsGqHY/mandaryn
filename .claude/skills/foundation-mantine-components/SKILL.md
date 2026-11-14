@@ -308,7 +308,7 @@ const [opened, { open, close }] = useDisclosure(false);   // @mantine/hooks
 | `useClipboard()` | 复制到剪贴板（读写系统剪贴板也可走 Wails `Clipboard`） |
 | `useMergedRef`、`useId`、`useUncontrolled`、`useListState`、`useInterval`、`useTimeout` … | 见 `references/official/hooks-*.md` |
 
-**禁止**：`useLocalStorage` / `useSessionStorage`（违反持久化铁律，文档已从 references 剔除）。`useColorScheme` 只读系统偏好可以，但切换主题走 `useFoundationTheme()`。
+**禁止**：`useLocalStorage` / `useSessionStorage`（违反持久化铁律，文档已从 references 剔除）。`useColorScheme` 只读系统偏好可以，但切换主题走 `useMandarynTheme()`。
 
 ---
 

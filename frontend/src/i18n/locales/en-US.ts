@@ -13,7 +13,7 @@ export const enUS: Locale = {
         showWindow: 'Show Window',
         quit: 'Quit',
       },
-      title: 'Foundation',
+      title: 'Mandaryn',
     },
     sidebar: {
       brand: 'F',
@@ -32,8 +32,9 @@ export const enUS: Locale = {
       },
     },
     route: {
-      home: 'Home',
-      xProDemo: 'X-Pro Components',
+      record: 'Record',
+      library: 'Library',
+      models: 'Models',
       settings: 'Settings',
     },
     common: {

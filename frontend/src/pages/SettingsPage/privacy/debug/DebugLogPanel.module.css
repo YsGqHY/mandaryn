@@ -1,0 +1,211 @@
+/* 「调试模式」卡片样式（卡片外壳复用 ../Privacy.module.css）。颜色一律取 --fd-*。 */
+
+/* —— 存储说明 —— */
+.meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 16px;
+  row-gap: 6px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--fd-divider);
+  border-radius: 8px;
+  background-color: var(--fd-bg-content);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.meta dt {
+  color: var(--fd-text-muted);
+  font-weight: 600;
+}
+
+.meta dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--fd-text-secondary);
+}
+
+.pathRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.path {
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 12px;
+  color: var(--fd-text-primary);
+  word-break: break-all;
+}
+
+.scope {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scopeLine {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--fd-text-secondary);
+}
+
+.scopeLine[data-tone='danger'] {
+  color: var(--fd-danger);
+}
+
+/* —— 查看器 —— */
+.viewerHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.viewerTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fd-text-primary);
+}
+
+.dangerButton.dangerButton {
+  color: var(--fd-danger);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filterLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fd-text-muted);
+}
+
+.componentSelect {
+  width: 180px;
+}
+
+.list {
+  border: 1px solid var(--fd-divider);
+  border-radius: 8px;
+  background-color: var(--fd-bg-content);
+}
+
+.entry + .entry {
+  border-top: 1px solid var(--fd-divider);
+}
+
+.entryRow {
+  display: grid;
+  grid-template-columns: 14px max-content 52px minmax(80px, 140px) 1fr;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 12px;
+  text-align: left;
+}
+
+.entryRow:hover {
+  background-color: var(--fd-bg-hover);
+}
+
+.chevron {
+  color: var(--fd-text-muted);
+}
+
+.time {
+  font-family: var(--mantine-font-family-monospace);
+  font-variant-numeric: tabular-nums;
+  color: var(--fd-text-muted);
+  white-space: nowrap;
+}
+
+.level {
+  justify-self: start;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  color: var(--fd-text-muted);
+  border: 1px solid var(--fd-divider);
+}
+
+.level[data-level='INFO'] {
+  color: var(--fd-accent);
+  border-color: var(--fd-accent);
+}
+
+.level[data-level='WARN'] {
+  color: var(--fd-warning);
+  border-color: var(--fd-warning);
+}
+
+.level[data-level='ERROR'] {
+  color: var(--fd-danger);
+  border-color: var(--fd-danger);
+}
+
+.component {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--fd-text-secondary);
+}
+
+.message {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fd-text-primary);
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 10px 10px 32px;
+}
+
+.detailLine {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fd-text-secondary);
+}
+
+.detailLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fd-text-muted);
+}
+
+.fields {
+  margin: 0;
+  padding: 8px;
+  max-height: 220px;
+  overflow: auto;
+  border-radius: 6px;
+  background-color: var(--fd-bg-hover);
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--fd-text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}

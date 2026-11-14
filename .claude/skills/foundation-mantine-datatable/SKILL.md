@@ -15,7 +15,7 @@ description: Foundation 项目数据表格用法：mantine-datatable 9.4.0（Dat
 
 ## 规则
 
-- **颜色**：DataTable 的颜色 props（`c` / `backgroundColor` / `borderColor` / `rowBorderColor` / `stripedColor` / `highlightOnHoverColor` / `loaderColor` / `paginationActive*Color`）传 `FOUNDATION_CSS_VARS.*` 或 `'foundation'`；改内部 class 用 module.css `:global(.mantine-datatable-…)` + `--fd-*`。DataGrid 已全部配好，不要再传色。
+- **颜色**：DataTable 的颜色 props（`c` / `backgroundColor` / `borderColor` / `rowBorderColor` / `stripedColor` / `highlightOnHoverColor` / `loaderColor` / `paginationActive*Color`）传 `MANDARYN_CSS_VARS.*` 或 `'foundation'`；改内部 class 用 module.css `:global(.mantine-datatable-…)` + `--fd-*`。DataGrid 已全部配好，不要再传色。
 - **i18n**：`title`（表头）、`noRecordsText`、`loadingText`、`paginationText`、`recordsPerPageLabel` 全部 `t()`；DataGrid 内部文案在 `dataGrid.*` 命名空间（`data-grid/lang/{zh-CN,en-US}.ts`，组件模块加载时 `registerDataGridLocales()` 自动 extend 到公共语言包，新增语言要补一份）。
 - **禁止 `storeColumnsKey`（以及给 `useDataTableColumns` 传 `key`）**：传了 key，列顺序 / 显隐 / 宽度 / 钉住状态就经 `@mantine/hooks` 的 `useLocalStorage` 写进 localStorage，违反持久化铁律。DataGrid 自己实现了列拖拽（`columnReordering`）、列宽拖拽、列菜单钉住 / 隐藏、列管理面板，列定义里的 `resizable` / `pinnable` / `toggleable` / `hidden` 由 DataGrid 解释、**不转交** mantine-datatable；用户改动只存在组件内存。需要跨会话记住 → 用 `onColumnOrderChange` / `onColumnWidthChange` / `onColumnVisibilityChange` / `onPinnedColumnsChange` 回调存到 `PreferencesService`，下次通过列定义 `width` / `hidden` 与 `pinnedColumns` 作为初始值还原（见 §2「记住列配置」）。
 - **行拖拽**：mantine-datatable 官方方案依赖 `@hello-pangea/dnd`（**未安装**），项目 DataGrid 用 HTML5 DnD 自实现，直接用 `rowReordering`。
@@ -28,7 +28,7 @@ description: Foundation 项目数据表格用法：mantine-datatable 9.4.0（Dat
 
 ```tsx
 import { DataTable, type DataTableSortStatus } from 'mantine-datatable';
-import { FOUNDATION_CSS_VARS } from '@/styles/themes';
+import { MANDARYN_CSS_VARS } from '@/styles/themes';
 
 const [sortStatus, setSortStatus] = useState<DataTableSortStatus<User>>({ columnAccessor: 'name', direction: 'asc' });
 const [page, setPage] = useState(1);
@@ -53,12 +53,12 @@ const [selected, setSelected] = useState<User[]>([]);
   fetching={vm.loading} loaderColor="foundation"
   noRecordsText={t('users.empty')} loadingText={t('common.loading')}
   highlightOnHover striped verticalAlign="center"
-  c={FOUNDATION_CSS_VARS.text.primary}
-  backgroundColor={FOUNDATION_CSS_VARS.bg.surface}
-  borderColor={FOUNDATION_CSS_VARS.divider}
-  rowBorderColor={FOUNDATION_CSS_VARS.divider}
-  stripedColor={FOUNDATION_CSS_VARS.bg.elevated}
-  highlightOnHoverColor={FOUNDATION_CSS_VARS.bg.hover}
+  c={MANDARYN_CSS_VARS.text.primary}
+  backgroundColor={MANDARYN_CSS_VARS.bg.surface}
+  borderColor={MANDARYN_CSS_VARS.divider}
+  rowBorderColor={MANDARYN_CSS_VARS.divider}
+  stripedColor={MANDARYN_CSS_VARS.bg.elevated}
+  highlightOnHoverColor={MANDARYN_CSS_VARS.bg.hover}
   onRowClick={({ record, index }) => vm.open(record.id)}
 />
 ```

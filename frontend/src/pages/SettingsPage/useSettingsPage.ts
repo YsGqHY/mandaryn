@@ -45,6 +45,26 @@ export const useSettingsPage = (): UseSettingsPageResult => {
         labelKey: 'settings.list.database.label',
         descriptionKey: 'settings.list.database.description',
       },
+      {
+        id: 'performance',
+        labelKey: 'settings.list.performance.label',
+        descriptionKey: 'settings.list.performance.description',
+      },
+      {
+        id: 'audio',
+        labelKey: 'settings.list.audio.label',
+        descriptionKey: 'settings.list.audio.description',
+      },
+      {
+        id: 'privacy',
+        labelKey: 'settings.list.privacy.label',
+        descriptionKey: 'settings.list.privacy.description',
+      },
+      {
+        id: 'hotkeys',
+        labelKey: 'settings.list.hotkeys.label',
+        descriptionKey: 'settings.list.hotkeys.description',
+      },
     ],
     [],
   );

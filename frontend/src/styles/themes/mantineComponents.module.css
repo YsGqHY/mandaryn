@@ -1,4 +1,4 @@
-/* Foundation 对 Mantine 原生组件的全局样式覆盖（由 buildMantineTheme 通过 classNames 注入）。
+/* Mandaryn 对 Mantine 原生组件的全局样式覆盖（由 buildMantineTheme 通过 classNames 注入）。
    颜色只允许使用 --fd-* 变量。 */
 
 .button {

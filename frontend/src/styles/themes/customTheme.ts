@@ -1,9 +1,9 @@
 import { themeRegistry } from './registry';
 import { lightPreset } from './presets/light';
-import type { FoundationPalette, FoundationThemePreset } from './types';
+import type { MandarynPalette, MandarynThemePreset } from './types';
 
 // 自定义主题：name 固定，业务方不要再用同名注册其它预设。
-export const CUSTOM_THEME_NAME = 'foundation-custom';
+export const CUSTOM_THEME_NAME = 'mandaryn-custom';
 export const CUSTOM_THEME_LABEL = '自定义';
 
 // 持久化结构：mode 决定 Mantine color scheme，palette 全字段独立保存。
@@ -13,14 +13,14 @@ export const CUSTOM_THEME_LABEL = '自定义';
 // 这里只负责"内存中的 registry 同步 + 形状校验"。
 export interface StoredCustomTheme {
   mode: 'light' | 'dark';
-  palette: FoundationPalette;
+  palette: MandarynPalette;
 }
 
-// 深拷贝 palette（FoundationPalette 是固定形状，JSON 拷贝足够）
-const clonePalette = (p: FoundationPalette): FoundationPalette =>
-  JSON.parse(JSON.stringify(p)) as FoundationPalette;
+// 深拷贝 palette（MandarynPalette 是固定形状，JSON 拷贝足够）
+const clonePalette = (p: MandarynPalette): MandarynPalette =>
+  JSON.parse(JSON.stringify(p)) as MandarynPalette;
 
-const buildPreset = (data: StoredCustomTheme): FoundationThemePreset => ({
+const buildPreset = (data: StoredCustomTheme): MandarynThemePreset => ({
   name: CUSTOM_THEME_NAME,
   label: CUSTOM_THEME_LABEL,
   mode: data.mode,
@@ -35,14 +35,14 @@ export const parseStoredCustomTheme = (raw: string): StoredCustomTheme | null =>
     const parsed = JSON.parse(raw) as Partial<StoredCustomTheme>;
     if (parsed?.mode !== 'light' && parsed?.mode !== 'dark') return null;
     if (!parsed.palette || typeof parsed.palette !== 'object') return null;
-    return { mode: parsed.mode, palette: parsed.palette as FoundationPalette };
+    return { mode: parsed.mode, palette: parsed.palette as MandarynPalette };
   } catch {
     return null;
   }
 };
 
 // 异步拉到自定义主题数据后注入 registry。返回构建好的 preset，便于 Provider 立即用。
-export const hydrateCustomTheme = (data: StoredCustomTheme): FoundationThemePreset => {
+export const hydrateCustomTheme = (data: StoredCustomTheme): MandarynThemePreset => {
   const preset = buildPreset(data);
   themeRegistry.register(preset);
   return preset;
@@ -63,7 +63,7 @@ export const seedFromPreset = (sourceName?: string): StoredCustomTheme => {
 
 // 仅更新 registry（实时预览用）；由调用方负责持久化（AppSettingsService.setCustomTheme）。
 // 用法：用户在调色时，每次改色 → previewCustomTheme（视图立即反映）+ AppSettingsService.setCustomTheme（落库）。
-export const previewCustomTheme = (data: StoredCustomTheme): FoundationThemePreset => {
+export const previewCustomTheme = (data: StoredCustomTheme): MandarynThemePreset => {
   const preset = buildPreset(data);
   themeRegistry.register(preset);
   return preset;

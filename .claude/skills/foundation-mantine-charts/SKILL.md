@@ -1,6 +1,6 @@
 ---
 name: foundation-mantine-charts
-description: Foundation 项目图表用法：@mantine/charts 9.7.5（基于 recharts 3.10）的 Bar/Line/Area/Donut/Pie/Radar/Scatter/Bubble/Composite/Sparkline/Gauge/Funnel/Sankey/Treemap/Heatmap/MatrixChart/BarsList 等，以及项目自封装的 x-pro 图表（HeatmapChart/FunnelChart/RadarChart/CandlestickChart/SankeyChart/GanttChart/TreemapChart/ZoomableChart + useChartColors）。含配色铁律（FOUNDATION_CSS_VARS / useChartColors / 何时用 useFoundationPalette）、尺寸、i18n、官方文档。触发词：图表 / chart / BarChart / LineChart / DonutChart / PieChart / 热力图 / 漏斗 / 雷达 / K线 / 桑基 / 甘特 / 矩形树图 / 缩放 / Brush / @mantine/charts / recharts / x-charts 迁移。
+description: Foundation 项目图表用法：@mantine/charts 9.7.5（基于 recharts 3.10）的 Bar/Line/Area/Donut/Pie/Radar/Scatter/Bubble/Composite/Sparkline/Gauge/Funnel/Sankey/Treemap/Heatmap/MatrixChart/BarsList 等，以及项目自封装的 x-pro 图表（HeatmapChart/FunnelChart/RadarChart/CandlestickChart/SankeyChart/GanttChart/TreemapChart/ZoomableChart + useChartColors）。含配色铁律（MANDARYN_CSS_VARS / useChartColors / 何时用 useMandarynPalette）、尺寸、i18n、官方文档。触发词：图表 / chart / BarChart / LineChart / DonutChart / PieChart / 热力图 / 漏斗 / 雷达 / K线 / 桑基 / 甘特 / 矩形树图 / 缩放 / Brush / @mantine/charts / recharts / x-charts 迁移。
 ---
 
 # Foundation 图表（@mantine/charts + x-pro）
@@ -15,12 +15,12 @@ description: Foundation 项目图表用法：@mantine/charts 9.7.5（基于 rech
 
 | 场景 | 写法 |
 |---|---|
-| series / cell 颜色、`gridColor` / `textColor` / `strokeColor` / `cursorFill` | `FOUNDATION_CSS_VARS.*`（`'var(--fd-…)'`，主题切换零重渲染） |
+| series / cell 颜色、`gridColor` / `textColor` / `strokeColor` / `cursorFill` | `MANDARYN_CSS_VARS.*`（`'var(--fd-…)'`，主题切换零重渲染） |
 | 多系列需要一组区分色 | `useChartColors(count?)`（`@/components/x-pro/charts`） |
-| 需要真实色值做插值 / canvas | `useFoundationPalette()` |
+| 需要真实色值做插值 / canvas | `useMandarynPalette()` |
 | ❌ | 十六进制、`'blue.6'` 之类 Mantine 色阶直接写在业务代码里 |
 
-`@mantine/charts` 的所有 `color` 都经 `getThemeColor` 解析：`'var(--x)'` 原样使用，`'violet.5'` 转成 Mantine 色阶变量。所以 CSS 变量字符串可以直接塞进 `color` 字段。默认 `textColor` 为 `'dimmed'`（= `--fd-text-secondary`），`gridColor` 默认随 color scheme——项目里显式传 `FOUNDATION_CSS_VARS.divider` 以对齐主题。
+`@mantine/charts` 的所有 `color` 都经 `getThemeColor` 解析：`'var(--x)'` 原样使用，`'violet.5'` 转成 Mantine 色阶变量。所以 CSS 变量字符串可以直接塞进 `color` 字段。默认 `textColor` 为 `'dimmed'`（= `--fd-text-secondary`），`gridColor` 默认随 color scheme——项目里显式传 `MANDARYN_CSS_VARS.divider` 以对齐主题。
 
 ### `useChartColors`
 
@@ -58,13 +58,13 @@ series 的 `label`、`xAxisLabel` / `yAxisLabel`、tooltip 内的固定文案（
   data={barData}                       // [{ label, sizeBytes, color }]
   dataKey="label"
   orientation="vertical"               // vertical = 类目在 Y 轴（水平条形）
-  series={[{ name: 'sizeBytes', label: t('settings.database.charts.bytes.title'), color: FOUNDATION_CSS_VARS.accent }]}
+  series={[{ name: 'sizeBytes', label: t('settings.database.charts.bytes.title'), color: MANDARYN_CSS_VARS.accent }]}
   valueFormatter={formatBytes}
   yAxisProps={{ width: 96 }}
   gridAxis="x"
-  gridColor={FOUNDATION_CSS_VARS.divider}
-  textColor={FOUNDATION_CSS_VARS.text.muted}
-  cursorFill={FOUNDATION_CSS_VARS.bg.hover}
+  gridColor={MANDARYN_CSS_VARS.divider}
+  textColor={MANDARYN_CSS_VARS.text.muted}
+  cursorFill={MANDARYN_CSS_VARS.bg.hover}
   maxBarWidth={28}
 />
 ```
@@ -84,7 +84,7 @@ series 的 `label`、`xAxisLabel` / `yAxisLabel`、tooltip 内的固定文案（
 />
 ```
 
-`chartLabel`（中心文字）、`withLabels` + `labelsType: 'value' | 'percent' | 'name'`、`startAngle/endAngle`（半环）、`strokeColor`（建议 `FOUNDATION_CSS_VARS.bg.surface`）。
+`chartLabel`（中心文字）、`withLabels` + `labelsType: 'value' | 'percent' | 'name'`、`startAngle/endAngle`（半环）、`strokeColor`（建议 `MANDARYN_CSS_VARS.bg.surface`）。
 
 ### LineChart / AreaChart / CompositeChart
 
@@ -97,8 +97,8 @@ series 的 `label`、`xAxisLabel` / `yAxisLabel`、tooltip 内的固定文案（
 
 | 组件 | 要点 |
 |---|---|
-| `Sparkline` | `data: number[]`、`color`、`trendColors={{ positive: FOUNDATION_CSS_VARS.status.success, negative: FOUNDATION_CSS_VARS.status.danger }}`、`h` / `w` |
-| `GaugeChart` | `value` / `min` / `max` / `sections` / `filledColor` / `trackColor`（`FOUNDATION_CSS_VARS.bg.elevated`）/ `size` |
+| `Sparkline` | `data: number[]`、`color`、`trendColors={{ positive: MANDARYN_CSS_VARS.status.success, negative: MANDARYN_CSS_VARS.status.danger }}`、`h` / `w` |
+| `GaugeChart` | `value` / `min` / `max` / `sections` / `filledColor` / `trackColor`（`MANDARYN_CSS_VARS.bg.elevated`）/ `size` |
 | `RadialBarChart` / `BulletChart` / `WaffleChart` / `SunburstChart` / `BubbleChart` / `ScatterChart` | 见 references |
 | `BarsList` | 列表式横条（`data: [{ name, value, color? }]`、`barColor`、`valueFormatter`）——适合"Top N"这种小块 |
 | `Heatmap` | **日历热力图**（`data: Record<'YYYY-MM-DD', number>`、`startDate/endDate`、`colors`）；矩阵热力图用 `MatrixChart` 或项目 `HeatmapChart` |
@@ -130,9 +130,9 @@ Styles API：根元素 CSS 变量 `--chart-text-color` / `--chart-grid-color` / 
 
 ```tsx
 import { HeatmapChart, FunnelChart, RadarChart, CandlestickChart, SankeyChart, GanttChart, TreemapChart } from '@/components/x-pro/charts';
-import { useFoundationPalette } from '@/styles/themes';
+import { useMandarynPalette } from '@/styles/themes';
 
-const fp = useFoundationPalette();     // 热力图示例里想用 surface→accent 做插值，取真实色值
+const fp = useMandarynPalette();     // 热力图示例里想用 surface→accent 做插值，取真实色值
 
 <Paper className={classes.card}>
   <Text className={classes.cardTitle}>{t('xpro.charts.heatmap')}</Text>
@@ -143,14 +143,14 @@ const fp = useFoundationPalette();     // 热力图示例里想用 surface→acc
 <GanttChart tasks={ganttTasks} viewMode="week" height={200} onTaskClick={(task) => vm.select(task.id)} />
 ```
 
-> `colorMap` 其实也接受 `FOUNDATION_CSS_VARS.*`（插值用的是 CSS `color-mix`），用变量更好——主题切换无需重渲染。
+> `colorMap` 其实也接受 `MANDARYN_CSS_VARS.*`（插值用的是 CSS `color-mix`），用变量更好——主题切换无需重渲染。
 
 ### 扩展 x-pro 图表的约定
 
 - 每个图表一个文件夹：`<Name>/<Name>.tsx` + `index.ts`（+ 需要时 `<Name>.module.css`），并在 `charts/index.ts` 与 `x-pro/index.ts` 导出组件和 Props 类型。
 - 优先包 @mantine/charts；只有没有对应组件时才自绘 SVG，自绘的固定色写 module.css（`fill: var(--fd-…)`），数据色走 `useChartColors` + `getThemeColor`。
-- 默认色一律来自 `FOUNDATION_CSS_VARS` / `useChartColors`，禁止十六进制；公开的文案类 props 让调用方传 `t()` 结果。
+- 默认色一律来自 `MANDARYN_CSS_VARS` / `useChartColors`，禁止十六进制；公开的文案类 props 让调用方传 `t()` 结果。
 
 ## references
 
-`references/official/`：Mantine 官方 LLM 文档（https://mantine.dev/llms/charts-*.md，9.7.5，2026-11-06 拉取）——`charts-getting-started.md`、`charts-bar-chart.md`、`charts-line-chart.md`、`charts-area-chart.md`、`charts-donut-chart.md`、`charts-pie-chart.md`、`charts-radar-chart.md`、`charts-candlestick-chart.md`、`charts-sankey-chart.md`、`charts-treemap.md`、`charts-matrix-chart.md`、`charts-heatmap.md`、`charts-funnel-chart.md`、`charts-gauge-chart.md`、`charts-sparkline.md`、`charts-composite-chart.md`、`charts-scatter-chart.md`、`charts-bubble-chart.md`、`charts-bars-list.md`、`charts-bullet-chart.md`、`charts-radial-bar-chart.md`、`charts-sunburst-chart.md`、`charts-waffle-chart.md`。官方示例中的 `'indigo.6'` 等颜色请替换为 `FOUNDATION_CSS_VARS` / `useChartColors`。类型以 `frontend/node_modules/@mantine/charts/lib/<Name>/<Name>.d.ts` 为准。
+`references/official/`：Mantine 官方 LLM 文档（https://mantine.dev/llms/charts-*.md，9.7.5，2026-11-06 拉取）——`charts-getting-started.md`、`charts-bar-chart.md`、`charts-line-chart.md`、`charts-area-chart.md`、`charts-donut-chart.md`、`charts-pie-chart.md`、`charts-radar-chart.md`、`charts-candlestick-chart.md`、`charts-sankey-chart.md`、`charts-treemap.md`、`charts-matrix-chart.md`、`charts-heatmap.md`、`charts-funnel-chart.md`、`charts-gauge-chart.md`、`charts-sparkline.md`、`charts-composite-chart.md`、`charts-scatter-chart.md`、`charts-bubble-chart.md`、`charts-bars-list.md`、`charts-bullet-chart.md`、`charts-radial-bar-chart.md`、`charts-sunburst-chart.md`、`charts-waffle-chart.md`。官方示例中的 `'indigo.6'` 等颜色请替换为 `MANDARYN_CSS_VARS` / `useChartColors`。类型以 `frontend/node_modules/@mantine/charts/lib/<Name>/<Name>.d.ts` 为准。

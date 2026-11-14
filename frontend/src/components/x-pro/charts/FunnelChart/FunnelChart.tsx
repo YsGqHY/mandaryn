@@ -6,7 +6,7 @@ import {
 } from '@mantine/charts';
 import { getThemeColor, useMantineTheme } from '@mantine/core';
 import { useElementSize } from '@mantine/hooks';
-import { FOUNDATION_CSS_VARS } from '@/styles/themes';
+import { MANDARYN_CSS_VARS } from '@/styles/themes';
 import { useChartColors, useChartsI18n } from '../shared';
 import classes from './FunnelChart.module.css';
 
@@ -95,7 +95,7 @@ export function FunnelChart({
       data={cells}
       role="figure"
       aria-label={label}
-      strokeColor={FOUNDATION_CSS_VARS.bg.surface}
+      strokeColor={MANDARYN_CSS_VARS.bg.surface}
       tooltipDataSource="segment"
       withLabels={withLabels}
       labelsPosition="inside"
@@ -206,7 +206,7 @@ function HorizontalFunnel({
                 className={classes.segment}
                 style={{
                   fill: getThemeColor(cell.color, theme),
-                  stroke: FOUNDATION_CSS_VARS.bg.surface,
+                  stroke: MANDARYN_CSS_VARS.bg.surface,
                   strokeWidth: STROKE_WIDTH,
                 }}
                 tabIndex={0}

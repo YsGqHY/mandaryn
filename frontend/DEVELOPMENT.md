@@ -132,7 +132,7 @@ export const UserCard = ({ user, onSelect }: UserCardProps) => {
 
 - **组件库只用 Mantine**（`@mantine/core` / `@mantine/hooks`）；图表 `@mantine/charts`（高级图表 `components/x-pro/charts`），表格 `components/x-pro/data-grid`（`mantine-datatable`）。**禁止** `@mui/*` / `@emotion/*`、`sx` / `styled` / CSS-in-JS。
 - **样式集中在 `<Name>.module.css`**（CSS Modules），View 里 `import classes from './<Name>.module.css'`，通过 `className` / `classNames={{ root: classes.x }}` 挂到元素或 Mantine 组件上。多类名组合用 `clsx`。不写全局 CSS（全局样式只有 `src/styles/global.css` 与主题层的 `styles/themes/mantineComponents.module.css`）。
-- **颜色**只用 `var(--fd-*)`（由 `FoundationThemeProvider` 注入，切主题零重渲染），不要硬编码十六进制，也不要给 Mantine 组件传内置色名（`color="blue"`）—— 不传 `color` 即走主色 `foundation`（= accent）。JS 侧需要引用颜色（图表 `color`、内联 `style`）用 `FOUNDATION_CSS_VARS.*`；必须拿真实色值（canvas 等）才用 `useFoundationPalette()`。主题系统详见 `.claude/skills/foundation-theme/SKILL.md`。
+- **颜色**只用 `var(--fd-*)`（由 `MandarynThemeProvider` 注入，切主题零重渲染），不要硬编码十六进制，也不要给 Mantine 组件传内置色名（`color="blue"`）—— 不传 `color` 即走主色 `foundation`（= accent）。JS 侧需要引用颜色（图表 `color`、内联 `style`）用 `MANDARYN_CSS_VARS.*`；必须拿真实色值（canvas 等）才用 `useMandarynPalette()`。主题系统详见 `.claude/skills/foundation-theme/SKILL.md`。
 - **内联 `style`** 只用于动态尺寸 / 位置（如进度宽度、拖拽偏移），不写静态样式和颜色字面量。
 - 覆盖 Mantine 组件默认样式时需要提高权重，用重复类名（`.item.item { ... }`）或 `classNames` 指向内部节点，不要 `!important`。
 - 圆角规则（**方形圆角设计**，theme `radius`：xs 2 / sm 4 / md 8 / lg 12 / xl 16，`defaultRadius: 'sm'`）：
@@ -250,7 +250,7 @@ import { GreetService } from '../../../services/greet/GreetService';
 
 - [ ] 组件有独立文件夹，View / ViewModel / Style（`<Name>.module.css`）三件齐全。
 - [ ] View 不写业务，ViewModel 不返回 JSX。
-- [ ] 没有硬编码颜色：样式只用 `var(--fd-*)`，JS 侧用 `FOUNDATION_CSS_VARS` / `useFoundationPalette()`。
+- [ ] 没有硬编码颜色：样式只用 `var(--fd-*)`，JS 侧用 `MANDARYN_CSS_VARS` / `useMandarynPalette()`。
 - [ ] 没有引入 `@mui/*` / `@emotion/*` / `sx`；图标只来自 `@tabler/icons-react`。
 - [ ] 公共组件有 props interface 与 index.ts 出口。
 - [ ] `pnpm typecheck` 全绿。

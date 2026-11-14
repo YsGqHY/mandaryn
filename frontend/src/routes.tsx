@@ -1,13 +1,18 @@
-import { IconHome, IconLayoutGrid, IconSettings } from '@tabler/icons-react';
+import {
+  IconLibrary,
+  IconMicrophone,
+  IconPackage,
+  IconSettings,
+} from '@tabler/icons-react';
 import { lazy } from 'react';
-import { HomePage } from '@/pages/HomePage/HomePage';
-import { HomePageSkeleton } from '@/pages/HomePage/HomePage.skeleton';
+import { LibraryPageSkeleton } from '@/pages/LibraryPage/LibraryPage.skeleton';
+import { ModelsPageSkeleton } from '@/pages/ModelsPage/ModelsPage.skeleton';
+import { RecordPageSkeleton } from '@/pages/RecordPage/RecordPage.skeleton';
 import { SettingsPageSkeleton } from '@/pages/SettingsPage/SettingsPage.skeleton';
-import { XProDemoPageSkeleton } from '@/pages/XProDemoPage/XProDemoPage.skeleton';
 import type { RouteDefinition } from '@/router';
 
 // SettingsPage 走 React.lazy：调色板编辑器较重，首屏不进入 main bundle。
-// HomePage 保持同步加载（首页常用 + 体积小，lazy 反而引入一次额外的闪烁）。
+// Record / Models 走 lazy：都带有事件订阅与大块列表，首屏用不到。
 //
 // 注意：lazy import 必须从具体子文件 (SettingsPage.tsx) 导入，
 // 不要从 index.ts 走 —— 否则与 App.tsx 静态 import 同 index 合并到主 chunk。
@@ -16,9 +21,19 @@ const SettingsPage = lazy(async () => {
   return { default: mod.SettingsPage };
 });
 
-const XProDemoPage = lazy(async () => {
-  const mod = await import('@/pages/XProDemoPage/XProDemoPage');
-  return { default: mod.XProDemoPage };
+const RecordPage = lazy(async () => {
+  const mod = await import('@/pages/RecordPage/RecordPage');
+  return { default: mod.RecordPage };
+});
+
+const ModelsPage = lazy(async () => {
+  const mod = await import('@/pages/ModelsPage/ModelsPage');
+  return { default: mod.ModelsPage };
+});
+
+const LibraryPage = lazy(async () => {
+  const mod = await import('@/pages/LibraryPage/LibraryPage');
+  return { default: mod.LibraryPage };
 });
 
 // 路由表是唯一事实源：
@@ -31,22 +46,30 @@ const XProDemoPage = lazy(async () => {
 //   label 是兜底字面量（未配置 labelKey 或翻译失败时使用）
 export const routes: RouteDefinition[] = [
   {
-    id: 'home',
-    labelKey: 'route.home',
-    label: 'Home',
-    icon: IconHome,
-    element: <HomePage />,
-    fallback: <HomePageSkeleton />,
+    id: 'record',
+    labelKey: 'route.record',
+    label: 'Record',
+    icon: IconMicrophone,
+    element: <RecordPage />,
+    fallback: <RecordPageSkeleton />,
     slot: 'primary',
-    keepAlive: true,
   },
   {
-    id: 'x-pro-demo',
-    labelKey: 'route.xProDemo',
-    label: 'X-Pro Demo',
-    icon: IconLayoutGrid,
-    element: <XProDemoPage />,
-    fallback: <XProDemoPageSkeleton />,
+    id: 'library',
+    labelKey: 'route.library',
+    label: 'Library',
+    icon: IconLibrary,
+    element: <LibraryPage />,
+    fallback: <LibraryPageSkeleton />,
+    slot: 'primary',
+  },
+  {
+    id: 'models',
+    labelKey: 'route.models',
+    label: 'Models',
+    icon: IconPackage,
+    element: <ModelsPage />,
+    fallback: <ModelsPageSkeleton />,
     slot: 'primary',
   },
   {

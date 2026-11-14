@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client';
 import '@/styles';
 import { App } from './App';
 import { APP_READY_EVENT } from '@/shared/appReady';
+import { installFrontendLogReporter } from '@/shared/frontendLogReporter';
+
+// 调试模式开启时把前端错误转发到后端调试日志（关闭时不发 IPC）。
+installFrontendLogReporter('main');
 
 const container = document.getElementById('root');
 if (!container) {

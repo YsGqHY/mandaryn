@@ -1,5 +1,5 @@
 // 主题系统对外出口。
-//  - registerFoundationThemes()：把内置预设挂到 themeRegistry。App 启动时调用一次。
+//  - registerMandarynThemes()：把内置预设挂到 themeRegistry。App 启动时调用一次。
 //  - 类型 / Provider / Hook 全部从这里导出，组件层不要直接引用子文件。
 import { themeRegistry } from './registry';
 import { lightPreset } from './presets/light';
@@ -8,7 +8,7 @@ import { obsidianPreset } from './presets/obsidian';
 
 let registered = false;
 
-export const registerFoundationThemes = (): void => {
+export const registerMandarynThemes = (): void => {
   if (registered) return;
   themeRegistry.register(lightPreset, { default: true });
   themeRegistry.register(darkPreset);
@@ -22,10 +22,10 @@ export { themeRegistry } from './registry';
 export {
   buildMantineTheme,
   buildCssVariablesResolver,
-  FOUNDATION_CSS_VARS,
+  MANDARYN_CSS_VARS,
 } from './buildMantineTheme';
-export { useFoundationPalette } from './useFoundationPalette';
-export type { FoundationPalette, FoundationThemePreset } from './types';
+export { useMandarynPalette } from './useMandarynPalette';
+export type { MandarynPalette, MandarynThemePreset } from './types';
 export { lightPreset } from './presets/light';
 export { darkPreset } from './presets/dark';
 export { obsidianPreset } from './presets/obsidian';
@@ -40,7 +40,7 @@ export {
   type StoredCustomTheme,
 } from './customTheme';
 export {
-  FoundationThemeProvider,
-  useFoundationTheme,
+  MandarynThemeProvider,
+  useMandarynTheme,
   type ThemeChoice,
 } from './ThemeProvider';

@@ -2,8 +2,8 @@
 set -e
 
 # Build configuration
-APP_NAME="foundation.exe"
-BUNDLE_ID="com.example.foundation"
+APP_NAME="mandaryn"
+BUNDLE_ID="vip.oberon.mandaryn"
 VERSION="2.0.0"
 BUILD_NUMBER="2.0.0"
 BUILD_DIR="build/ios"

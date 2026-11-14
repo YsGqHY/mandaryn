@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, type ReactNode, type WheelEvent, type MouseEvent } from 'react';
 import { AreaChart, LineChart } from '@mantine/charts';
 import type { AreaChartSeries } from '@mantine/charts';
-import { FOUNDATION_CSS_VARS } from '@/styles/themes';
+import { MANDARYN_CSS_VARS } from '@/styles/themes';
 import { useChartColors, useChartsI18n } from '../shared';
 import classes from './ZoomableChart.module.css';
 
@@ -85,8 +85,8 @@ function BrushChart({
     data,
     dataKey,
     series: chartSeries,
-    gridColor: FOUNDATION_CSS_VARS.divider,
-    textColor: FOUNDATION_CSS_VARS.text.secondary,
+    gridColor: MANDARYN_CSS_VARS.divider,
+    textColor: MANDARYN_CSS_VARS.text.secondary,
     withBrush: true,
     brushProps: {
       ...(startIndex !== undefined ? { startIndex } : {}),

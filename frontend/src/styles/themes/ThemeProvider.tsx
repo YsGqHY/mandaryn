@@ -17,17 +17,17 @@ import {
   unregisterCustomTheme,
 } from './customTheme';
 import { themeRegistry } from './registry';
-import type { FoundationThemePreset } from './types';
+import type { MandarynThemePreset } from './types';
 
 // 用户对主题的"选择"：
 // - 'system'：跟随操作系统（prefers-color-scheme）
-// - 其它：具体的 preset name（如 'foundation-light'）
+// - 其它：具体的 preset name（如 'mandaryn-light'）
 export type ThemeChoice = 'system' | (string & {});
 
 interface ThemeContextValue {
-  current: FoundationThemePreset;     // 当前实际生效的预设
+  current: MandarynThemePreset;     // 当前实际生效的预设
   choice: ThemeChoice;                // 用户的选择（含 'system'）
-  available: FoundationThemePreset[]; // 已注册的全部预设
+  available: MandarynThemePreset[]; // 已注册的全部预设
   setChoice: (choice: ThemeChoice) => void;
 }
 
@@ -35,15 +35,15 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 // 跟随系统时使用的 light/dark 预设名。
 // 注册名固定，业务方不应改这两个 id；如要改默认跟随结果，注册新预设并在这里替换。
-const SYSTEM_LIGHT_NAME = 'foundation-light';
-const SYSTEM_DARK_NAME = 'foundation-dark';
+const SYSTEM_LIGHT_NAME = 'mandaryn-light';
+const SYSTEM_DARK_NAME = 'mandaryn-dark';
 
 const matchPrefersDark = (): boolean => {
   if (typeof window === 'undefined' || !window.matchMedia) return false;
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
 };
 
-export interface FoundationThemeProviderProps {
+export interface MandarynThemeProviderProps {
   children: ReactNode;
   // 初始选择；默认 'system'，启动后会被 AppSettingsService 读到的值覆盖
   initialChoice?: ThemeChoice;
@@ -57,7 +57,7 @@ export interface FoundationThemeProviderProps {
 //      - customTheme JSON 校验通过 → hydrate 到 registry
 //      - themeChoice 校验通过 → setChoice
 //   3) 后续 setChoice 同步走后端，写失败不回滚 UI
-export const FoundationThemeProvider = ({ children, initialChoice }: FoundationThemeProviderProps) => {
+export const MandarynThemeProvider = ({ children, initialChoice }: MandarynThemeProviderProps) => {
   const [choice, setChoiceState] = useState<ThemeChoice>(initialChoice ?? 'system');
   const [systemDark, setSystemDark] = useState<boolean>(matchPrefersDark);
   const [version, setVersion] = useState(0);
@@ -122,7 +122,7 @@ export const FoundationThemeProvider = ({ children, initialChoice }: FoundationT
     };
   }, []);
 
-  const preset = useMemo<FoundationThemePreset>(() => {
+  const preset = useMemo<MandarynThemePreset>(() => {
     if (choice === 'system') {
       const target = systemDark ? SYSTEM_DARK_NAME : SYSTEM_LIGHT_NAME;
       return themeRegistry.has(target)
@@ -171,10 +171,10 @@ export const FoundationThemeProvider = ({ children, initialChoice }: FoundationT
   );
 };
 
-export const useFoundationTheme = (): ThemeContextValue => {
+export const useMandarynTheme = (): ThemeContextValue => {
   const ctx = useContext(ThemeContext);
   if (!ctx) {
-    throw new Error('useFoundationTheme must be used inside <FoundationThemeProvider>');
+    throw new Error('useMandarynTheme must be used inside <MandarynThemeProvider>');
   }
   return ctx;
 };

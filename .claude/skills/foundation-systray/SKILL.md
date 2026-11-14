@@ -60,7 +60,7 @@ Foundation 内置一套**注册式系统托盘**方案：左键点击托盘图�
                                ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  托盘面板窗口（Name: "systray-panel"）                         │
-│  systrayEntry.tsx → I18nProvider → FoundationThemeProvider    │
+│  systrayEntry.tsx → I18nProvider → MandarynThemeProvider    │
 │      → SystrayPanel → registry.list() 按 order 渲染模块        │
 │  modules/AppStatus | QuickActions | Notifications | ExitButton│
 └──────────────────────────────────────────────────────────────┘
@@ -169,20 +169,20 @@ const modules = systrayRegistry.list();
 `frontend/src/systrayEntry.tsx`：
 
 ```tsx
-registerFoundationThemes();
-registerFoundationLocales();
+registerMandarynThemes();
+registerMandarynLocales();
 registerSystrayLocales();
 
 const SystrayApp = () => (
   <I18nProvider>
-    <FoundationThemeProvider>
+    <MandarynThemeProvider>
       <SystrayPanel />
-    </FoundationThemeProvider>
+    </MandarynThemeProvider>
   </I18nProvider>
 );
 ```
 
-- `I18nProvider` / `FoundationThemeProvider` 各自从 `AppSettingsService`（SQLite）读取语言与主题，面板与主窗口外观一致（含自定义主题、跟随系统）。
+- `I18nProvider` / `MandarynThemeProvider` 各自从 `AppSettingsService`（SQLite）读取语言与主题，面板与主窗口外观一致（含自定义主题、跟随系统）。
 - 两个 Provider 都订阅 `appsettings:changed`：主窗口切换主题 / 语言后面板实时刷新（详见 `foundation-theme` / `foundation-i18n`）。
 - `systray.html` 内联首帧底色（`--fdn-bg-base`，跟随系统明暗），React mount 后由 Mantine + `--fd-*` 接管。
 
@@ -299,7 +299,7 @@ systray: {
 
 前端入口：
   frontend/systray.html                — 托盘面板 HTML 入口
-  frontend/src/systrayEntry.tsx        — 托盘面板 React 入口（I18nProvider + FoundationThemeProvider）
+  frontend/src/systrayEntry.tsx        — 托盘面板 React 入口（I18nProvider + MandarynThemeProvider）
   frontend/vite.config.ts              — rolldownOptions.input.systray
 
 前端模块系统：

@@ -10,8 +10,8 @@
 
 - HTML 入口：`frontend/index.html`
 - HTML 入口在 `<head>` 首帧前执行一段内联脚本：macOS 上写 `document.documentElement.dataset.platform = 'darwin'`，让启动骨架与 React 标题栏共用同一 `--fd-titlebar-h`（macOS 40px / 其它 36px）
-- TS 入口：`frontend/src/main.tsx`（`import '@/styles'` 引入全局样式 + 创建 React 19 root + 监听 `APP_READY_EVENT` 淡出启动骨架，见「骨架屏与首屏优化」）；子窗口入口 `frontend/child.html` + `src/child.tsx`；托盘面板入口 `frontend/systray.html` + `src/systrayEntry.tsx`。三个入口都挂 `<I18nProvider><FoundationThemeProvider>`，经 `appsettings:changed` 事件保持主题 / 语言同步
-- 应用根：`frontend/src/App.tsx`（注册主题预设 / locale + `<I18nProvider>` + `<FoundationThemeProvider>`（内含 `MantineProvider`）+ `PreferencesProvider` + `RouterProvider` + `AppLayout`）
+- TS 入口：`frontend/src/main.tsx`（`import '@/styles'` 引入全局样式 + 创建 React 19 root + 监听 `APP_READY_EVENT` 淡出启动骨架，见「骨架屏与首屏优化」）；子窗口入口 `frontend/child.html` + `src/child.tsx`；托盘面板入口 `frontend/systray.html` + `src/systrayEntry.tsx`。三个入口都挂 `<I18nProvider><MandarynThemeProvider>`，经 `appsettings:changed` 事件保持主题 / 语言同步
+- 应用根：`frontend/src/App.tsx`（注册主题预设 / locale + `<I18nProvider>` + `<MandarynThemeProvider>`（内含 `MantineProvider`）+ `PreferencesProvider` + `RouterProvider` + `AppLayout`）
 - Vite 配置：`frontend/vite.config.ts`
   - dev server 绑定 `127.0.0.1:9245`（可通过 `WAILS_VITE_PORT` 覆盖）
   - 别名：`@ → src/`、`@bindings → bindings/`
@@ -34,7 +34,7 @@
 | 子窗口 | `ChildWindowService.{open,close,list}` + 事件总线 `broadcast` / `onBroadcast` / `sendToWindow` | `src/services/childwindow/` |
 | 系统托盘 | `SystrayService.{enable,disable,isEnabled,setMenuLabels}`（开关由后端持久化到 preferences `systray.enabled`，启动自动恢复） | `src/services/systray/SystrayService.ts` 包装 `@bindings/foundation/internal/app/systrayservice` |
 | 事件订阅 | `time` 事件 → `useTimeEvent()` | `src/shared/hooks/useTimeEvent.ts` |
-| 事件订阅 | `appsettings:changed`（payload = 字段名）→ `AppSettingsService.onChanged(cb)`，`FoundationThemeProvider`（200ms 防抖）/ `I18nProvider` 据此重拉 | `src/services/appsettings/AppSettingsService.ts` |
+| 事件订阅 | `appsettings:changed`（payload = 字段名）→ `AppSettingsService.onChanged(cb)`，`MandarynThemeProvider`（200ms 防抖）/ `I18nProvider` 据此重拉 | `src/services/appsettings/AppSettingsService.ts` |
 | 布局预设 | `useLayoutPreset()` → `{ preset, presets, setLayout }`；`layoutRegistry.{register,has,list,resolve}`；偏好键 `layout` / `navCollapsed` / `floatDockSide` / `floatDockY` 经 `PreferencesService` 存 SQLite | `src/layouts/` |
 | 应用就绪信号 | `PreferencesProvider` 的 `ready` → `useAppLayout` 调 `signalAppReady()` → `main.tsx` 监听 `APP_READY_EVENT`（`foundation:app-ready`） | `src/shared/appReady.ts` |
 | 窗口控制 | 最小化 / 最大化 / 关闭 | `src/components/TitleBar/useWindowControls.ts` 调用 `Window.Minimise/Maximise/Close` |
@@ -226,17 +226,17 @@ src/routes.tsx            # 路由表（唯一事实源）
 
 
 - 主题系统：`src/styles/themes/`（注册式，唯一事实源；详见 `.claude/skills/foundation-theme/SKILL.md`）。
-  - `types.ts`：`FoundationPalette` 语义槽位（`bg.*` / `text.*` / `divider` / `accent` / `status.*`）
-  - `presets/light.ts`：默认白色预设（`foundation-light`）
-  - `presets/dark.ts`：暗色预设（`foundation-dark`）
-  - `presets/obsidian.ts`：纯黑紫调预设（`foundation-obsidian`）
+  - `types.ts`：`MandarynPalette` 语义槽位（`bg.*` / `text.*` / `divider` / `accent` / `status.*`）
+  - `presets/light.ts`：默认白色预设（`mandaryn-light`）
+  - `presets/dark.ts`：暗色预设（`mandaryn-dark`）
+  - `presets/obsidian.ts`：纯黑紫调预设（`mandaryn-obsidian`）
   - `registry.ts`：单例 `themeRegistry`（`register` / `list` / `subscribe`）
-  - `buildMantineTheme.ts`：preset → Mantine theme 编译器。① `cssVariablesResolver` 把 `FoundationPalette` 注入为 CSS 变量 `--fd-*`；② `accent` 生成 10 级色阶注册为 Mantine 主色 `foundation`（`primaryColor`）；③ Mantine 语义变量（`--mantine-color-body/text/dimmed/default*/error/anchor`）映射到 `--fd-*`；④ 导出 `FOUNDATION_CSS_VARS`（槽位 → `'var(--fd-xxx)'` 字符串对照表）
+  - `buildMantineTheme.ts`：preset → Mantine theme 编译器。① `cssVariablesResolver` 把 `MandarynPalette` 注入为 CSS 变量 `--fd-*`；② `accent` 生成 10 级色阶注册为 Mantine 主色 `foundation`（`primaryColor`）；③ Mantine 语义变量（`--mantine-color-body/text/dimmed/default*/error/anchor`）映射到 `--fd-*`；④ 导出 `MANDARYN_CSS_VARS`（槽位 → `'var(--fd-xxx)'` 字符串对照表）
   - `mantineComponents.module.css`：Mantine 原生组件（Button / ActionIcon / Paper / Card / Popover / Menu / Input / Tooltip）的全局样式覆盖，由 `buildMantineTheme` 经 `classNames` 注入
-  - `useFoundationPalette.ts`：JS 侧读取当前预设的真实色值（仅 canvas / 算透明度等必须拿具体色值的场景）
-  - `ThemeProvider.tsx`：`<FoundationThemeProvider>`（渲染 `MantineProvider`，`forceColorScheme={preset.mode}`）+ `useFoundationTheme()`（运行时切换；mount 时异步从 `AppSettingsService` 拉 themeChoice + customTheme，hydrate 进 registry）
+  - `useMandarynPalette.ts`：JS 侧读取当前预设的真实色值（仅 canvas / 算透明度等必须拿具体色值的场景）
+  - `ThemeProvider.tsx`：`<MandarynThemeProvider>`（渲染 `MantineProvider`，`forceColorScheme={preset.mode}`）+ `useMandarynTheme()`（运行时切换；mount 时异步从 `AppSettingsService` 拉 themeChoice + customTheme，hydrate 进 registry）
   - `customTheme.ts`：用户自定义主题（`foundation-custom`）—— `seedFromPreset` / `previewCustomTheme` / `hydrateCustomTheme` / `unregisterCustomTheme` / `parseStoredCustomTheme`。**持久化已迁到 SQLite**（`appsettings.custom_theme` JSON 字段），不再走 localStorage
-  - `index.ts`：`registerFoundationThemes()` 启动时调用一次（幂等）
+  - `index.ts`：`registerMandarynThemes()` 启动时调用一次（幂等）
   - 预设可选字段 `mantineOverrides`（`MantineThemeOverride`）：对单个预设深合并覆盖 Mantine theme（字号 / 圆角 / 组件 defaultProps），颜色仍只通过 `palette` 表达
 - 全局样式：`src/styles/index.ts`（按序 import `@mantine/core/styles.css` → `@mantine/charts/styles.css` → `mantine-datatable/styles.css` → `global.css`），由 `main.tsx` / `child.tsx` 以 `import '@/styles'` 引入一次；`global.css` 替代原 CssBaseline（body 底色 / 滚动条），颜色只用 `--fd-*`。
 - 用户偏好系统：`src/preferences/`（与主题分离 —— 主题管"配色"，偏好管"行为/显隐"）。`<PreferencesProvider>` + `usePreferences()`，**持久化走 SQLite**（`preferences` 表，每键一行）。mount 时异步拉取，UI 用默认值兜底首屏。
@@ -246,7 +246,7 @@ src/routes.tsx            # 路由表（唯一事实源）
   - `<I18nProvider>` 在 Provider 链最外层；组件用 `useT()` / `useI18n()` 消费
   - localeChoice **走 SQLite**（`appsettings.locale_choice`），'auto' 跟随浏览器 `navigator.languages`
 - **i18n 铁律**：任何"人类可见字符串"必须经 `t('key')` 输出 —— 包括 JSX 文本、`aria-label`、`placeholder`、Tooltip title、按钮文字、错误文案、常量字符串。**禁止**在 `.tsx` / `.ts` 里硬编码中文 / 英文字面量给用户看。新增页面必须配套 `lang/{<code>.ts}`，已有 locale **必须** keys 完全对齐。
-- 颜色铁律：组件样式（`<Name>.module.css`）只能用 `var(--fd-*)`；JS 侧需要引用颜色（`@mantine/charts` 的 `color`、内联 `style`、SVG `fill`）用 `FOUNDATION_CSS_VARS.*`；必须拿真实色值时才用 `useFoundationPalette()`。除 `styles/themes/presets/*.ts` 外禁止硬编码十六进制；Mantine 组件不传 `color` 即走主色 `foundation`，**不要**传内置色名（`color="blue"` 等），状态色用 `var(--fd-danger/success/warning)`。
+- 颜色铁律：组件样式（`<Name>.module.css`）只能用 `var(--fd-*)`；JS 侧需要引用颜色（`@mantine/charts` 的 `color`、内联 `style`、SVG `fill`）用 `MANDARYN_CSS_VARS.*`；必须拿真实色值时才用 `useMandarynPalette()`。除 `styles/themes/presets/*.ts` 外禁止硬编码十六进制；Mantine 组件不传 `color` 即走主色 `foundation`，**不要**传内置色名（`color="blue"` 等），状态色用 `var(--fd-danger/success/warning)`。
 - 组件库铁律：UI 只用 Mantine（`@mantine/core` / `@mantine/hooks`）；图表用 `@mantine/charts`，高级图表（Heatmap / Funnel / Radar / Candlestick / Sankey / Gantt / Treemap / Zoomable）用 `src/components/x-pro/charts`；表格用 `src/components/x-pro/data-grid`（基于 `mantine-datatable`，列定义 `DataGridColumn<T>`）。**禁止**引入 `@mui/*` / `@emotion/*`、`sx` / `styled` 写法、CSS-in-JS。详见 `.claude/skills/foundation-mantine/SKILL.md`（及 `foundation-mantine-components` / `foundation-mantine-icons` / `foundation-mantine-charts` / `foundation-mantine-datatable`）。
 - 圆角规则（**方形圆角设计**）：theme `radius` 刻度为 xs 2 / sm 4 / md 8 / lg 12 / xl 16，`defaultRadius: 'sm'`
   - 按钮 / ActionIcon：Mantine 默认 `radius="sm"`（4px）；自绘按钮 / 列表项写 `border-radius: 6px`
@@ -294,7 +294,7 @@ src/routes.tsx            # 路由表（唯一事实源）
 | 数据库自身的位置 / 大小 | `StorageService.{getStats,setCustomPath,resetPath}` | `storage.json`（独立配置文件，不在 db 里） |
 | 业务数据（消息 / 任务 / 历史 / …） | 业务方在 `internal/storage/models.go` 加 `&YourModel{}` 到 `AllModels`，重启自动建表，写新 service 暴露 | 自定义表 |
 
-**Provider 异步化模式**（`PreferencesProvider` / `FoundationThemeProvider` / `I18nProvider` 均如此）：
+**Provider 异步化模式**（`PreferencesProvider` / `MandarynThemeProvider` / `I18nProvider` 均如此）：
 
 1. 首屏用默认值 / `'auto'` / `'system'` 立即渲染，**不阻塞 UI**
 2. mount `useEffect` 调对应 `XxxService.get()` 异步拉取
@@ -453,7 +453,7 @@ SettingsPage/
   - 串行（`workers: 1`），`locale: 'zh-CN'`，viewport 1280×800 @2x。
   - `e2e/helpers.ts`：`openApp(page)`（等 `#startup-skeleton` 消失 = 偏好已读回）、`chooseLayout(page, label)`（像用户一样经「设置 → 布局」切换预设，写入真实后端）。
   - `e2e/floating-dock.spec.ts`：悬浮 Dock 拖到左上角（红绿灯处）/ 右下角都完整留在内容区内，松手后手柄仍可拖，刷新后位置持久化。
-  - `e2e/screenshots.spec.ts`：`pnpm e2e:screenshots`，用 `sqlite3` CLI 直接写 E2E 库的 `preferences` / `app_settings` 后刷新，确定性地生成 9 种布局 / 设置页 / x-pro / 主题 / 托盘面板 / 子窗口截图到 `docs/screenshots/`（伪装 `navigator.platform = 'Win32'`，标题栏按 Windows 渲染）。
+  - `e2e/screenshots.spec.ts`：`pnpm e2e:screenshots`，用 `sqlite3` CLI 直接写 E2E 库的 `preferences` / `app_settings` 后刷新，确定性地生成 9 种布局 / 设置页 / x-pro / 主题 / 托盘面板 / 子窗口截图（输出到 `docs/screenshots/`，不入库）（伪装 `navigator.platform = 'Win32'`，标题栏按 Windows 渲染）。
   - 产物目录 `frontend/test-results` / `frontend/playwright-report` 与 `.e2e-data` 已 gitignore。
 - 尚无前端单元测试；如需可加 Vitest 覆盖 `use<Page>` ViewModel hook。
 
@@ -492,8 +492,8 @@ frontend/
 ├── bindings/                  # wails3 generate bindings 产物（.gitignore）
 └── src/
     ├── main.tsx               # import '@/styles' + React 19 createRoot + 等 APP_READY_EVENT 淡出启动骨架
-    ├── child.tsx              # 子窗口入口（I18nProvider + FoundationThemeProvider，按 query 路由）
-    ├── systrayEntry.tsx       # 托盘面板入口（I18nProvider + FoundationThemeProvider + SystrayPanel）
+    ├── child.tsx              # 子窗口入口（I18nProvider + MandarynThemeProvider，按 query 路由）
+    ├── systrayEntry.tsx       # 托盘面板入口（I18nProvider + MandarynThemeProvider + SystrayPanel）
     ├── App.tsx                # I18nProvider + ThemeProvider + PreferencesProvider + RouterProvider
     ├── vite-env.d.ts
     ├── routes.tsx             # 路由表（唯一事实源）
@@ -523,9 +523,9 @@ frontend/
     │   ├── global.css         # 全局基础样式（替代 CssBaseline），只用 --fd-*；定义 --fd-titlebar-h
     │   └── themes/                # 注册式主题系统（详见 foundation-theme SKILL）
     │       ├── types.ts
-    │       ├── buildMantineTheme.ts   # preset → Mantine theme + --fd-* CSS 变量 + FOUNDATION_CSS_VARS
+    │       ├── buildMantineTheme.ts   # preset → Mantine theme + --fd-* CSS 变量 + MANDARYN_CSS_VARS
     │       ├── mantineComponents.module.css  # Mantine 原生组件全局覆盖
-    │       ├── useFoundationPalette.ts
+    │       ├── useMandarynPalette.ts
     │       ├── registry.ts
     │       ├── ThemeProvider.tsx
     │       ├── customTheme.ts # 用户自定义主题（foundation-custom）
@@ -583,11 +583,11 @@ frontend/
 
 - 2026-05-28 13:09:44：初始化模块文档（React 18）。
 - 2026-05-28（升级）：升级到 React 19.2.6 + MUI 9.0.1 + TypeScript 6.0.3 + Vite 8.0.14；切换为 TypeScript（strict）；引入 MVVM 规范与 `DEVELOPMENT.md`；新增 `AppLayout` / `TitleBar` / `ServerList` / `ChannelList` 组件；新增 `services/` 与 `shared/` 分层；引入 `@/`、`@bindings/` 别名。
-- 2026-05-28（基座化）：移除 Discord 风格三栏（删除 `ServerList` / `ChannelList`），改为干净的两栏（`Sidebar` + 主内容）；左下角加入 `Settings` 按钮；引入注册式主题系统 `src/styles/themes/`，内置 `foundation-light`（默认白）+ `foundation-dark`，新增 `<FoundationThemeProvider>` 与 `useFoundationTheme()`；按钮统一为方形圆角（`borderRadius: 6`），不再使用圆形；新增 `foundation-theme` SKILL。
+- 2026-05-28（基座化）：移除 Discord 风格三栏（删除 `ServerList` / `ChannelList`），改为干净的两栏（`Sidebar` + 主内容）；左下角加入 `Settings` 按钮；引入注册式主题系统 `src/styles/themes/`，内置 `mandaryn-light`（默认白）+ `mandaryn-dark`，新增 `<MandarynThemeProvider>` 与 `useMandarynTheme()`；按钮统一为方形圆角（`borderRadius: 6`），不再使用圆形；新增 `foundation-theme` SKILL。
 - 2026-05-28（i18n）：新增国际化系统 `src/i18n/`（注册式 + 页面级语言包），内置 `zh-CN`（默认）/ `en-US`；公用文案与页面文案分离（`src/i18n/locales/` 与 `src/pages/<Name>/lang/`），通过 `localeRegistry.extend(code, partial)` 深合并；引入 `<I18nProvider>` / `useT()` / `useI18n()`；TitleBar / Sidebar / HomePage / SettingsPage 全部接入 `t()`；路由表 `RouteDefinition` 增加 `labelKey`；设置页拆出独立的"语言"入口；新增 `foundation-i18n` SKILL，确立"任何人类可见字符串必须走 `t()`"铁律。
 - 2026-05-28（首屏骨架）：新增 `src/components/Skeleton/` 基础骨架组件（`Skeleton` / `SkeletonText`，shimmer 跟随主题）；HomePage / SettingsPage 各自补 `<Name>.skeleton.tsx`；`RouteDefinition` 增加 `fallback`，`RouterOutlet` 包裹 `<Suspense>`；`SettingsPage` 走 `React.lazy` 拆出独立 chunk（约 17KB），主 bundle 减小；`index.html` 内联首屏静态骨架（独立于 `#root`，160ms 淡出），`prefers-color-scheme` 适配明暗，`prefers-reduced-motion` 关闭扫光，消除 webview 启动 → React mount 间的白屏。
-- 2026-05-28（持久化迁移 SQLite）：后端引入 `internal/storage` 模块（modernc/sqlite + GORM AutoMigrate + WAL + 单连接池），暴露 `preferences` / `appsettings` / `storagesvc` 三个 Wails service；前端 `PreferencesProvider` / `FoundationThemeProvider` / `I18nProvider` 全部异步化，**移除 localStorage**，统一改走 `PreferencesService` / `AppSettingsService`；`customTheme` 不再写本地 storage（持久化由 `appsettings.custom_theme` 字段承担）；新增 `NativeDialogs` 服务封装 Wails v3 `Dialogs.*`，**禁止使用浏览器 alert/confirm/prompt**；设置页新增「数据存储」子项，支持原生「另存为」对话框切换数据库路径 + 重置回默认。
+- 2026-05-28（持久化迁移 SQLite）：后端引入 `internal/storage` 模块（modernc/sqlite + GORM AutoMigrate + WAL + 单连接池），暴露 `preferences` / `appsettings` / `storagesvc` 三个 Wails service；前端 `PreferencesProvider` / `MandarynThemeProvider` / `I18nProvider` 全部异步化，**移除 localStorage**，统一改走 `PreferencesService` / `AppSettingsService`；`customTheme` 不再写本地 storage（持久化由 `appsettings.custom_theme` 字段承担）；新增 `NativeDialogs` 服务封装 Wails v3 `Dialogs.*`，**禁止使用浏览器 alert/confirm/prompt**；设置页新增「数据存储」子项，支持原生「另存为」对话框切换数据库路径 + 重置回默认。
 - 2026-05-28（设置页子目录隔离）：`SettingsPage` 重构为「框架 + 子页面」结构 —— `personalization/` / `language/` / `database/` 三个子目录各自独立 `<Sub>.tsx` + `use<Sub>.ts` + `<Sub>.styles.ts` + `lang/`；顶层 `useSettingsPage` 仅管 items + activeItemId；新增子页面遵循同样规范（导出顶层 View + register 函数，文案命名空间 `settings.<sub>.*`）。
 - 2026-05-28（数据可视化 + 表清理 + Icon 规范）：升级 `@mui/x-charts@^9.3.0`；数据存储页新增双图（PieChart 占比 + 横向 BarChart 字节，颜色取自 `theme.palette.foundation.*`），表清单逐项清空（仅对 `Clearable=true` 的表启用，带原生确认对话框）；后端 `internal/storage/models.go` 引入 `ModelDescriptor`（labelKey / clearable），`storagesvc` 新增 `GetTableStats` / `ClearTable`；新增 Icon 规范铁律：禁止 emoji / Unicode / 第三方 icon 包，必须用 `@mui/icons-material` 的 `*Rounded` 系列（与方圆设计语言对齐）。
-- 2026-11-06（UI 库迁移 MUI → Mantine）：`@mui/*` / `@emotion/*` 全部移除，改用 `@mantine/core` 9.7.5 + `@mantine/hooks` + `@mantine/charts`（recharts 3.10.1）+ `mantine-datatable` 9.4.0 + `@tabler/icons-react` 3.50.0；主题编译器 `buildMuiTheme.ts` → `buildMantineTheme.ts`（`FoundationPalette` → CSS 变量 `--fd-*` + 主色 `foundation` 10 级色阶 + Mantine 语义变量映射，`FOUNDATION_CSS_VARS` / `useFoundationPalette()` 供 JS 侧），预设字段 `muiOverrides` → `mantineOverrides`；MVVM Style 文件由 `<Name>.styles.ts`（sx 工厂）改为 `<Name>.module.css`（CSS Modules），颜色一律 `var(--fd-*)`；全局样式 `src/styles/global.css` 经 `import '@/styles'` 引入；Icon 铁律改为 `@tabler/icons-react`；`@wailsio/runtime` 锁定 3.1.0。
+- 2026-11-06（UI 库迁移 MUI → Mantine）：`@mui/*` / `@emotion/*` 全部移除，改用 `@mantine/core` 9.7.5 + `@mantine/hooks` + `@mantine/charts`（recharts 3.10.1）+ `mantine-datatable` 9.4.0 + `@tabler/icons-react` 3.50.0；主题编译器 `buildMuiTheme.ts` → `buildMantineTheme.ts`（`MandarynPalette` → CSS 变量 `--fd-*` + 主色 `foundation` 10 级色阶 + Mantine 语义变量映射，`MANDARYN_CSS_VARS` / `useMandarynPalette()` 供 JS 侧），预设字段 `muiOverrides` → `mantineOverrides`；MVVM Style 文件由 `<Name>.styles.ts`（sx 工厂）改为 `<Name>.module.css`（CSS Modules），颜色一律 `var(--fd-*)`；全局样式 `src/styles/global.css` 经 `import '@/styles'` 引入；Icon 铁律改为 `@tabler/icons-react`；`@wailsio/runtime` 锁定 3.1.0。
 - 2026-11-06（布局系统 + E2E）：新增 `src/layouts/`（布局预设 `nav.variant × nav.placement × frame`，9 个内置，`layoutRegistry.register` 扩展，偏好 `layout` / `navCollapsed` / `floatDockSide` / `floatDockY`）；`AppLayout` 改为 CSS Grid；新增 `components/Navigation`（NavRail / NavSidebar / NavBar / NavDock / NavigationDrawerButton + `useNavigation`），`components/Sidebar` 改为兼容出口；TitleBar 新增 `leading` / `center` 插槽，高度改 `--fd-titlebar-h`（macOS 40px）；设置页新增「布局」子页面；首页改响应式卡片网格 + 「当前布局」卡片；路由 `navigate(id, params?)` + `params`；启动骨架等 `PreferencesProvider.ready` → `signalAppReady`（兜底 1500ms）；新增 Playwright E2E（`pnpm e2e` / `pnpm e2e:screenshots`）。

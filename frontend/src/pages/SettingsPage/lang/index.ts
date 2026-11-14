@@ -5,6 +5,10 @@ import { registerPersonalizationLocales } from '../personalization/lang';
 import { registerLayoutLocales } from '../layout/lang';
 import { registerLanguageLocales } from '../language/lang';
 import { registerDatabaseLocales } from '../database/lang';
+import { registerPerformanceLocales } from '../performance/lang';
+import { registerPrivacyLocales } from '../privacy/lang';
+import { registerHotkeysLocales } from '../hotkeys/lang';
+import { registerAudioLocales } from '../audio/lang';
 
 let registered = false;
 
@@ -19,5 +23,9 @@ export const registerSettingsPageLocales = (): void => {
   registerLayoutLocales();
   registerLanguageLocales();
   registerDatabaseLocales();
+  registerPerformanceLocales();
+  registerPrivacyLocales();
+  registerHotkeysLocales();
+  registerAudioLocales();
   registered = true;
 };

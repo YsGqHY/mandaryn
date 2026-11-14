@@ -5,19 +5,19 @@
 !include "FileFunc.nsh"
 
 !ifndef INFO_PROJECTNAME
-    !define INFO_PROJECTNAME "foundation"
+    !define INFO_PROJECTNAME "mandaryn"
 !endif
 !ifndef INFO_COMPANYNAME
-    !define INFO_COMPANYNAME "My Company"
+    !define INFO_COMPANYNAME "Oberon"
 !endif
 !ifndef INFO_PRODUCTNAME
-    !define INFO_PRODUCTNAME "My Product"
+    !define INFO_PRODUCTNAME "Mandaryn"
 !endif
 !ifndef INFO_PRODUCTVERSION
     !define INFO_PRODUCTVERSION "2.0.0"
 !endif
 !ifndef INFO_COPYRIGHT
-    !define INFO_COPYRIGHT "© 2026, My Company"
+    !define INFO_COPYRIGHT "© 2026, Oberon"
 !endif
 !ifndef PRODUCT_EXECUTABLE
     !define PRODUCT_EXECUTABLE "${INFO_PROJECTNAME}.exe"
@@ -170,7 +170,6 @@ RequestExecutionLevel "${REQUEST_EXECUTION_LEVEL}"
 # Install webview2 by launching the bootstrapper
 # See https://docs.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution#online-only-deployment
 !macro wails.webview2runtime
-    !ifndef WAILS_SKIP_WEBVIEW2
     !ifndef WAILS_INSTALL_WEBVIEW_DETAILPRINT
         !define WAILS_INSTALL_WEBVIEW_DETAILPRINT "Installing: WebView2 Runtime"
     !endif
@@ -202,7 +201,6 @@ RequestExecutionLevel "${REQUEST_EXECUTION_LEVEL}"
     
     SetDetailsPrint both
     ok:
-    !endif
 !macroend
 
 # Copy of APP_ASSOCIATE and APP_UNASSOCIATE macros from here https://gist.github.com/nikku/281d0ef126dbc215dd58bfd5b3a5cd5b

@@ -2,10 +2,12 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
+import { setFrontendLogRoute } from '@/shared/frontendLogReporter';
 import type { RouteDefinition, RouteParams, RouterContextValue } from './types';
 
 const EMPTY_PARAMS: RouteParams = Object.freeze({});
@@ -31,6 +33,11 @@ export const RouterProvider = ({ routes, initialId, children }: RouterProviderPr
   const initial = initialId ? routes.find((r) => r.id === initialId) ?? fallback : fallback;
   const [activeId, setActiveId] = useState<string>(initial.id);
   const [params, setParams] = useState<RouteParams>(EMPTY_PARAMS);
+
+  // 调试模式的前端上报带上「当前在哪个页面」。
+  useEffect(() => {
+    setFrontendLogRoute(activeId);
+  }, [activeId]);
 
   const navigate = useCallback(
     (id: string, nextParams?: RouteParams): void => {

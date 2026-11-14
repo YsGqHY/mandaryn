@@ -1,0 +1,411 @@
+/* SpeakersSidebar：会话详情里的「说话人 / 角色」侧栏。
+   颜色一律 var(--fd-*)，不出现十六进制；角色配色令牌（role-1..8 / neutral / accent）
+   在这里集中映射到主题语义色 —— 后端只存令牌，取色永远发生在前端样式层。 */
+
+.root {
+  width: 360px;
+  flex-shrink: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--fd-divider);
+  background-color: var(--fd-bg-sidebar);
+  overflow: hidden;
+}
+
+/* —— 头部 —— */
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--fd-divider);
+}
+
+.headerTitleGroup {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.headerIcon {
+  color: var(--fd-text-muted);
+  display: inline-flex;
+  padding-top: 2px;
+}
+
+.headerText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--fd-text-primary);
+}
+
+.sessionTitle {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fd-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+/* —— 主体 —— */
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.subtitle {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-text-secondary);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.cardTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cardIcon {
+  color: var(--fd-text-muted);
+  display: inline-flex;
+}
+
+.cardTitle {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--fd-text-primary);
+}
+
+.cardHint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-text-muted);
+}
+
+/* —— 分离结果 —— */
+.resultBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--fd-success);
+  border-radius: 6px;
+  background-color: var(--fd-bg-base);
+}
+
+.resultTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fd-success);
+}
+
+.resultLine {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-text-secondary);
+  word-break: break-word;
+}
+
+/* Mantine Alert 配色全部走 --alert-* 变量：不传内置色名，只把变量指向主题语义色。
+   重复类名提高权重（Mantine 基础类同为单一 class）。 */
+.warnAlert.warnAlert {
+  --alert-radius: 6px;
+  --alert-bg: var(--fd-bg-base);
+  --alert-bd: 1px solid var(--fd-warning);
+  --alert-color: var(--fd-text-primary);
+  padding: 10px 12px;
+}
+
+.warnIcon {
+  color: var(--fd-warning);
+}
+
+.alertLine {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-text-secondary);
+}
+
+/* —— 已识别说话人 —— */
+.cardHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sectionTitle {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.6;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--fd-text-muted);
+}
+
+.loadingRow {
+  padding: 8px 0;
+}
+
+.emptyHint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-text-muted);
+}
+
+.rowList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.speakerRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--fd-divider);
+  border-radius: 6px;
+  background-color: var(--fd-bg-base);
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.speakerRow:hover {
+  background-color: var(--fd-bg-hover);
+}
+
+.speakerMain {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.speakerTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.speakerName {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--fd-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.speakerMeta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--fd-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.speakerActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* —— 角色配色圆点：后端令牌 → 主题语义色（不引入任何色值字面量） —— */
+.roleDot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 2px;
+  background-color: var(--role-color, var(--fd-text-muted));
+}
+
+.roleDot[data-token='role-1'] {
+  --role-color: var(--fd-accent);
+}
+
+.roleDot[data-token='role-2'] {
+  --role-color: var(--fd-success);
+}
+
+.roleDot[data-token='role-3'] {
+  --role-color: var(--fd-warning);
+}
+
+.roleDot[data-token='role-4'] {
+  --role-color: var(--fd-danger);
+}
+
+.roleDot[data-token='role-5'] {
+  --role-color: color-mix(in srgb, var(--fd-accent) 55%, var(--fd-success));
+}
+
+.roleDot[data-token='role-6'] {
+  --role-color: color-mix(in srgb, var(--fd-accent) 55%, var(--fd-warning));
+}
+
+.roleDot[data-token='role-7'] {
+  --role-color: color-mix(in srgb, var(--fd-accent) 50%, var(--fd-danger));
+}
+
+.roleDot[data-token='role-8'] {
+  --role-color: color-mix(in srgb, var(--fd-success) 55%, var(--fd-warning));
+}
+
+.roleDot[data-token='accent'] {
+  --role-color: var(--fd-accent);
+}
+
+.roleDot[data-token='neutral'] {
+  --role-color: var(--fd-text-muted);
+}
+
+/* —— 内联改名 —— */
+.renameRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.renameInput {
+  flex: 1;
+  min-width: 0;
+}
+
+/* —— 未识别块（视觉上与普通角色区分：虚线边框 + 中性底色） —— */
+.unidentifiedBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px dashed var(--fd-divider);
+  border-radius: 6px;
+  background-color: var(--fd-bg-elevated);
+}
+
+.unidentifiedTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.unidentifiedIcon {
+  color: var(--fd-text-muted);
+  display: inline-flex;
+}
+
+.mutedChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--fd-divider);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--fd-text-muted);
+  white-space: nowrap;
+}
+
+/* —— 错误提示 —— */
+.errorRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.error {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-danger);
+  word-break: break-word;
+}
+
+/* —— 弹窗 —— */
+.modalBody {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fd-text-secondary);
+}
+
+.modalWarn {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-warning);
+}
+
+.modalHint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-text-muted);
+}
+
+/* —— 拆分片段列表 —— */
+.segmentList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 4px;
+}
+
+.segmentLabel {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.segmentClock {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fd-text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.segmentText {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fd-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

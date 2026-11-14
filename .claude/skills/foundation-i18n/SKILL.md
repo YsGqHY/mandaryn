@@ -28,7 +28,7 @@ src/i18n/
 ├── locales/
 │   ├── zh-CN.ts         # 公用中文（app / sidebar / titleBar / route / common）
 │   └── en-US.ts         # 公用英文
-└── index.ts             # 出口（含 registerFoundationLocales 启动函数）
+└── index.ts             # 出口（含 registerMandarynLocales 启动函数）
 
 src/pages/<Name>/lang/    ← 页面级语言包
 ├── zh-CN.ts             # export const xxxZhCN: Messages = { home: { ... } }
@@ -45,13 +45,13 @@ src/pages/<Name>/lang/    ← 页面级语言包
 ```tsx
 import { registerDataGridLocales } from '@/components/x-pro/data-grid/lang';
 import { registerXProChartsLocales } from '@/components/x-pro/charts/lang';
-import { I18nProvider, registerFoundationLocales } from '@/i18n';
+import { I18nProvider, registerMandarynLocales } from '@/i18n';
 import { registerHomePageLocales } from '@/pages/HomePage/lang';
 import { registerXProDemoPageLocales } from '@/pages/XProDemoPage/lang';
 import { registerSettingsPageLocales } from '@/pages/SettingsPage/lang';
 
 // 1) 公用 locale 必须先就位（页面级 extend 的目标）
-registerFoundationLocales();
+registerMandarynLocales();
 // 2) 各页面 / 组件把自己的命名空间合并上去
 registerHomePageLocales();
 registerXProDemoPageLocales();
@@ -72,7 +72,7 @@ export const App = () => (
 
 | 注册函数 | 位置 | 命名空间 | 注册点 |
 |------|------|------|------|
-| `registerFoundationLocales` | `src/i18n/` | `app.*`（含 `app.trayMenu.*`）/ `sidebar.*` / `titleBar.*` / `route.*` / `common.*` | 三个入口（`App.tsx` / `child.tsx` / `systrayEntry.tsx`） |
+| `registerMandarynLocales` | `src/i18n/` | `app.*`（含 `app.trayMenu.*`）/ `sidebar.*` / `titleBar.*` / `route.*` / `common.*` | 三个入口（`App.tsx` / `child.tsx` / `systrayEntry.tsx`） |
 | `registerHomePageLocales` | `pages/HomePage/lang` | `home.*` | `App.tsx` |
 | `registerXProDemoPageLocales` | `pages/XProDemoPage/lang` | x-pro 演示页 | `App.tsx` |
 | `registerSettingsPageLocales` | `pages/SettingsPage/lang` | `settings.*`（内部再注册 personalization / language / database 子页） | `App.tsx` |
@@ -196,7 +196,7 @@ export const jaJP: Locale = {
   messages: { /* keys 与 zh-CN 对齐 */ },
 };
 
-// 在 registerFoundationLocales 之外注册（不要改这个函数）
+// 在 registerMandarynLocales 之外注册（不要改这个函数）
 import { localeRegistry, jaJP } from '@/i18n';
 localeRegistry.register(jaJP);
 // 各页面也要补 ja-JP.ts 并 extend
@@ -312,7 +312,7 @@ const DEFAULT_RESULT = 'Please enter your name and tap Greet 👇'; // ← 应�
 i18n 与主题（`src/styles/themes/`）**互不依赖**：
 
 - `<I18nProvider>` 在最外层（任何子树都可能用到 `t`）；
-- `<FoundationThemeProvider>` 紧随其后；
+- `<MandarynThemeProvider>` 紧随其后；
 - 主题切换不影响文案；语言切换不影响配色。
 
 设置页的「主题」section 卡片名（"明亮" / "黑暗" / "黑曜"）走 `settings.themes.<key>.label`，由 SettingsPage 的语言包提供，与主题系统的 `preset.label` 解耦。

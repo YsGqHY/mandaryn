@@ -69,7 +69,7 @@ Foundation 内置一套**类型化子窗口**方案，用于需要独立窗口�
 
 子窗口特征：
 - 无边框（`Frameless: true`）+ 前端自绘标题栏（`ChildTitleBar`，32px）
-- 主题 / 语言：`child.tsx` 与主窗口一样挂 `<I18nProvider><FoundationThemeProvider>…`（先 `registerFoundationThemes()` + `registerFoundationLocales()`），启动时从 SQLite（`AppSettingsService`）读主题与语言，外观与主窗口一致（含自定义主题、跟随系统）；全局样式经 `import '@/styles'` 引入
+- 主题 / 语言：`child.tsx` 与主窗口一样挂 `<I18nProvider><MandarynThemeProvider>…`（先 `registerMandarynThemes()` + `registerMandarynLocales()`），启动时从 SQLite（`AppSettingsService`）读主题与语言，外观与主窗口一致（含自定义主题、跟随系统）；全局样式经 `import '@/styles'` 引入
 - 跨窗口同步：两个 Provider 都订阅后端广播 `appsettings:changed`，主窗口切主题 / 语言后已打开的子窗口实时刷新（主题 200ms 防抖），无需自己发 broadcast
 - AlwaysOnTop + DisableResize + 居中显示
 - ID 格式：`child-<type>-<number>`（如 `child-confirm-1`）
@@ -393,7 +393,7 @@ type ChildWindowOptions struct {
 
 2. **blank 类型扩展**：blank 窗口的 `message` 字段可传 JSON 字符串，子窗口 ViewModel 解析后渲染自定义内容。
 
-3. **主题 / 语言同步**：已内置，不要再用 `broadcast` 下发主题。`child.tsx` 挂的 `FoundationThemeProvider` / `I18nProvider` 订阅 `appsettings:changed`（后端 `appsettings` setter 写库成功后对所有窗口 Emit，payload 为字段名 `themeChoice` / `customTheme` / `localeChoice`），各自重新 `AppSettingsService.get()`。也**不要**在子窗口里直接挂 `<MantineProvider>` 固定某个预设。
+3. **主题 / 语言同步**：已内置，不要再用 `broadcast` 下发主题。`child.tsx` 挂的 `MandarynThemeProvider` / `I18nProvider` 订阅 `appsettings:changed`（后端 `appsettings` setter 写库成功后对所有窗口 Emit，payload 为字段名 `themeChoice` / `customTheme` / `localeChoice`），各自重新 `AppSettingsService.get()`。也**不要**在子窗口里直接挂 `<MantineProvider>` 固定某个预设。
 
 4. **生命周期感知**：在 ViewModel 中用 `onChildClosed` 清理关联资源，避免对已关闭窗口发消息。
 

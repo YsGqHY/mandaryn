@@ -1,0 +1,411 @@
+/* ModelsPage：仓库概览 + 已装列表 + 可下载列表（含下载进度）+ 模型目录迁移。
+   颜色一律 var(--fd-*)，不出现十六进制字面量。 */
+
+.root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--fd-bg-content);
+  overflow: hidden;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 32px 40px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--fd-text-muted);
+}
+
+.title {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--fd-text-primary);
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--fd-text-secondary);
+  max-width: 860px;
+}
+
+/* —— 卡片外壳：背景 / 边框 / 圆角 / 内边距交给 Mantine Paper —— */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cardTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--fd-text-primary);
+}
+
+.cardHint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-text-muted);
+}
+
+.cardIcon {
+  color: var(--fd-text-muted);
+  display: inline-flex;
+}
+
+/* —— 仓库概览 —— */
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.statItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.statLabel {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fd-text-muted);
+}
+
+.statValue {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--fd-text-primary);
+  /* 路径可能很长：允许换行，不撑破卡片 */
+  word-break: break-all;
+}
+
+.actionsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* —— 列表行 —— */
+.rowList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px;
+  border: 1px solid var(--fd-divider);
+  border-radius: 6px;
+  background-color: var(--fd-bg-base);
+  min-width: 0;
+}
+
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.rowTitleLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.rowName {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--fd-text-primary);
+  word-break: break-word;
+}
+
+.rowMetaLine {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fd-text-secondary);
+}
+
+.rowBadges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* —— 下载进度区 —— */
+.progressBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  width: 100%;
+}
+
+/* Mantine Progress 的轨道 / 进度条颜色都走 CSS 变量，这里只指向主题语义色。
+   轨道规则里带 :where()（权重 0），单一 class 即可覆盖；进度条同理。 */
+.progressRoot {
+  background-color: var(--fd-bg-elevated);
+  border-radius: 4px;
+}
+
+.progressSection {
+  --progress-section-color: var(--fd-accent);
+  border-radius: 4px;
+}
+
+/* 暂停 / 失败时把进度条换成语义警示色（源顺序在 .progressSection 之后即可生效） */
+.progressWarning {
+  --progress-section-color: var(--fd-warning);
+}
+
+.progressDanger {
+  --progress-section-color: var(--fd-danger);
+}
+
+.progressStats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fd-text-secondary);
+}
+
+.progressState {
+  font-weight: 600;
+  color: var(--fd-text-primary);
+}
+
+.progressError {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fd-danger);
+  word-break: break-word;
+}
+
+/* —— 语义状态 chip（自绘 span，避免给 Mantine Badge 传内置色名） —— */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--fd-divider);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--fd-text-secondary);
+  white-space: nowrap;
+}
+
+.chip[data-tone='success'] {
+  color: var(--fd-success);
+  border-color: var(--fd-success);
+}
+
+.chip[data-tone='warning'] {
+  color: var(--fd-warning);
+  border-color: var(--fd-warning);
+}
+
+.chip[data-tone='danger'] {
+  color: var(--fd-danger);
+  border-color: var(--fd-danger);
+}
+
+.chip[data-tone='accent'] {
+  color: var(--fd-accent);
+  border-color: var(--fd-accent);
+}
+
+.chip[data-tone='muted'] {
+  color: var(--fd-text-muted);
+  border-color: var(--fd-divider);
+}
+
+/* —— 迁移进度 —— */
+.migrateNotice {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-warning);
+}
+
+/* —— 错误提示 —— */
+.errorRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.error {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fd-danger);
+}
+
+.emptyBlock {
+  padding: 8px 2px;
+}
+
+/* —— 生效路径与来源 —— */
+.pathBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--fd-divider);
+  border-radius: 6px;
+  background-color: var(--fd-bg-base);
+  min-width: 0;
+}
+
+.pathValue {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--fd-text-primary);
+  word-break: break-all;
+}
+
+/* 暂存值：受管期间的「等待生效」路径，用警示色提示还没生效 */
+.pendingNotice {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-warning);
+  word-break: break-all;
+}
+
+/* 高优先级路径不可用 → 回退，必须可见 */
+.fallbackNotice {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-warning);
+  word-break: break-all;
+}
+
+.hintBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--fd-divider);
+}
+
+/* 解除接管的命令：等宽字体 + 允许换行，便于核对与全选复制 */
+.monoHint {
+  font-family: var(--mantine-font-family-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-text-secondary);
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+/* —— 迁移计划卡片 —— */
+.planBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--fd-accent);
+  border-radius: 6px;
+  background-color: var(--fd-bg-base);
+  min-width: 0;
+}
+
+.planIcon {
+  color: var(--fd-accent);
+}
+
+.planTitle {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--fd-text-primary);
+}
+
+.planGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.planValue {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fd-text-primary);
+  word-break: break-all;
+}
+
+/* 迁移终态文案：成功用语义绿，取消用警示黄 */
+.progressSuccessText {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-success);
+}
+
+.progressWarningText {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-warning);
+}

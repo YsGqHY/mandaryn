@@ -7,7 +7,7 @@ description: Foundation 升级 Wails v3 版本的标准作业流程（SOP）。�
 
 把「Foundation 跟进 Wails v3 新版本」这件事固化成可复制流程。**每次升级重新拉取参考源码**（用完即删，不常驻仓库）。
 
-> 本 SOP 由 2026-08-17 `alpha.96 → beta.9` 那次升级沉淀而来。具体某次升级的结论记在项目 `CLAUDE.md` 变更记录 + memory，不写进本 SOP —— 本文件只留**流程**。
+> 本 SOP 由 2026-08-17 `alpha.96 → beta.9` 那次升级沉淀而来。具体某次升级的结论记在 `docs/CHANGELOG.md` + memory，不写进本 SOP —— 本文件只留**流程**。
 
 ---
 
@@ -212,7 +212,7 @@ git push origin master && git push origin v<X.Y.Z>
 gh release create v<X.Y.Z> --title "..." --notes-file <notes> --verify-tag
 gh release view v<X.Y.Z>     # 确认 draft:false prerelease:false，notes 正确
 ```
-提交前更新 `CLAUDE.md` 变更记录追加本次升级条目；发版后 `rm -rf` §1 的克隆。
+提交前在 `docs/CHANGELOG.md` 追加本次升级条目；发版后 `rm -rf` §1 的克隆。
 
 ---
 
@@ -227,6 +227,6 @@ gh release view v<X.Y.Z>     # 确认 draft:false prerelease:false，notes 正�
 6. 发布是外发动作，版本号/范围**先问用户**再动手。
 
 ## 关联
-- 本次具体结论 → 项目 `CLAUDE.md` 变更记录 + memory `wails-3.1-mantine` / `wails-beta9-upgrade`
+- 本次具体结论 → `docs/CHANGELOG.md` + memory `wails-3.1-mantine` / `wails-beta9-upgrade`
 - Wails 各主题知识库 → `wails-*` skill（见 `.claude/skills/INDEX.md`）
 - 网络代理坑详情 → memory `go-proxy-workaround`

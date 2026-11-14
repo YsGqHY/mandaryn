@@ -27,8 +27,9 @@ tasks:
           OBFUSCATED: '{{.OBFUSCATED}}'
           GARBLE_ARGS: '{{.GARBLE_ARGS}}'
     vars:
-      # Default to CGO_ENABLED=0 if not explicitly set
-      CGO_ENABLED: '{{.CGO_ENABLED | default "0"}}'
+      # CGO 是既定基线（docs/ARCHITECTURE.md ADR-01）：本地推理（sherpa-onnx）与
+      # Windows 音频捕获都依赖 CGO，因此默认 1。纯在线精简产物（nollm）才显式传 0。
+      CGO_ENABLED: '{{.CGO_ENABLED | default "1"}}'
 
   build:native:
     summary: Builds the application using native Go cross-compilation
@@ -51,17 +52,82 @@ tasks:
       - task: generate:syso
         vars:
           ARCH: '{{.ARCH}}'
-      - '{{if eq .OBFUSCATED "true"}}garble {{.GARBLE_ARGS}} build{{else}}go build{{end}} {{.BUILD_FLAGS}} -o "{{.BIN_DIR}}/{{.APP_NAME}}.exe"'
+      - '{{if eq .OBFUSCATED "true"}}garble {{.GARBLE_ARGS}} build{{else}}go build{{end}} {{.BUILD_FLAGS}} -o "{{.BIN_DIR}}/{{.BIN_NAME}}.exe"'
+      - task: copy:runtime:dlls
+        vars:
+          CGO_ENABLED: '{{.CGO_ENABLED | default "1"}}'
       - cmd: powershell Remove-item *.syso
         platforms: [windows]
       - cmd: rm -f *.syso
         platforms: [linux, darwin]
     vars:
       BUILD_FLAGS: '{{if eq .DEV "true"}}{{if or .EXTRA_TAGS (eq .OBFUSCATED "true")}}-tags {{if eq .OBFUSCATED "true"}}wails_obfuscated{{if .EXTRA_TAGS}},{{end}}{{end}}{{.EXTRA_TAGS}} {{end}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui"{{end}}'
+      # 产物名：默认就是 APP_NAME（`bin/mandaryn.exe`），只有派生变体（nollm）才覆盖，
+      # 这样变体与标准产物不会互相覆盖，标准构建的输出路径与命名保持不变。
+      DEFAULT_BIN_NAME: '{{.APP_NAME}}'
+      BIN_NAME: '{{.BIN_NAME | default .DEFAULT_BIN_NAME}}'
     env:
       GOOS: windows
-      CGO_ENABLED: '{{.CGO_ENABLED | default "0"}}'
+      CGO_ENABLED: '{{.CGO_ENABLED | default "1"}}'
       GOARCH: '{{.ARCH | default ARCH}}'
+
+  copy:runtime:dlls:
+    summary: 把 CGO 运行时 DLL（sherpa-onnx / onnxruntime）拷到产物目录
+    internal: true
+    desc: |
+      sherpa-onnx-go-windows 只提供导入库，运行时需要 3 个 DLL 与 exe 同目录：
+      sherpa-onnx-c-api.dll / sherpa-onnx-cxx-api.dll / onnxruntime.dll。
+      不拷贝会表现为「双击无反应」或 exit 127（无任何输出）。
+
+      `CGO_ENABLED=0`（nollm 精简产物）不链接 sherpa-onnx，因而不需要这些 DLL，
+      本任务直接跳过，避免在 bin/ 里留下一堆产物根本用不到的库。
+    vars:
+      CGO_ENABLED: '{{.CGO_ENABLED | default "1"}}'
+    cmds:
+      - cmd: |
+          set -e
+          if [ "{{.CGO_ENABLED}}" = "0" ]; then
+            echo "CGO_ENABLED=0（nollm 精简产物）：不链接 sherpa-onnx，跳过运行时 DLL 拷贝"
+            exit 0
+          fi
+          MODCACHE="$(go env GOMODCACHE)"
+          DEST="{{.BIN_DIR}}"
+          mkdir -p "$DEST"
+          found=0
+          for d in "$MODCACHE"/github.com/k2-fsa/sherpa-onnx-go-windows@*/lib/x86_64-pc-windows-gnu; do
+            if [ -d "$d" ]; then
+              cp -f "$d"/*.dll "$DEST"/ && found=1
+            fi
+          done
+          if [ "$found" = "1" ]; then
+            echo "CGO 运行时 DLL 已拷贝到 $DEST"
+          else
+            echo "警告：未找到 sherpa-onnx 运行时 DLL（未引入该依赖时可忽略）"
+          fi
+        platforms: [windows]
+
+  build:nollm:
+    summary: 构建 nollm 精简产物（仅在线引擎，不含本地推理）
+    desc: |
+      与 `build` 同一条 `go build` 命令**派生**，只差两处：
+        - `EXTRA_TAGS` 追加 `nollm`：`internal/asr/local` 与 `internal/speaker/sherpa`
+          的 sherpa-onnx 实现被 `//go:build !nollm` 排除，改链恒失败桩
+          （返回 ERR_LOCAL_UNAVAILABLE，不静默降级去调在线引擎）；
+        - `CGO_ENABLED=0`：不链接 sherpa-onnx / onnxruntime，也不需要那 3 个运行时 DLL。
+      产物是 `bin/mandaryn-nollm.exe`，与标准产物 `bin/mandaryn.exe` 互不覆盖。
+
+      **nollm 是体积敏感场景的可选产物，不是 CGO 兜底**（ADR-01）：
+      它在没有本地推理的情况下就是不可用，不得用它去绕过任何构建问题。
+    cmds:
+      - task: build:native
+        vars:
+          ARCH: '{{.ARCH}}'
+          DEV: '{{.DEV}}'
+          OBFUSCATED: '{{.OBFUSCATED}}'
+          GARBLE_ARGS: '{{.GARBLE_ARGS}}'
+          CGO_ENABLED: "0"
+          BIN_NAME: "{{.APP_NAME}}-nollm"
+          EXTRA_TAGS: '{{if .EXTRA_TAGS}}{{.EXTRA_TAGS}},{{end}}nollm'
 
   build:docker:
     summary: Cross-compiles for Windows using Docker with Zig (for CGO builds on non-Windows)

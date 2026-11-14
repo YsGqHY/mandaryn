@@ -1,4 +1,4 @@
-import type { FoundationThemePreset } from '../types';
+import type { MandarynThemePreset } from '../types';
 
 // 明亮主题：偏纯白画布 + 可见的按钮底色。
 // 设计目标：
@@ -6,8 +6,8 @@ import type { FoundationThemePreset } from '../types';
 //  - 按钮 / 输入框 / 卡片使用 bg.elevated（#eef1f6）默认就能看出底色
 //  - sidebar 用 #f6f7fa 与 content 拉开一级层级
 //  - 圆角弱化由 buildMantineTheme 统一控制（borderRadius: 4）
-export const lightPreset: FoundationThemePreset = {
-  name: 'foundation-light',
+export const lightPreset: MandarynThemePreset = {
+  name: 'mandaryn-light',
   label: 'Light',
   mode: 'light',
   palette: {

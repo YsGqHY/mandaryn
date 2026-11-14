@@ -1,21 +1,24 @@
 import { createRoot } from 'react-dom/client';
 import '@/styles';
-import { I18nProvider, registerFoundationLocales } from '@/i18n';
-import { FoundationThemeProvider, registerFoundationThemes } from '@/styles/themes';
+import { I18nProvider, registerMandarynLocales } from '@/i18n';
+import { MandarynThemeProvider, registerMandarynThemes } from '@/styles/themes';
 import { getChildWindowParams } from '@/services/childwindow';
 import { ConfirmWindow, registerConfirmWindowLocales } from '@/childwindows/ConfirmWindow';
 import { MessageWindow, registerMessageWindowLocales } from '@/childwindows/MessageWindow';
 import { BlankWindow, registerBlankWindowLocales } from '@/childwindows/BlankWindow';
+import { installFrontendLogReporter } from '@/shared/frontendLogReporter';
 
-registerFoundationThemes();
-registerFoundationLocales();
+installFrontendLogReporter('child');
+
+registerMandarynThemes();
+registerMandarynLocales();
 registerConfirmWindowLocales();
 registerMessageWindowLocales();
 registerBlankWindowLocales();
 
 const params = getChildWindowParams();
 
-// 子窗口与主窗口共用 FoundationThemeProvider：启动时从 SQLite 读主题选择，
+// 子窗口与主窗口共用 MandarynThemeProvider：启动时从 SQLite 读主题选择，
 // 并订阅 appsettings:changed，主窗口切主题时同步刷新。
 
 function ChildApp() {
@@ -34,9 +37,9 @@ function ChildApp() {
 
   return (
     <I18nProvider>
-      <FoundationThemeProvider>
+      <MandarynThemeProvider>
         {content}
-      </FoundationThemeProvider>
+      </MandarynThemeProvider>
     </I18nProvider>
   );
 }

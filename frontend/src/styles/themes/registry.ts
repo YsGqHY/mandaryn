@@ -1,12 +1,12 @@
-import type { FoundationThemePreset } from './types';
+import type { MandarynThemePreset } from './types';
 
 // 主题注册中心：单例。运行时所有可用主题都从这里取。
 class ThemeRegistry {
-  private presets = new Map<string, FoundationThemePreset>();
+  private presets = new Map<string, MandarynThemePreset>();
   private defaultName: string | null = null;
   private listeners = new Set<() => void>();
 
-  register(preset: FoundationThemePreset, options: { default?: boolean } = {}): void {
+  register(preset: MandarynThemePreset, options: { default?: boolean } = {}): void {
     this.presets.set(preset.name, preset);
     if (options.default || this.defaultName === null) {
       this.defaultName = preset.name;
@@ -22,7 +22,7 @@ class ThemeRegistry {
     this.listeners.forEach((fn) => fn());
   }
 
-  get(name: string): FoundationThemePreset {
+  get(name: string): MandarynThemePreset {
     const preset = this.presets.get(name);
     if (!preset) {
       throw new Error(`Theme preset "${name}" is not registered`);
@@ -34,7 +34,7 @@ class ThemeRegistry {
     return this.presets.has(name);
   }
 
-  list(): FoundationThemePreset[] {
+  list(): MandarynThemePreset[] {
     return [...this.presets.values()];
   }
 

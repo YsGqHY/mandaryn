@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { SankeyChart as MantineSankeyChart, type SankeyChartData } from '@mantine/charts';
-import { FOUNDATION_CSS_VARS } from '@/styles/themes';
+import { MANDARYN_CSS_VARS } from '@/styles/themes';
 import { useChartColors, useChartsI18n } from '../shared';
 
 interface SankeyNode {
@@ -62,7 +62,7 @@ export function SankeyChart({
       nodeWidth={nodeWidth}
       nodePadding={nodePadding}
       linkOpacity={0.35}
-      textColor={FOUNDATION_CSS_VARS.text.primary}
+      textColor={MANDARYN_CSS_VARS.text.primary}
     />
   );
 }

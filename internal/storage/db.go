@@ -84,6 +84,18 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("storage: ensure singleton settings: %w", err)
 	}
 
+	// 一次性数据迁移钩子（幂等，见 migrations.go）。
+	if err := runMigrations(gdb); err != nil {
+		_ = sqlDB.Close()
+		return nil, fmt.Errorf("storage: run migrations: %w", err)
+	}
+
+	// FTS5 虚表与触发器（AutoMigrate 建不了）。失败只降级，不阻断启动。
+	if err := ensureFTS(gdb); err != nil {
+		_ = sqlDB.Close()
+		return nil, fmt.Errorf("storage: ensure fts: %w", err)
+	}
+
 	if err := IntegrityCheck(gdb); err != nil {
 		_ = sqlDB.Close()
 		return nil, fmt.Errorf("storage: integrity check: %w", err)

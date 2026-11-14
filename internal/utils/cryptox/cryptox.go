@@ -27,6 +27,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+
+	"vip.oberon.mandaryn/internal/paths"
 )
 
 // version1 标志当前编码格式；将来换密钥派生 / 算法时递增。
@@ -37,18 +39,44 @@ const (
 	nonceSize = 12 // GCM 推荐
 )
 
-// AppDirName 应与 internal/storage.AppDirName 保持一致；这里独立常量
-// 避免 cryptox → storage 的反向依赖。改业务名时同步两处。
-const AppDirName = "Foundation"
+// AppDirName 与应用标识保持一致（唯一来源 internal/paths）。
+// 这里 re-export 而不是重复字面量：三处（storage/cryptox/logx）不同步会出现
+// 「数据库在新目录、密钥在旧目录」的故障（ARCH §10.1）。
+const AppDirName = paths.AppDirName
 
 // MasterKeyFileName 主密钥文件；与数据库默认目录平级。
-const MasterKeyFileName = ".master.key"
+const MasterKeyFileName = paths.MasterKeyFileName
 
 var (
 	keyOnce sync.Once
 	keyVal  []byte
 	keyErr  error
+
+	// baseDir 由 SetBaseDir 注入（app 启动时用 paths.Resolver 的结果调一次）。
+	// 为空时回退到平台默认目录，保证工具层被单独使用时也能工作。
+	baseDirMu sync.RWMutex
+	baseDir   string
 )
+
+// SetBaseDir 指定主密钥所在目录（通常是解析后的 dataRoot）。
+//
+// 必须在**首次加解密之前**调用；之后再调用会被忽略并返回 error，
+// 以避免「同一进程里密钥目录忽然换了，导致新旧密文无法互解」。
+func SetBaseDir(dir string) error {
+	baseDirMu.Lock()
+	defer baseDirMu.Unlock()
+	if keyVal != nil {
+		return errors.New("cryptox: SetBaseDir must be called before first use")
+	}
+	baseDir = dir
+	return nil
+}
+
+func currentBaseDir() string {
+	baseDirMu.RLock()
+	defer baseDirMu.RUnlock()
+	return baseDir
+}
 
 // loadOrCreateKey 读 / 生成主密钥；并发安全（sync.Once）。
 //
@@ -88,8 +116,13 @@ func loadOrCreateKey() ([]byte, error) {
 }
 
 func masterKeyDir() (string, error) {
-	// 与 storage.DataDirEnv 一致：设置后主密钥放在该目录（E2E / 便携版隔离）
-	if v := os.Getenv("FOUNDATION_DATA_DIR"); v != "" {
+	// 优先使用 app 注入的 dataRoot（paths.Resolver 的解析结果）：
+	// 这样密钥与数据库、日志**必然同根**，不需要各自读环境变量。
+	if d := currentBaseDir(); d != "" {
+		return d, nil
+	}
+	// 回退：工具层被单独使用（单测 / 脚本）时的平台默认目录。
+	if v := os.Getenv(paths.EnvDataRoot); v != "" {
 		return v, nil
 	}
 	switch runtime.GOOS {

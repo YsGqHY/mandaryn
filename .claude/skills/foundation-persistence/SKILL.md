@@ -244,13 +244,13 @@ await PreferencesService.reset();
 import { AppSettingsService } from '@/services';
 
 const snap = await AppSettingsService.get();
-await AppSettingsService.setThemeChoice('foundation-dark');
+await AppSettingsService.setThemeChoice('mandaryn-dark');
 await AppSettingsService.setCustomTheme({ mode: 'dark', palette: { /* ... */ } });
 await AppSettingsService.resetCustomTheme();
 await AppSettingsService.setLocaleChoice('zh-CN');
 ```
 
-`<FoundationThemeProvider>` 与 `<I18nProvider>` 已经异步对接到这里，业务**通常不需要**直接调用。
+`<MandarynThemeProvider>` 与 `<I18nProvider>` 已经异步对接到这里，业务**通常不需要**直接调用。
 
 **变更广播（跨窗口同步）**：后端每个 setter（`SetThemeChoice` / `SetCustomTheme` / `ResetCustomTheme` / `SetLocaleChoice`）写库成功后都会 `app.Event.Emit(events.AppSettingsChanged, <字段名>)`，事件名 `appsettings:changed`（`internal/events/events.go` 注册为 `RegisterEvent[string]`），payload 为 `"themeChoice" | "customTheme" | "localeChoice"`。前端订阅：
 
@@ -261,13 +261,13 @@ const off = AppSettingsService.onChanged((field) => {
 // 卸载时 off()
 ```
 
-`FoundationThemeProvider`（`themeChoice` / `customTheme`，200ms 防抖）与 `I18nProvider`（`localeChoice`）已订阅并重新 `get()`，因此主窗口、子窗口、托盘面板始终一致。写失败不广播。
+`MandarynThemeProvider`（`themeChoice` / `customTheme`，200ms 防抖）与 `I18nProvider`（`localeChoice`）已订阅并重新 `get()`，因此主窗口、子窗口、托盘面板始终一致。写失败不广播。
 
 ---
 
 ## 5. Provider 异步化模式
 
-`PreferencesProvider` / `FoundationThemeProvider` / `I18nProvider` 都遵循同一模式 —— 业务方写新 Provider 时照搬：
+`PreferencesProvider` / `MandarynThemeProvider` / `I18nProvider` 都遵循同一模式 —— 业务方写新 Provider 时照搬：
 
 ```tsx
 export const MyProvider = ({ children }: { children: ReactNode }) => {

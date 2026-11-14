@@ -1,6 +1,6 @@
 ---
 name: foundation-mantine
-description: Foundation 前端 Mantine 9 组件库总索引与铁律。汇总配色（--fd-* / FOUNDATION_CSS_VARS / useFoundationPalette）、CSS Modules 作为 MVVM 的 Style 文件、圆角语言、Tabler 图标、i18n、NativeDialogs、禁用 localStorage 等铁律；讲解 buildMantineTheme 如何把调色板编译成 Mantine theme（foundation 10 级色阶 / cssVariablesResolver / 全局组件覆盖）；附 MUI→Mantine 对照表与全部 foundation-mantine-* skill 导航。写任何前端 UI、使用任何 @mantine/* 组件、改 *.module.css、从 MUI 旧代码迁移时首先阅读。触发词：Mantine / @mantine/core / module.css / --fd- / FOUNDATION_CSS_VARS / useFoundationPalette / buildMantineTheme / createTheme / classNames / MUI 迁移 / sx 替换。
+description: Foundation 前端 Mantine 9 组件库总索引与铁律。汇总配色（--fd-* / MANDARYN_CSS_VARS / useMandarynPalette）、CSS Modules 作为 MVVM 的 Style 文件、圆角语言、Tabler 图标、i18n、NativeDialogs、禁用 localStorage 等铁律；讲解 buildMantineTheme 如何把调色板编译成 Mantine theme（foundation 10 级色阶 / cssVariablesResolver / 全局组件覆盖）；附 MUI→Mantine 对照表与全部 foundation-mantine-* skill 导航。写任何前端 UI、使用任何 @mantine/* 组件、改 *.module.css、从 MUI 旧代码迁移时首先阅读。触发词：Mantine / @mantine/core / module.css / --fd- / MANDARYN_CSS_VARS / useMandarynPalette / buildMantineTheme / createTheme / classNames / MUI 迁移 / sx 替换。
 ---
 
 # Foundation × Mantine 9 总索引
@@ -35,9 +35,9 @@ import './global.css';               // body 背景 / 滚动条 / #root 布局�
 
 ## 主题是如何编译的（`frontend/src/styles/themes/buildMantineTheme.ts`）
 
-`<FoundationThemeProvider>`（`ThemeProvider.tsx`）对当前 preset 做两件事，再交给 `<MantineProvider theme cssVariablesResolver forceColorScheme={preset.mode}>`：
+`<MandarynThemeProvider>`（`ThemeProvider.tsx`）对当前 preset 做两件事，再交给 `<MantineProvider theme cssVariablesResolver forceColorScheme={preset.mode}>`：
 
-1. **`buildCssVariablesResolver(preset)`** —— 把 `FoundationPalette` 写成 `:root` 上的 CSS 变量：
+1. **`buildCssVariablesResolver(preset)`** —— 把 `MandarynPalette` 写成 `:root` 上的 CSS 变量：
 
    | 变量 | 槽位 | 变量 | 槽位 |
    |---|---|---|---|
@@ -93,8 +93,8 @@ import './global.css';               // body 背景 / 滚动条 / #root 布局�
 |---|---|
 | `*.module.css`（**首选**） | `var(--fd-bg-surface)`、`var(--fd-text-muted)`、`var(--fd-accent)` … |
 | 半透明 / 派生色 | `color-mix(in srgb, var(--fd-accent) 20%, transparent)` |
-| TS 里需要"引用"颜色（图表 `color`、内联 `style`、mantine-datatable 颜色 props） | `FOUNDATION_CSS_VARS.accent` / `.bg.surface` / `.text.muted` / `.status.danger`（值就是 `'var(--fd-…)'` 字符串）从 `@/styles/themes` 导入 |
-| 必须拿**真实色值**（canvas、需要插值计算、只吃具体颜色的三方库） | `useFoundationPalette()` → `FoundationPalette` 对象 |
+| TS 里需要"引用"颜色（图表 `color`、内联 `style`、mantine-datatable 颜色 props） | `MANDARYN_CSS_VARS.accent` / `.bg.surface` / `.text.muted` / `.status.danger`（值就是 `'var(--fd-…)'` 字符串）从 `@/styles/themes` 导入 |
+| 必须拿**真实色值**（canvas、需要插值计算、只吃具体颜色的三方库） | `useMandarynPalette()` → `MandarynPalette` 对象 |
 | Mantine 组件 `color` prop | 默认不传（已是 foundation 强调色）；需要显式时用 `"foundation"`。状态色优先用 CSS class + `--fd-danger` 等，而不是 `color="red"` |
 
 ```css
@@ -108,9 +108,9 @@ import './global.css';               // body 背景 / 滚动条 / #root 布局�
 
 ```tsx
 // ✅ TS 引用变量（主题切换无需重渲染）
-<BarChart series={[{ name: 'v', color: FOUNDATION_CSS_VARS.accent }]} gridColor={FOUNDATION_CSS_VARS.divider} />
+<BarChart series={[{ name: 'v', color: MANDARYN_CSS_VARS.accent }]} gridColor={MANDARYN_CSS_VARS.divider} />
 // ✅ 必须真实色值时
-const fp = useFoundationPalette();
+const fp = useMandarynPalette();
 <HeatmapChart colorMap={{ min: fp.bg.surface, max: fp.accent }} />
 // ❌
 <Text c="#3f4a5a">…</Text>
@@ -184,7 +184,7 @@ const ok = await NativeDialogs.confirm({
 
 ### 8. 配色方案由主题系统决定
 
-`MantineProvider` 用 `forceColorScheme={preset.mode}`。**不要**调用 `useMantineColorScheme().setColorScheme / toggleColorScheme`，也不要用 `light-dark()` 写两套颜色——切换主题走 `useFoundationTheme().setChoice(...)`，颜色差异由 preset 的 palette 承担。
+`MantineProvider` 用 `forceColorScheme={preset.mode}`。**不要**调用 `useMantineColorScheme().setColorScheme / toggleColorScheme`，也不要用 `light-dark()` 写两套颜色——切换主题走 `useMandarynTheme().setChoice(...)`，颜色差异由 preset 的 palette 承担。
 
 ### 9. 调用链
 
@@ -244,8 +244,8 @@ const Icon = item.icon;                        // Icon（Tabler），缺省 Icon
 | MUI | Mantine 9 / 本项目 | 备注 |
 |---|---|---|
 | `sx` / `styled` / `*.styles.ts` 工厂 | `*.module.css` + `className` / `classNames` | 换算：MUI spacing `n` → `n*8px`；`borderRadius: n`（数字）→ `n*4px` |
-| `theme.palette.foundation.x` | CSS `var(--fd-x)` / TS `FOUNDATION_CSS_VARS.x` / `useFoundationPalette().x` | |
-| `useTheme()` | 基本不需要；Mantine theme 用 `useMantineTheme()`，项目主题用 `useFoundationTheme()` | |
+| `theme.palette.foundation.x` | CSS `var(--fd-x)` / TS `MANDARYN_CSS_VARS.x` / `useMandarynPalette().x` | |
+| `useTheme()` | 基本不需要；Mantine theme 用 `useMantineTheme()`，项目主题用 `useMandarynTheme()` | |
 | `CssBaseline` | `@mantine/core/styles.css` + `styles/global.css` | |
 | `Box` | `Box`（或普通 `div`） | |
 | `Stack direction="row"` | `Group`（横向）/ `Stack`（纵向）/ `Flex` | `spacing` → `gap` |

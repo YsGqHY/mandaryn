@@ -3,7 +3,7 @@ import { Window } from '@wailsio/runtime';
 import { IconAlertCircle, IconAlertTriangle, IconInfoCircle } from '@tabler/icons-react';
 import type { Icon } from '@tabler/icons-react';
 import { getChildWindowParams, emitResult } from '@/services/childwindow';
-import { FOUNDATION_CSS_VARS } from '@/styles/themes';
+import { MANDARYN_CSS_VARS } from '@/styles/themes';
 
 export type MessageVariant = 'info' | 'warning' | 'error';
 
@@ -15,9 +15,9 @@ const iconMap: Record<MessageVariant, Icon> = {
 
 // 图标颜色：引用 --fd-* 变量（而非具体色值），主题切换自动生效
 const colorMap: Record<MessageVariant, string> = {
-  info: FOUNDATION_CSS_VARS.accent,
-  warning: FOUNDATION_CSS_VARS.status.warning,
-  error: FOUNDATION_CSS_VARS.status.danger,
+  info: MANDARYN_CSS_VARS.accent,
+  warning: MANDARYN_CSS_VARS.status.warning,
+  error: MANDARYN_CSS_VARS.status.danger,
 };
 
 function detectVariant(title: string): MessageVariant {

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { MatrixChart, type MatrixChartCell } from '@mantine/charts';
 import { useElementSize } from '@mantine/hooks';
-import { FOUNDATION_CSS_VARS } from '@/styles/themes';
+import { MANDARYN_CSS_VARS } from '@/styles/themes';
 import { useChartsI18n } from '../shared';
 import classes from './HeatmapChart.module.css';
 
@@ -37,8 +37,8 @@ export const HeatmapChart = ({
   const w = propWidth ?? (measuredW || 300);
   const h = propHeight ?? (measuredH || 200);
 
-  const minColor = colorMap?.min ?? FOUNDATION_CSS_VARS.bg.hover;
-  const maxColor = colorMap?.max ?? FOUNDATION_CSS_VARS.accent;
+  const minColor = colorMap?.min ?? MANDARYN_CSS_VARS.bg.hover;
+  const maxColor = colorMap?.max ?? MANDARYN_CSS_VARS.accent;
 
   const rows = data.length;
   const cols = data[0]?.length ?? 0;

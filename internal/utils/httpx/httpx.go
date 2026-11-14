@@ -1,4 +1,4 @@
-// Package httpx 是 Foundation 的 HTTP 客户端工具包。
+// Package httpx 是 Mandaryn 的 HTTP 客户端工具包。
 //
 // 设计目标：
 //   - 单例 *http.Client，复用连接池；业务代码不要再造 client
@@ -23,6 +23,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"vip.oberon.mandaryn/internal/paths"
 )
 
 // DefaultTimeout 是 Do/GetJSON/PostJSON 在调用方未给 context deadline 时
@@ -33,9 +35,9 @@ const DefaultTimeout = 30 * time.Second
 // 业务方需要更大值时显式调 ReadJSONLimit。
 const MaxResponseBytes int64 = 8 << 20 // 8MB
 
-// userAgent 在 SetUserAgent 之前是空字符串；我们在 Init 阶段或第一次使用时设置。
+// userAgent 在 SetUserAgent 之前是默认应用标识；我们在 Init 阶段或第一次使用时设置。
 var (
-	userAgent   = "Foundation/1.0"
+	userAgent   = paths.AppDirName + "/1.0"
 	uaMu        sync.RWMutex
 	clientOnce  sync.Once
 	sharedClient *http.Client

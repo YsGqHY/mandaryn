@@ -6,7 +6,7 @@ import type { DataGridRow, DataGridRowId } from '../types';
 // 维护一份 id 顺序，作用于"原始行"（筛选 / 排序之前），
 // 因此排序后再拖拽 = 调整未排序时的基准顺序，与 MUI Pro 行为一致。
 
-const ROW_DRAG_MIME = 'application/x-foundation-grid-row';
+const ROW_DRAG_MIME = 'application/x-mandaryn-grid-row';
 
 interface UseRowReorderingParams<T extends DataGridRow> {
   rows: T[];

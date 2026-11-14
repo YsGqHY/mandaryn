@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { RadarChart as MantineRadarChart, type RadarChartSeries } from '@mantine/charts';
-import { FOUNDATION_CSS_VARS } from '@/styles/themes';
+import { MANDARYN_CSS_VARS } from '@/styles/themes';
 import { useChartColors, useChartsI18n } from '../shared';
 
 export interface RadarSeries {
@@ -69,12 +69,12 @@ export function RadarChart({
       data={data}
       dataKey={AXIS_KEY}
       series={mantineSeries}
-      gridColor={FOUNDATION_CSS_VARS.divider}
-      textColor={FOUNDATION_CSS_VARS.text.secondary}
+      gridColor={MANDARYN_CSS_VARS.divider}
+      textColor={MANDARYN_CSS_VARS.text.secondary}
       withLegend
       withTooltip
       withDots
-      dotProps={{ r: 4, strokeWidth: 2, stroke: FOUNDATION_CSS_VARS.bg.surface }}
+      dotProps={{ r: 4, strokeWidth: 2, stroke: MANDARYN_CSS_VARS.bg.surface }}
       // 半径轴只用来固定量程与网格层数，不显示刻度
       withPolarRadiusAxis
       polarRadiusAxisProps={{

@@ -4,7 +4,7 @@ import (
 	"embed"
 	"log"
 
-	"foundation/internal/app"
+	"vip.oberon.mandaryn/internal/app"
 )
 
 //go:embed all:frontend/dist

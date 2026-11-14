@@ -152,6 +152,12 @@
   min-width: 0;
 }
 
+/* 条形图悬停高亮色（BarChart 读 --chart-cursor-fill；不走 cursorFill prop，原因见 Database.tsx）。
+   重复类名提权：Mantine 默认值的选择器 `:where(...) .m_xxx` 同为单类权重，不能靠加载顺序决胜。 */
+.barChart.barChart {
+  --chart-cursor-fill: var(--fd-bg-hover);
+}
+
 /* 环形图是定宽正方形：居中放置 */
 .chartHostCentered {
   display: flex;

@@ -1,0 +1,214 @@
+/* 性能预算子页面样式。颜色一律取 --fd-*（禁止硬编码十六进制）。 */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--fd-divider);
+  border-radius: 8px;
+  background-color: var(--fd-bg-elevated);
+}
+
+/* —— 预算滑块 —— */
+.capHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.capLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fd-text-primary);
+}
+
+.capValue {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--fd-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.slider {
+  margin: 6px 4px 18px;
+}
+
+.capHint {
+  font-size: 12px;
+  color: var(--fd-text-muted);
+  line-height: 1.55;
+}
+
+/* —— 口径说明 —— */
+.formulaBox {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--fd-divider);
+  background-color: var(--fd-bg-hover);
+}
+
+.formulaIcon {
+  flex-shrink: 0;
+  color: var(--fd-accent);
+}
+
+.formulaTexts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.formulaTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fd-text-primary);
+}
+
+.formulaLine {
+  font-size: 12px;
+  color: var(--fd-text-secondary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.6;
+}
+
+.formulaNote {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--fd-text-muted);
+  line-height: 1.55;
+}
+
+/* —— 实时读数 —— */
+.readoutHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.readoutIcon {
+  color: var(--fd-accent);
+}
+
+.readoutTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fd-text-primary);
+}
+
+.levelBadge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: var(--fd-accent);
+  border: 1px solid var(--fd-accent);
+}
+.levelBadge[data-paused] {
+  color: var(--fd-warning);
+  border-color: var(--fd-warning);
+}
+
+.readoutHint {
+  font-size: 12px;
+  color: var(--fd-text-muted);
+  line-height: 1.55;
+}
+
+.readoutGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--fd-divider);
+  background-color: var(--fd-bg-content);
+}
+
+.metricLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fd-text-muted);
+}
+
+.metricValue {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--fd-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.metric[data-tone='accent'] .metricValue {
+  color: var(--fd-accent);
+}
+
+.readoutMeta {
+  font-size: 11px;
+  color: var(--fd-text-muted);
+}
+
+/* —— 暂停推理提示 —— */
+.pausedBox {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--fd-warning);
+  background-color: var(--fd-bg-hover);
+}
+
+.pausedIcon {
+  flex-shrink: 0;
+  color: var(--fd-warning);
+}
+
+.pausedTexts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pausedTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fd-warning);
+}
+
+.pausedBody {
+  font-size: 12px;
+  color: var(--fd-text-secondary);
+  line-height: 1.55;
+}
+
+/* —— 提交反馈 —— */
+.status {
+  font-size: 12px;
+  color: var(--fd-text-secondary);
+}
+
+.errorLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fd-danger);
+}
+
+.errorText {
+  font-size: 12px;
+  color: var(--fd-danger);
+  line-height: 1.5;
+}

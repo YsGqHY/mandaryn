@@ -7,7 +7,7 @@ import { fieldOf } from '../utils';
 // mantine-datatable 自带的列拖拽依赖 storeColumnsKey（localStorage 持久化），
 // 违反项目"禁止 localStorage"铁律，所以这里自管顺序状态，表头标题渲染为可拖拽元素。
 
-const COLUMN_DRAG_MIME = 'application/x-foundation-grid-column';
+const COLUMN_DRAG_MIME = 'application/x-mandaryn-grid-column';
 
 interface UseColumnReorderingParams<T extends DataGridRow> {
   columns: DataGridColumn<T>[];

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Treemap, type TreemapData } from '@mantine/charts';
-import { FOUNDATION_CSS_VARS } from '@/styles/themes';
+import { MANDARYN_CSS_VARS } from '@/styles/themes';
 import { useChartColors, useChartsI18n } from '../shared';
 
 export interface TreemapNode {
@@ -61,8 +61,8 @@ export function TreemapChart({ data, colorMap, width, height, onNodeClick, ariaL
       w={width ?? '100%'}
       height={height ?? 300}
       data={treeData}
-      strokeColor={FOUNDATION_CSS_VARS.bg.surface}
-      textColor={FOUNDATION_CSS_VARS.text.primary}
+      strokeColor={MANDARYN_CSS_VARS.bg.surface}
+      textColor={MANDARYN_CSS_VARS.text.primary}
       style={onNodeClick ? { cursor: 'pointer' } : undefined}
       treemapProps={
         onNodeClick

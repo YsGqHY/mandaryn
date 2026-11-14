@@ -1,17 +1,15 @@
 {
 	"fixed": {
-		"file_version": "2.0.0",
-		"product_version": "2.0.0"
+		"file_version": "2.0.0"
 	},
 	"info": {
-		"0409": {
-			"FileVersion": "2.0.0",
+		"0000": {
 			"ProductVersion": "2.0.0",
-			"CompanyName": "My Company",
-			"FileDescription": "A foundation application",
-			"LegalCopyright": "© 2026, My Company",
-			"ProductName": "My Product",
-			"Comments": "This is a comment"
+			"CompanyName": "Oberon",
+			"FileDescription": "Mandaryn - app-level audio transcription",
+			"LegalCopyright": "© 2026, Oberon",
+			"ProductName": "Mandaryn",
+			"Comments": "Application-level audio capture, recording and offline transcription"
 		}
 	}
 }

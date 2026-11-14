@@ -23,6 +23,22 @@ export const settingsPageEnUS: Messages = {
         label: 'Data storage',
         description: 'Database location and disk usage',
       },
+      performance: {
+        label: 'Performance budget',
+        description: 'Machine-wide share and inference level',
+      },
+      audio: {
+        label: 'Audio & recording',
+        description: 'Live transcription switch (off by default)',
+      },
+      privacy: {
+        label: 'Privacy boundary',
+        description: 'Offline switch, outbound ledger and diagnostics',
+      },
+      hotkeys: {
+        label: 'Keyboard shortcuts',
+        description: 'System-wide and in-app shortcut bindings',
+      },
     },
     themes: {
       system: { label: 'Follow system', description: 'Tracks the OS light / dark preference' },

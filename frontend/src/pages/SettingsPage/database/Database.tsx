@@ -9,7 +9,7 @@ import {
 } from '@tabler/icons-react';
 import { useT } from '@/i18n';
 import { NativeDialogs, type TableInfo } from '@/services';
-import { FOUNDATION_CSS_VARS } from '@/styles/themes';
+import { MANDARYN_CSS_VARS } from '@/styles/themes';
 import { useDatabase, type DatabaseStatus } from './useDatabase';
 import classes from './Database.module.css';
 import shared from '../SettingsPage.module.css';
@@ -202,14 +202,14 @@ const tableKeyOf = (name: string): string => TABLE_NAME_TO_KEY[name] ?? name;
 // 同一组颜色喂两张图，让占比与条形图视觉对齐。取调色板中常用的辅助色。
 // 用 CSS 变量引用（而非取值），主题切换时图表零重渲染即可跟随。
 const CHART_COLORS: readonly string[] = [
-  FOUNDATION_CSS_VARS.accent,
-  FOUNDATION_CSS_VARS.status.success,
-  FOUNDATION_CSS_VARS.status.warning,
-  FOUNDATION_CSS_VARS.status.danger,
-  FOUNDATION_CSS_VARS.text.muted,
+  MANDARYN_CSS_VARS.accent,
+  MANDARYN_CSS_VARS.status.success,
+  MANDARYN_CSS_VARS.status.warning,
+  MANDARYN_CSS_VARS.status.danger,
+  MANDARYN_CSS_VARS.text.muted,
 ];
 const colorOf = (idx: number): string =>
-  CHART_COLORS[idx % CHART_COLORS.length] ?? FOUNDATION_CSS_VARS.accent;
+  CHART_COLORS[idx % CHART_COLORS.length] ?? MANDARYN_CSS_VARS.accent;
 
 // 条形图数据行字段名（BarChart 的 dataKey / series.name）
 const BAR_LABEL_KEY = 'label';
@@ -294,16 +294,18 @@ const ChartsBlock = ({ vm, t }: ChartsBlockProps) => {
                 {
                   name: BAR_VALUE_KEY,
                   label: t('settings.database.charts.bytes.title'),
-                  color: FOUNDATION_CSS_VARS.accent,
+                  color: MANDARYN_CSS_VARS.accent,
                 },
               ]}
               // 横轴刻度 + tooltip：字节数，自动单位
               valueFormatter={formatBytes}
               yAxisProps={{ width: 96 }}
               gridAxis="x"
-              gridColor={FOUNDATION_CSS_VARS.divider}
-              textColor={FOUNDATION_CSS_VARS.text.muted}
-              cursorFill={FOUNDATION_CSS_VARS.bg.hover}
+              gridColor={MANDARYN_CSS_VARS.divider}
+              textColor={MANDARYN_CSS_VARS.text.muted}
+              // 悬停高亮色经 className 设 --chart-cursor-fill：Mantine 9.7.5 的 BarChart 没有解构
+              // cursorFill，直接传 prop 会漏到 <div> 上触发 React「unknown prop」警告。
+              className={classes.barChart}
               maxBarWidth={28}
             />
           </div>
@@ -408,9 +410,9 @@ const formatBytes = (n: number): string => {
   return `${(n / GB).toFixed(2)} GB`;
 };
 
-// 从当前路径派生默认保存文件名。后端默认是 foundation.db；保留同名可避免改名。
+// 从当前路径派生默认保存文件名。后端默认是 mandaryn.db；保留同名可避免改名。
 const defaultFileName = (currentPath?: string): string => {
-  if (!currentPath) return 'foundation.db';
+  if (!currentPath) return 'mandaryn.db';
   const seg = currentPath.split(/[\\/]/).pop();
-  return seg && seg.length > 0 ? seg : 'foundation.db';
+  return seg && seg.length > 0 ? seg : 'mandaryn.db';
 };

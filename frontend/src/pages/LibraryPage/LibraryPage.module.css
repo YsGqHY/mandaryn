@@ -1,0 +1,323 @@
+/* LibraryPage：搜索筛选 + 会话列表（含转写进度 / 行内操作）+ 分页。
+   颜色一律 var(--fd-*)，不出现十六进制字面量。 */
+
+.root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--fd-bg-content);
+  overflow: hidden;
+}
+
+/* 说话人侧栏打开时，主区从「纵向堆叠」切成「列表 + 右侧侧栏」两栏。
+   侧栏自身宽度 / 边框 / 滚动由 speakers/SpeakersSidebar.module.css 负责。 */
+.root[data-speakers='open'] {
+  flex-direction: row;
+}
+
+.root[data-speakers='open'] .body {
+  min-width: 0;
+  flex: 1;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 32px 40px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--fd-text-muted);
+}
+
+.title {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--fd-text-primary);
+  margin: 0;
+}
+
+.subtitle {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--fd-text-secondary);
+  max-width: 860px;
+}
+
+/* —— 卡片外壳：背景 / 边框 / 圆角 / 内边距交给 Mantine Paper —— */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cardTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--fd-text-primary);
+}
+
+.cardHint {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fd-text-muted);
+}
+
+.cardIcon {
+  color: var(--fd-text-muted);
+  display: inline-flex;
+}
+
+.actionsRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* —— 筛选区 —— */
+.filterGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+/* 关键词最常用：宽一点（占两列，窄屏自动回落成一列）。 */
+.filterWide {
+  grid-column: span 2;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .filterWide {
+    grid-column: span 1;
+  }
+}
+
+.filterHint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-text-muted);
+}
+
+/* —— 列表 —— */
+.rowList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sessionRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--fd-divider);
+  border-radius: 6px;
+  background-color: var(--fd-bg-base);
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.sessionRow:hover {
+  background-color: var(--fd-bg-hover);
+}
+
+/* 该会话正开着说话人侧栏：用主色边框标出「在给哪一条分角色」。 */
+.sessionRow[data-active='true'] {
+  border-color: var(--fd-accent);
+}
+
+/* 正在回放这一行：用背景而非边框标记，避免与说话人侧栏的边框高亮打架。 */
+.sessionRow[data-playback='true'] {
+  background-color: color-mix(in srgb, var(--fd-accent) 8%, transparent);
+}
+
+.sessionMain {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.sessionTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.sessionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--fd-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.sessionMeta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fd-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.metaItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progressRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.progress,
+.progress.progress {
+  flex: 1;
+  min-width: 100px;
+  /* Progress 轨道 / 条形色走 Mantine 变量，这里指向语义色（不传内置色名）。 */
+  --progress-section-color: var(--fd-accent);
+  background-color: var(--fd-bg-elevated);
+}
+
+.progressText {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fd-text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.failedHint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-danger);
+}
+
+.sessionActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.deleteAction.deleteAction {
+  color: var(--fd-danger);
+}
+
+/* —— 分页 —— */
+.paginationRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.emptyBlock {
+  padding: 24px 0;
+}
+
+/* —— 语义 chip（与 RecordPage 保持一致） —— */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--fd-divider);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--fd-text-secondary);
+  white-space: nowrap;
+}
+
+.chip[data-tone='success'] {
+  color: var(--fd-success);
+  border-color: var(--fd-success);
+}
+
+.chip[data-tone='warning'] {
+  color: var(--fd-warning);
+  border-color: var(--fd-warning);
+}
+
+.chip[data-tone='danger'] {
+  color: var(--fd-danger);
+  border-color: var(--fd-danger);
+}
+
+.chip[data-tone='accent'] {
+  color: var(--fd-accent);
+  border-color: var(--fd-accent);
+}
+
+.chip[data-tone='muted'] {
+  color: var(--fd-text-muted);
+  border-color: var(--fd-divider);
+}
+
+/* —— 错误提示 —— */
+.errorRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.error {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fd-danger);
+}
+
+/* —— 弹窗正文 —— */
+.modalBody {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fd-text-secondary);
+  word-break: break-word;
+}

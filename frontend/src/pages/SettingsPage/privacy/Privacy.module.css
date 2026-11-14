@@ -1,0 +1,368 @@
+/* 隐私边界子页面样式。颜色一律取 --fd-*（禁止硬编码十六进制）。 */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--fd-divider);
+  border-radius: 8px;
+  background-color: var(--fd-bg-elevated);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cardIcon {
+  color: var(--fd-accent);
+}
+
+.cardTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fd-text-primary);
+}
+
+.cardActions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cardHint {
+  font-size: 12px;
+  color: var(--fd-text-muted);
+  line-height: 1.55;
+}
+
+/* —— 状态徽标 —— */
+.stateBadge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--fd-accent);
+  border: 1px solid var(--fd-accent);
+}
+.stateBadge[data-off='on'] {
+  color: var(--fd-text-muted);
+  border-color: var(--fd-divider);
+}
+
+/* —— 开关与来源 —— */
+.switchRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.metaRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.metaLabel {
+  font-size: 12px;
+  color: var(--fd-text-muted);
+}
+
+.metaValue {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fd-text-secondary);
+}
+
+/* —— 环境变量接管提示 —— */
+.warnBox {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--fd-warning);
+  background-color: var(--fd-bg-hover);
+}
+
+.warnIcon {
+  flex-shrink: 0;
+  color: var(--fd-warning);
+}
+
+.warnTexts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.warnTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fd-warning);
+}
+
+.warnBody {
+  font-size: 12px;
+  color: var(--fd-text-secondary);
+  line-height: 1.55;
+}
+
+/* —— 统计卡片 —— */
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--fd-divider);
+  background-color: var(--fd-bg-content);
+}
+
+.statLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fd-text-muted);
+}
+
+.statValue {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--fd-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.statHint {
+  font-size: 10px;
+  color: var(--fd-text-muted);
+  line-height: 1.4;
+}
+
+/* —— 出站记录表 —— */
+.tableWrap {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--fd-divider);
+  border-radius: 8px;
+}
+
+.table {
+  font-size: 12px;
+}
+
+.cellMono {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--fd-text-secondary);
+}
+
+.cellHost {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fd-text-secondary);
+}
+
+.resultTag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fd-text-secondary);
+  border: 1px solid var(--fd-divider);
+}
+.resultTag[data-result='ok'] {
+  color: var(--fd-success);
+  border-color: var(--fd-success);
+}
+.resultTag[data-result='blocked'] {
+  color: var(--fd-accent);
+  border-color: var(--fd-accent);
+}
+.resultTag[data-result='error'] {
+  color: var(--fd-danger);
+  border-color: var(--fd-danger);
+}
+
+.paginationRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* —— 自检结论 —— */
+.auditBox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--fd-divider);
+  background-color: var(--fd-bg-content);
+}
+
+.auditVerdict {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fd-danger);
+}
+
+.auditVerdict[data-zero] {
+  color: var(--fd-success);
+}
+
+.auditVerdictText {
+  font-size: 13px;
+  font-weight: 700;
+  color: inherit;
+}
+
+.violationList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.violationTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fd-danger);
+}
+
+.violationRow {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--fd-divider);
+  align-items: baseline;
+}
+
+.violationTime {
+  font-size: 11px;
+  color: var(--fd-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.violationHost {
+  font-size: 12px;
+  color: var(--fd-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.violationReason {
+  font-size: 11px;
+  color: var(--fd-danger);
+  white-space: nowrap;
+}
+
+.noteList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* —— 诊断包含/不含 —— */
+.scopeBox {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.scopeColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--fd-divider);
+  background-color: var(--fd-bg-content);
+}
+
+.scopeColumn[data-tone='danger'] {
+  border-color: var(--fd-danger);
+}
+
+.scopeTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fd-text-primary);
+}
+
+.scopeColumn[data-tone='danger'] .scopeTitle {
+  color: var(--fd-danger);
+}
+
+.scopeItem {
+  font-size: 12px;
+  color: var(--fd-text-secondary);
+  line-height: 1.6;
+}
+
+.artifactBox {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px dashed var(--fd-divider);
+  background-color: var(--fd-bg-content);
+}
+
+.artifactName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fd-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.saveCaveat {
+  font-size: 11px;
+  color: var(--fd-warning);
+  line-height: 1.5;
+}
+
+/* —— 反馈行 —— */
+.errorLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fd-danger);
+}
+
+.errorText {
+  font-size: 12px;
+  color: var(--fd-danger);
+  line-height: 1.5;
+}
+
+.infoLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fd-success);
+}
+
+.infoText {
+  font-size: 12px;
+  color: var(--fd-text-secondary);
+  line-height: 1.5;
+}

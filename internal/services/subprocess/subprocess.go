@@ -20,8 +20,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"foundation/internal/utils/logx"
-	"foundation/internal/utils/procx"
+	"vip.oberon.mandaryn/internal/utils/logx"
+	"vip.oberon.mandaryn/internal/utils/procx"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )

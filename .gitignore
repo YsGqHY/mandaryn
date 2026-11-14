@@ -26,5 +26,22 @@ Thumbs.db
 
 # E2E (Playwright)
 .e2e-data
+.e2e-data-*
 frontend/test-results
 frontend/playwright-report
+# CI 汇总用的 JSON 报告（Playwright json reporter 输出）
+frontend/e2e-report.json
+# 容器化 E2E 在宿主机侧落下的报告与 trace
+e2e-artifacts
+
+# UI 截图产物：每次 `pnpm e2e` / `e2e:screenshots` 都会重写，不入库（见 README「产物不入库」）
+docs/screenshots/
+# 开发期手工截图的临时目录
+.e2e-shots/
+
+# TypeScript 增量构建缓存
+*.tsbuildinfo
+# bindings 生成器的临时目录（-clean 生成时短暂出现）
+frontend/.bindings-tmp-*
+
+.narrafork

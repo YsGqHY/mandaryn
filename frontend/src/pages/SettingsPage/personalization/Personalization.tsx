@@ -161,19 +161,19 @@ const CustomThemeSection = ({ vm, t }: CustomThemeSectionProps) => {
       <div className={classes.paletteToolbar}>
         <UnstyledButton
           className={classes.paletteToolbarBtn}
-          onClick={() => vm.resetCustomFromPreset('foundation-light')}
+          onClick={() => vm.resetCustomFromPreset('mandaryn-light')}
         >
           {t('settings.personalization.customTheme.toolbar.seedLight')}
         </UnstyledButton>
         <UnstyledButton
           className={classes.paletteToolbarBtn}
-          onClick={() => vm.resetCustomFromPreset('foundation-dark')}
+          onClick={() => vm.resetCustomFromPreset('mandaryn-dark')}
         >
           {t('settings.personalization.customTheme.toolbar.seedDark')}
         </UnstyledButton>
         <UnstyledButton
           className={classes.paletteToolbarBtn}
-          onClick={() => vm.resetCustomFromPreset('foundation-obsidian')}
+          onClick={() => vm.resetCustomFromPreset('mandaryn-obsidian')}
         >
           {t('settings.personalization.customTheme.toolbar.seedObsidian')}
         </UnstyledButton>

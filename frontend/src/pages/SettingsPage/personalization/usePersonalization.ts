@@ -5,8 +5,8 @@ import {
   seedFromPreset,
   themeRegistry,
   unregisterCustomTheme,
-  useFoundationTheme,
-  type FoundationPalette,
+  useMandarynTheme,
+  type MandarynPalette,
   type StoredCustomTheme,
   type ThemeChoice,
 } from '@/styles/themes';
@@ -68,10 +68,10 @@ export const PALETTE_FIELDS: PaletteField[] = (() => {
 // 在 settings.themes.<key> 下加文案；这里加一行即可。
 const THEME_NAME_TO_KEY: Record<string, string> = {
   system: 'system',
-  'foundation-light': 'light',
-  'foundation-dark': 'dark',
-  'foundation-obsidian': 'obsidian',
-  'foundation-custom': 'custom',
+  'mandaryn-light': 'light',
+  'mandaryn-dark': 'dark',
+  'mandaryn-obsidian': 'obsidian',
+  'mandaryn-custom': 'custom',
 };
 
 const themeOptionFor = (
@@ -99,7 +99,7 @@ const themeOptionFor = (
 };
 
 // 按点路径取/写 palette 字段（不可变更新）。
-const getByPath = (palette: FoundationPalette, path: string): string => {
+const getByPath = (palette: MandarynPalette, path: string): string => {
   const segs = path.split('.');
   let v: unknown = palette;
   for (const s of segs) {
@@ -112,10 +112,10 @@ const getByPath = (palette: FoundationPalette, path: string): string => {
   return typeof v === 'string' ? v : '';
 };
 
-const setByPath = (palette: FoundationPalette, path: string, value: string): FoundationPalette => {
+const setByPath = (palette: MandarynPalette, path: string, value: string): MandarynPalette => {
   const segs = path.split('.');
   if (segs.length === 1) {
-    return { ...palette, [segs[0]!]: value } as FoundationPalette;
+    return { ...palette, [segs[0]!]: value } as MandarynPalette;
   }
   if (segs.length === 2) {
     const [g, k] = segs as [string, string];
@@ -124,7 +124,7 @@ const setByPath = (palette: FoundationPalette, path: string, value: string): Fou
       return {
         ...palette,
         [g]: { ...group, [k]: value },
-      } as FoundationPalette;
+      } as MandarynPalette;
     }
   }
   return palette;
@@ -154,7 +154,7 @@ export interface UsePersonalizationResult {
 
 // 个性化子页面 ViewModel：主题 + 偏好 + 自定义主题。
 export const usePersonalization = (): UsePersonalizationResult => {
-  const { choice, available, setChoice, current } = useFoundationTheme();
+  const { choice, available, setChoice, current } = useMandarynTheme();
   const { preferences, setPreference } = usePreferences();
 
   const themeOptions = useMemo<ThemeOption[]>(() => {
@@ -247,8 +247,8 @@ export const usePersonalization = (): UsePersonalizationResult => {
     unregisterCustomTheme();
     void AppSettingsService.resetCustomTheme().catch(() => {});
     setHasCustomTheme(false);
-    setChoice('foundation-light');
-    setCustomTheme(seedFromPreset('foundation-light'));
+    setChoice('mandaryn-light');
+    setCustomTheme(seedFromPreset('mandaryn-light'));
   }, [setChoice]);
 
   return {

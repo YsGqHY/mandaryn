@@ -13,7 +13,7 @@ import type { MantineStyleProp } from '@mantine/core';
 import { useMemo } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useT } from '@/i18n';
-import { FOUNDATION_CSS_VARS } from '@/styles/themes';
+import { MANDARYN_CSS_VARS } from '@/styles/themes';
 import type { DataGridRecord } from './premium-types';
 import type { DataGridProProps, DataGridRow } from './types';
 import type { DataGridViewModel } from './useDataGridPro';
@@ -401,14 +401,14 @@ export function DataGridSurface<T extends DataGridRow>({ vm, props, toolbar }: D
     highlightOnHover: true,
     striped: props.striped,
     verticalAlign: 'center',
-    c: FOUNDATION_CSS_VARS.text.primary,
-    backgroundColor: FOUNDATION_CSS_VARS.bg.surface,
-    borderColor: FOUNDATION_CSS_VARS.divider,
-    rowBorderColor: FOUNDATION_CSS_VARS.divider,
-    stripedColor: FOUNDATION_CSS_VARS.bg.elevated,
-    highlightOnHoverColor: FOUNDATION_CSS_VARS.bg.hover,
+    c: MANDARYN_CSS_VARS.text.primary,
+    backgroundColor: MANDARYN_CSS_VARS.bg.surface,
+    borderColor: MANDARYN_CSS_VARS.divider,
+    rowBorderColor: MANDARYN_CSS_VARS.divider,
+    stripedColor: MANDARYN_CSS_VARS.bg.elevated,
+    highlightOnHoverColor: MANDARYN_CSS_VARS.bg.hover,
     fetching: props.loading,
-    loaderColor: 'foundation',
+    loaderColor: 'mandaryn',
     noRecordsText: t('dataGrid.noRecords'),
     loadingText: t('dataGrid.loading'),
     rowClassName,

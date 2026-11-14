@@ -1,7 +1,7 @@
 version: '3'
 
 vars:
-  APP_NAME: "foundation"
+  APP_NAME: "mandaryn"
   BIN_DIR: "bin"
   PACKAGE_MANAGER: '{{.PACKAGE_MANAGER | default "pnpm"}}'
   VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
@@ -23,6 +23,18 @@ tasks:
     summary: Builds the application
     cmds:
       - task: "{{.GOOS}}:build"
+
+  build:nollm:
+    summary: Builds the `nollm` trimmed variant (online engines only, no local inference)
+    desc: |
+      与 `build` 派生的精简产物：`-tags nollm` 排除本地推理实现
+      （`internal/asr/local`、`internal/speaker/sherpa` 的 sherpa-onnx 部分），
+      产物名与标准产物区分（如 `bin/mandaryn-nollm.exe`）。
+
+      **这不是 CGO 兜底**（ADR-01）：它没有本地推理，只能走在线引擎；
+      不要用它去绕开任何构建问题。详见 docs/ARCHITECTURE.md §2.2。
+    cmds:
+      - task: "{{.GOOS}}:build:nollm"
 
   package:
     summary: Packages a production build of the application

@@ -1,0 +1,43 @@
+/* RecordPage 骨架独立样式（页面走 React.lazy，骨架随首屏加载，
+   不能与 RecordPage.module.css 共用，否则会把懒加载 chunk 拉进首屏）。 */
+
+.root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--fd-bg-content);
+  overflow: hidden;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 32px 40px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--fd-divider);
+  border-radius: 8px;
+  background-color: var(--fd-bg-surface);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.listRows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

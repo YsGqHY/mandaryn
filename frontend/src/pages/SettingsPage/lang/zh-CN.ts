@@ -26,6 +26,22 @@ export const settingsPageZhCN: Messages = {
         label: '数据存储',
         description: '数据库位置与占用空间',
       },
+      performance: {
+        label: '性能预算',
+        description: '整机占用份额与推理档位',
+      },
+      audio: {
+        label: '音频与录制',
+        description: '边录边转开关（默认关闭）',
+      },
+      privacy: {
+        label: '隐私边界',
+        description: '离线开关、出站记录与诊断包',
+      },
+      hotkeys: {
+        label: '快捷键',
+        description: '系统级与应用内快捷键绑定',
+      },
     },
     themes: {
       system: { label: '跟随系统', description: '随操作系统的明暗模式自动切换' },

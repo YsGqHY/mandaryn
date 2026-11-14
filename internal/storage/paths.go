@@ -2,7 +2,7 @@
 //
 // 设计目标：让上层完全不需要关心 SQL / 迁移 / 平台差异：
 //   - 模型只在 models.go 注册一次，启动自动 AutoMigrate
-//   - 路径在平台默认与用户自定义之间切换（见 config.go）
+//   - 路径裁决统一交给 internal/paths（ADR-02），本包只负责「用给定路径开库」
 //   - 读写并发由 SQLite WAL + 单连接池兜底（见 db.go / pragma.go）
 package storage
 
@@ -10,65 +10,36 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
+
+	"vip.oberon.mandaryn/internal/paths"
 )
 
-// AppDirName 是写到用户数据目录下的子文件夹名称。
-// 改成业务名时，连同 Wails 的 Name 一起改。
-const AppDirName = "Foundation"
-
-// DataDirEnv 指定后，数据根目录直接使用该路径（不再拼 AppDirName）。
-// cryptox / logx 读取同名环境变量，三者保持同一根目录。
-const DataDirEnv = "FOUNDATION_DATA_DIR"
-
-// DBFileName 是 SQLite 主文件名（WAL/SHM 由 SQLite 自动管理为 .db-wal / .db-shm）。
-const DBFileName = "foundation.db"
-
-// ConfigFileName 路径配置（独立于数据库本身，因此不能存到 db 里——鸡生蛋）。
-const ConfigFileName = "storage.json"
+// 标识常量统一来自 internal/paths（ARCH §10.1：三处必须同时改，现在只有一处）。
+// 这里 re-export 是为了让既有调用点（storagesvc 等）不必改动，也避免字符串漂移。
+const (
+	// AppDirName 数据根目录在用户目录下的子文件夹名。
+	AppDirName = paths.AppDirName
+	// DataDirEnv 是数据根目录的环境变量名（接管层之一）。
+	// 实际解析统一走 paths.Resolver；保留此常量供日志/诊断文案使用。
+	DataDirEnv = paths.EnvDataRoot
+	// DBFileName SQLite 主文件名。
+	DBFileName = paths.DBFileName
+	// ConfigFileName 路径配置文件（独立于数据库：鸡生蛋，不能存库）。
+	ConfigFileName = paths.ConfigFileName
+)
 
 // ErrNoUserDir 表示无法解析用户数据目录。
 var ErrNoUserDir = errors.New("storage: cannot resolve user data directory")
 
-// userDataDir 返回平台规范的用户数据根目录：
-//   - Windows: %AppData%\Foundation
-//   - macOS:   ~/Library/Application Support/Foundation
-//   - Linux:   $XDG_DATA_HOME/Foundation 或 ~/.local/share/Foundation
+// userDataDir 返回**平台默认**数据根目录（不含 cli/env/user 接管）：
+//   - Windows: %AppData%\Mandaryn
+//   - macOS:   ~/Library/Application Support/Mandaryn
+//   - Linux:   ${XDG_DATA_HOME:-~/.local/share}/Mandaryn
 //
-// 不创建目录，只算路径——是否落地交给调用方。
+// 注意：业务路径一律经 paths.Resolver 解析；本函数只用于两处「解析器自身
+// 还不可用」的场合——计算默认值、以及 storage.json 的落点。
 func userDataDir() (string, error) {
-	// DataDirEnv 覆盖：便携版 / E2E 测试 / server 模式隔离数据（storage、cryptox 主密钥、logx 日志都遵循）
-	if v := os.Getenv(DataDirEnv); v != "" {
-		return v, nil
-	}
-	switch runtime.GOOS {
-	case "windows":
-		if v := os.Getenv("AppData"); v != "" {
-			return filepath.Join(v, AppDirName), nil
-		}
-		// 兜底：os.UserConfigDir 返回 %AppData%
-		base, err := os.UserConfigDir()
-		if err != nil {
-			return "", ErrNoUserDir
-		}
-		return filepath.Join(base, AppDirName), nil
-	case "darwin":
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", ErrNoUserDir
-		}
-		return filepath.Join(home, "Library", "Application Support", AppDirName), nil
-	default:
-		// Linux / *BSD：遵循 XDG 规范
-		if v := os.Getenv("XDG_DATA_HOME"); v != "" {
-			return filepath.Join(v, AppDirName), nil
-		}
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", ErrNoUserDir
-		}
-		return filepath.Join(home, ".local", "share", AppDirName), nil
-	}
+	return paths.DefaultDataRoot()
 }
 
 // DefaultDBPath 返回平台默认数据库文件完整路径。
@@ -76,19 +47,33 @@ func userDataDir() (string, error) {
 func DefaultDBPath() (string, error) {
 	dir, err := userDataDir()
 	if err != nil {
-		return "", err
+		return "", ErrNoUserDir
 	}
 	return filepath.Join(dir, DBFileName), nil
 }
 
+// DBPathIn 返回指定数据根下的数据库文件路径。
+// 启动路径（internal/app）用解析器给出的 dataRoot 调它，而不是各自拼字符串。
+func DBPathIn(dataRoot string) string {
+	return filepath.Join(dataRoot, DBFileName)
+}
+
 // configFilePath 返回 storage.json 的完整路径。
-// 它和默认数据库放在同一目录，但不受用户切换数据路径影响。
+//
+// 语义：它放在「配置尚未生效时也能找到」的位置——即 env 层生效值（便携版/E2E）
+// 或平台默认目录，而**不是**用户自定义的 dataRoot（那正是本文件要记录的内容）。
 func configFilePath() (string, error) {
-	dir, err := userDataDir()
-	if err != nil {
-		return "", err
+	base := ""
+	if v, ok := os.LookupEnv(paths.EnvDataRoot); ok && v != "" {
+		base = v
+	} else {
+		d, err := userDataDir()
+		if err != nil {
+			return "", err
+		}
+		base = d
 	}
-	return filepath.Join(dir, ConfigFileName), nil
+	return filepath.Join(base, ConfigFileName), nil
 }
 
 // ensureDir 创建目录（含父级）；已存在不报错。

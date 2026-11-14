@@ -26,6 +26,28 @@ tasks:
       DEFAULT_OUTPUT: '{{.BIN_DIR}}/{{.APP_NAME}}'
       OUTPUT: '{{ .OUTPUT | default .DEFAULT_OUTPUT }}'
 
+  build:nollm:
+    summary: 构建 nollm 精简产物（仅在线引擎，不含本地推理）
+    desc: |
+      与 `build` 派生的精简产物：`EXTRA_TAGS` 追加 `nollm`，
+      于是 `internal/asr/local` 与 `internal/speaker/sherpa` 的 sherpa-onnx 实现
+      被 `//go:build !nollm` 排除，改链恒失败桩（ERR_LOCAL_UNAVAILABLE）。
+      产物路径为 `bin/<app>-nollm`，与标准产物互不覆盖。
+
+      注：macOS 的 `CGO_ENABLED` 由本文件模板按 `purego` 标签固定，
+      不接受外部覆盖；nollm 只保证「不链入本地推理」，不承诺 `CGO_ENABLED=0`。
+
+      **nollm 是体积敏感场景的可选产物，不是 CGO 兜底**（ADR-01）。
+    cmds:
+      - task: build
+        vars:
+          ARCH: '{{.ARCH}}'
+          DEV: '{{.DEV}}'
+          OBFUSCATED: '{{.OBFUSCATED}}'
+          GARBLE_ARGS: '{{.GARBLE_ARGS}}'
+          OUTPUT: "{{.BIN_DIR}}/{{.APP_NAME}}-nollm"
+          EXTRA_TAGS: '{{if .EXTRA_TAGS}}{{.EXTRA_TAGS}},{{end}}nollm'
+
   build:native:
     summary: Builds the application natively (on macOS, or anywhere with -tags purego)
     internal: true

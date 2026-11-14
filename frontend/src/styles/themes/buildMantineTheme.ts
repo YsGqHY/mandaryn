@@ -14,25 +14,25 @@ import {
   type MantineThemeOverride,
 } from '@mantine/core';
 import classes from './mantineComponents.module.css';
-import type { FoundationPalette, FoundationThemePreset } from './types';
+import type { MandarynPalette, MandarynThemePreset } from './types';
 
 // ============================================================================
-// Foundation × Mantine 主题编译
+// Mandaryn × Mantine 主题编译
 // ============================================================================
 //
-// 1. FoundationPalette → CSS 变量 --fd-*（由 cssVariablesResolver 注入 :root）
+// 1. MandarynPalette → CSS 变量 --fd-*（由 cssVariablesResolver 注入 :root）
 //    组件样式（*.module.css）一律写 var(--fd-xxx)，主题切换零重渲染、零硬编码。
-// 2. accent → Mantine 'foundation' 10 级色阶，并设为 primaryColor，
+// 2. accent → Mantine 'mandaryn' 10 级色阶，并设为 primaryColor，
 //    这样 <Button> / <Switch> / <Checkbox> / 焦点环等 Mantine 原生组件自动跟随强调色。
 // 3. Mantine 自身的语义色（body / text / dimmed / border / default）全部映射到 --fd-*，
 //    保证没写样式的 Mantine 组件也和三套预设一致。
 
 const FONT_STACK = '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 
-// FoundationPalette 的 CSS 变量名对照表。
+// MandarynPalette 的 CSS 变量名对照表。
 // JS 侧需要"引用而非取值"时用它（例如 @mantine/charts 的 color、内联 style）：
-//   <BarChart series={[{ name: 'v', color: FOUNDATION_CSS_VARS.accent }]} />
-export const FOUNDATION_CSS_VARS = {
+//   <BarChart series={[{ name: 'v', color: MANDARYN_CSS_VARS.accent }]} />
+export const MANDARYN_CSS_VARS = {
   bg: {
     base: 'var(--fd-bg-base)',
     sidebar: 'var(--fd-bg-sidebar)',
@@ -55,9 +55,9 @@ export const FOUNDATION_CSS_VARS = {
     success: 'var(--fd-success)',
     warning: 'var(--fd-warning)',
   },
-} as const satisfies FoundationPalette;
+} as const satisfies MandarynPalette;
 
-const paletteToCssVars = (p: FoundationPalette): Record<string, string> => ({
+const paletteToCssVars = (p: MandarynPalette): Record<string, string> => ({
   '--fd-bg-base': p.bg.base,
   '--fd-bg-sidebar': p.bg.sidebar,
   '--fd-bg-content': p.bg.content,
@@ -76,7 +76,7 @@ const paletteToCssVars = (p: FoundationPalette): Record<string, string> => ({
   '--fd-warning': p.status.warning,
 });
 
-// Mantine 内置语义色 → Foundation 变量
+// Mantine 内置语义色 → Mandaryn 变量
 const mantineSemanticVars = (): Record<string, string> => ({
   '--mantine-color-body': 'var(--fd-bg-content)',
   '--mantine-color-text': 'var(--fd-text-primary)',
@@ -91,7 +91,7 @@ const mantineSemanticVars = (): Record<string, string> => ({
 });
 
 export const buildCssVariablesResolver =
-  (preset: FoundationThemePreset): CSSVariablesResolver =>
+  (preset: MandarynThemePreset): CSSVariablesResolver =>
   () => {
     const scheme = { ...paletteToCssVars(preset.palette), ...mantineSemanticVars() };
     // forceColorScheme 下只会命中其中一套，两边写同样的值即可
@@ -137,17 +137,17 @@ const accentTuple = (accent: string, accentHover: string): MantineColorsTuple =>
   ];
 };
 
-// 把 FoundationThemePreset 编译为 Mantine theme override。
+// 把 MandarynThemePreset 编译为 Mantine theme override。
 // 组件级默认值 / 样式覆盖集中在这里 + mantineComponents.module.css，
 // 业务组件不需要重复声明。
-export const buildMantineTheme = (preset: FoundationThemePreset): MantineThemeOverride => {
+export const buildMantineTheme = (preset: MandarynThemePreset): MantineThemeOverride => {
   const { palette, mantineOverrides } = preset;
 
   const base = createTheme({
-    primaryColor: 'foundation',
+    primaryColor: 'mandaryn',
     primaryShade: 6,
     colors: {
-      foundation: accentTuple(palette.accent, palette.accentHover),
+      mandaryn: accentTuple(palette.accent, palette.accentHover),
     },
     white: '#ffffff',
     fontFamily: FONT_STACK,
@@ -176,7 +176,7 @@ export const buildMantineTheme = (preset: FoundationThemePreset): MantineThemeOv
         classNames: { tooltip: classes.tooltip },
       }),
     },
-    other: { foundation: palette },
+    other: { mandaryn: palette },
   });
 
   return mantineOverrides ? mergeThemeOverrides(base, mantineOverrides) : base;

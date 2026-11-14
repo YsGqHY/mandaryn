@@ -20,7 +20,7 @@ export const zhCN: Locale = {
         showWindow: '显示主窗口',
         quit: '退出',
       },
-      title: 'Foundation',
+      title: 'Mandaryn',
     },
     sidebar: {
       brand: 'F',
@@ -39,8 +39,9 @@ export const zhCN: Locale = {
       },
     },
     route: {
-      home: '首页',
-      xProDemo: 'X-Pro 组件',
+      record: '录制',
+      library: '会话库',
+      models: '模型',
       settings: '设置',
     },
     common: {

@@ -3,7 +3,7 @@ import {
   type CandlestickChartLabels,
 } from '@mantine/charts';
 import { useMemo } from 'react';
-import { FOUNDATION_CSS_VARS } from '@/styles/themes';
+import { MANDARYN_CSS_VARS } from '@/styles/themes';
 import { useChartsI18n } from '../shared';
 import type { ChartMargin } from '../shared';
 
@@ -63,10 +63,10 @@ export function CandlestickChart({
       h={height ?? 300}
       data={data}
       dataKey="date"
-      upColor={upColor ?? FOUNDATION_CSS_VARS.status.success}
-      downColor={downColor ?? FOUNDATION_CSS_VARS.status.danger}
-      gridColor={FOUNDATION_CSS_VARS.divider}
-      textColor={FOUNDATION_CSS_VARS.text.muted}
+      upColor={upColor ?? MANDARYN_CSS_VARS.status.success}
+      downColor={downColor ?? MANDARYN_CSS_VARS.status.danger}
+      gridColor={MANDARYN_CSS_VARS.divider}
+      textColor={MANDARYN_CSS_VARS.text.muted}
       strokeDasharray="2 2"
       gridAxis="y"
       labels={resolvedLabels}

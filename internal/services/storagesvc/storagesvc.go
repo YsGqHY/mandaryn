@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"foundation/internal/storage"
+	"vip.oberon.mandaryn/internal/storage"
 )
 
 // Service 暴露给前端：路径管理 + 统计。
@@ -21,10 +21,25 @@ type Service struct {
 	holder *storage.Holder
 	cfg    *storage.ConfigManager
 	mu     sync.Mutex // 切换路径串行
+
+	// onPathChanged 在数据目录切换成功后回调（app 用它让 paths.Resolver 缓存失效）。
+	onPathChanged func()
 }
 
-func New(holder *storage.Holder, cfg *storage.ConfigManager) *Service {
-	return &Service{holder: holder, cfg: cfg}
+// New 构造服务。onPathChanged 在数据目录切换成功后回调（app 用它让
+// paths.Resolver 缓存失效）；为 nil 时视为无钩子。用构造注入而非导出
+// setter，避免 func 类型方法被绑定生成器扫进前端 API。
+func New(holder *storage.Holder, cfg *storage.ConfigManager, onPathChanged func()) *Service {
+	return &Service{holder: holder, cfg: cfg, onPathChanged: onPathChanged}
+}
+
+func (s *Service) notifyPathChanged() {
+	s.mu.Lock()
+	fn := s.onPathChanged
+	s.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
 }
 
 // Stats 设置页用于展示当前路径与占用空间。
@@ -206,6 +221,8 @@ func (s *Service) SetCustomPath(_ context.Context, newPath string) error {
 	for _, suffix := range []string{"", "-wal", "-shm"} {
 		_ = os.Remove(oldPath + suffix)
 	}
+	// 7) 通知解析器缓存失效：否则 UI 会继续显示切换前的生效路径。
+	s.notifyPathChanged()
 	return nil
 }
 
@@ -218,12 +235,20 @@ func (s *Service) ResetPath(ctx context.Context) error {
 	current := s.holder.Current()
 	if filepath.Clean(def) == filepath.Clean(current.Path) {
 		// 已经是默认位置：仅清空 storage.json 中的自定义路径配置
-		return s.cfg.ResetDataPath()
+		if err := s.cfg.ResetDataPath(); err != nil {
+			return err
+		}
+		s.notifyPathChanged()
+		return nil
 	}
 	if err := s.SetCustomPath(ctx, def); err != nil {
 		return err
 	}
-	return s.cfg.ResetDataPath()
+	if err := s.cfg.ResetDataPath(); err != nil {
+		return err
+	}
+	s.notifyPathChanged()
+	return nil
 }
 
 func (s *Service) tryReopenLegacy(oldPath string) {
@@ -240,7 +265,7 @@ func preflightWritable(path string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	test := filepath.Join(dir, ".foundation-write-test")
+	test := filepath.Join(dir, ".mandaryn-write-test")
 	f, err := os.Create(test)
 	if err != nil {
 		return err
