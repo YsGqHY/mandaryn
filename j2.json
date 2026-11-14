@@ -1,0 +1,737 @@
+{
+  "total_count": 5,
+  "jobs": [
+    {
+      "id": 132481260275,
+      "run_id": 43606202027,
+      "workflow_name": "CI",
+      "head_branch": "master",
+      "run_url": "https://api.github.com/repos/YsGqHY/mandaryn/actions/runs/43606202027",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOVuItUs8AAAAe2H-a8w",
+      "head_sha": "987bd0dc464785270e566d8205eaa8568704e675",
+      "url": "https://api.github.com/repos/YsGqHY/mandaryn/actions/jobs/132481260275",
+      "html_url": "https://github.com/YsGqHY/mandaryn/actions/runs/43606202027/job/132481260275",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-11-14T14:41:49Z",
+      "started_at": "2026-11-14T14:41:52Z",
+      "completed_at": "2026-11-14T14:47:11Z",
+      "name": "E2E（容器化 / Linux）",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-14T14:41:53Z",
+          "completed_at": "2026-11-14T14:41:55Z"
+        },
+        {
+          "name": "检出代码",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-14T14:41:55Z",
+          "completed_at": "2026-11-14T14:41:57Z"
+        },
+        {
+          "name": "准备 Buildx",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-14T14:41:57Z",
+          "completed_at": "2026-11-14T14:42:05Z"
+        },
+        {
+          "name": "构建 E2E 镜像",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 4,
+          "started_at": "2026-11-14T14:42:05Z",
+          "completed_at": "2026-11-14T14:46:42Z"
+        },
+        {
+          "name": "运行 E2E（容器内）",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 5,
+          "started_at": "2026-11-14T14:46:42Z",
+          "completed_at": "2026-11-14T14:46:42Z"
+        },
+        {
+          "name": "汇总 E2E 结果并校验跳过数",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 6,
+          "started_at": "2026-11-14T14:46:42Z",
+          "completed_at": "2026-11-14T14:46:42Z"
+        },
+        {
+          "name": "上传 E2E 报告与 trace",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-14T14:46:42Z",
+          "completed_at": "2026-11-14T14:46:42Z"
+        },
+        {
+          "name": "Post 构建 E2E 镜像",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-14T14:46:42Z",
+          "completed_at": "2026-11-14T14:46:44Z"
+        },
+        {
+          "name": "Post 准备 Buildx",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-14T14:46:44Z",
+          "completed_at": "2026-11-14T14:47:08Z"
+        },
+        {
+          "name": "Post 检出代码",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-11-14T14:47:08Z",
+          "completed_at": "2026-11-14T14:47:08Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-11-14T14:47:08Z",
+          "completed_at": "2026-11-14T14:47:09Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/YsGqHY/mandaryn/check-runs/132481260275",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000001640,
+      "runner_name": "GitHub Actions 1000001640",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 132481260525,
+      "run_id": 43606202027,
+      "workflow_name": "CI",
+      "head_branch": "master",
+      "run_url": "https://api.github.com/repos/YsGqHY/mandaryn/actions/runs/43606202027",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOVuItUs8AAAAe2H-b7Q",
+      "head_sha": "987bd0dc464785270e566d8205eaa8568704e675",
+      "url": "https://api.github.com/repos/YsGqHY/mandaryn/actions/jobs/132481260525",
+      "html_url": "https://github.com/YsGqHY/mandaryn/actions/runs/43606202027/job/132481260525",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-14T14:41:49Z",
+      "started_at": "2026-11-14T14:41:52Z",
+      "completed_at": "2026-11-14T14:43:05Z",
+      "name": "Linux 编译门禁（CGO-free）",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-14T14:41:53Z",
+          "completed_at": "2026-11-14T14:41:54Z"
+        },
+        {
+          "name": "检出代码",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-14T14:41:54Z",
+          "completed_at": "2026-11-14T14:41:55Z"
+        },
+        {
+          "name": "安装 Go（版本取自 go.mod）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-14T14:41:55Z",
+          "completed_at": "2026-11-14T14:42:05Z"
+        },
+        {
+          "name": "校验 LICENSE 存在且为 MIT",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-14T14:42:05Z",
+          "completed_at": "2026-11-14T14:42:05Z"
+        },
+        {
+          "name": "go vet（含 _test.go 编译检查）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-14T14:42:05Z",
+          "completed_at": "2026-11-14T14:42:56Z"
+        },
+        {
+          "name": "go build（CGO_ENABLED=0 + purego）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-14T14:42:56Z",
+          "completed_at": "2026-11-14T14:42:57Z"
+        },
+        {
+          "name": "go build（CGO_ENABLED=0 + purego + nollm）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-14T14:42:57Z",
+          "completed_at": "2026-11-14T14:42:58Z"
+        },
+        {
+          "name": "Post 安装 Go（版本取自 go.mod）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-14T14:42:58Z",
+          "completed_at": "2026-11-14T14:43:02Z"
+        },
+        {
+          "name": "Post 检出代码",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-11-14T14:43:02Z",
+          "completed_at": "2026-11-14T14:43:02Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-11-14T14:43:02Z",
+          "completed_at": "2026-11-14T14:43:02Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/YsGqHY/mandaryn/check-runs/132481260525",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000001641,
+      "runner_name": "GitHub Actions 1000001641",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 132481260556,
+      "run_id": 43606202027,
+      "workflow_name": "CI",
+      "head_branch": "master",
+      "run_url": "https://api.github.com/repos/YsGqHY/mandaryn/actions/runs/43606202027",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOVuItUs8AAAAe2H-cDA",
+      "head_sha": "987bd0dc464785270e566d8205eaa8568704e675",
+      "url": "https://api.github.com/repos/YsGqHY/mandaryn/actions/jobs/132481260556",
+      "html_url": "https://github.com/YsGqHY/mandaryn/actions/runs/43606202027/job/132481260556",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-11-14T14:41:49Z",
+      "started_at": "2026-11-14T14:41:52Z",
+      "completed_at": "2026-11-14T14:47:21Z",
+      "name": "E2E（Windows / server 模式）",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-14T14:41:53Z",
+          "completed_at": "2026-11-14T14:41:54Z"
+        },
+        {
+          "name": "检出代码",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-14T14:41:54Z",
+          "completed_at": "2026-11-14T14:42:01Z"
+        },
+        {
+          "name": "安装 MSYS2 工具链（gcc）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-14T14:42:01Z",
+          "completed_at": "2026-11-14T14:42:29Z"
+        },
+        {
+          "name": "安装 Go（版本取自 go.mod）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-14T14:42:29Z",
+          "completed_at": "2026-11-14T14:42:51Z"
+        },
+        {
+          "name": "安装 wails3 CLI（与 go.mod 的 wails v3 版本保持一致）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-14T14:42:51Z",
+          "completed_at": "2026-11-14T14:44:49Z"
+        },
+        {
+          "name": "安装 pnpm",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-14T14:44:49Z",
+          "completed_at": "2026-11-14T14:44:52Z"
+        },
+        {
+          "name": "安装 Node 并缓存 pnpm store",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-14T14:44:52Z",
+          "completed_at": "2026-11-14T14:44:59Z"
+        },
+        {
+          "name": "生成前端 bindings（被 .gitignore 排除，不生成则 typecheck/build 必失败）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-14T14:44:59Z",
+          "completed_at": "2026-11-14T14:45:28Z"
+        },
+        {
+          "name": "安装前端依赖",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-14T14:45:28Z",
+          "completed_at": "2026-11-14T14:45:44Z"
+        },
+        {
+          "name": "构建 server 模式后端",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-14T14:45:44Z",
+          "completed_at": "2026-11-14T14:47:12Z"
+        },
+        {
+          "name": "校验 server 产物",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-14T14:47:12Z",
+          "completed_at": "2026-11-14T14:47:12Z"
+        },
+        {
+          "name": "运行 E2E",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 12,
+          "started_at": "2026-11-14T14:47:12Z",
+          "completed_at": "2026-11-14T14:47:14Z"
+        },
+        {
+          "name": "汇总 E2E 结果并校验跳过数",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 13,
+          "started_at": "2026-11-14T14:47:14Z",
+          "completed_at": "2026-11-14T14:47:14Z"
+        },
+        {
+          "name": "上传 E2E 报告与 trace",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-11-14T14:47:14Z",
+          "completed_at": "2026-11-14T14:47:15Z"
+        },
+        {
+          "name": "Post 安装 Node 并缓存 pnpm store",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 25,
+          "started_at": "2026-11-14T14:47:15Z",
+          "completed_at": "2026-11-14T14:47:15Z"
+        },
+        {
+          "name": "Post 安装 pnpm",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 26,
+          "started_at": "2026-11-14T14:47:15Z",
+          "completed_at": "2026-11-14T14:47:15Z"
+        },
+        {
+          "name": "Post 安装 Go（版本取自 go.mod）",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 27,
+          "started_at": "2026-11-14T14:47:15Z",
+          "completed_at": "2026-11-14T14:47:15Z"
+        },
+        {
+          "name": "Post 检出代码",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 28,
+          "started_at": "2026-11-14T14:47:15Z",
+          "completed_at": "2026-11-14T14:47:17Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 29,
+          "started_at": "2026-11-14T14:47:17Z",
+          "completed_at": "2026-11-14T14:47:17Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/YsGqHY/mandaryn/check-runs/132481260556",
+      "labels": [
+        "windows-latest"
+      ],
+      "runner_id": 1000001643,
+      "runner_name": "GitHub Actions 1000001643",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 132481260564,
+      "run_id": 43606202027,
+      "workflow_name": "CI",
+      "head_branch": "master",
+      "run_url": "https://api.github.com/repos/YsGqHY/mandaryn/actions/runs/43606202027",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOVuItUs8AAAAe2H-cFA",
+      "head_sha": "987bd0dc464785270e566d8205eaa8568704e675",
+      "url": "https://api.github.com/repos/YsGqHY/mandaryn/actions/jobs/132481260564",
+      "html_url": "https://github.com/YsGqHY/mandaryn/actions/runs/43606202027/job/132481260564",
+      "status": "completed",
+      "conclusion": "failure",
+      "created_at": "2026-11-14T14:41:49Z",
+      "started_at": "2026-11-14T14:41:52Z",
+      "completed_at": "2026-11-14T14:44:19Z",
+      "name": "Windows 检查与测试",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-14T14:41:53Z",
+          "completed_at": "2026-11-14T14:41:55Z"
+        },
+        {
+          "name": "检出代码",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-14T14:41:55Z",
+          "completed_at": "2026-11-14T14:42:01Z"
+        },
+        {
+          "name": "安装 MSYS2 工具链（提供 gcc，供 CGO 与 -race 使用）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-14T14:42:01Z",
+          "completed_at": "2026-11-14T14:42:32Z"
+        },
+        {
+          "name": "安装 Go（版本取自 go.mod）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-14T14:42:32Z",
+          "completed_at": "2026-11-14T14:42:55Z"
+        },
+        {
+          "name": "确认 CGO 可用（gcc 就位）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-14T14:42:55Z",
+          "completed_at": "2026-11-14T14:42:55Z"
+        },
+        {
+          "name": "go build（基线，CGO_ENABLED=1）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-14T14:42:55Z",
+          "completed_at": "2026-11-14T14:44:13Z"
+        },
+        {
+          "name": "go build（CGO_ENABLED=0）",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 7,
+          "started_at": "2026-11-14T14:44:13Z",
+          "completed_at": "2026-11-14T14:44:14Z"
+        },
+        {
+          "name": "go build（CGO_ENABLED=0 + nollm）",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-11-14T14:44:14Z",
+          "completed_at": "2026-11-14T14:44:14Z"
+        },
+        {
+          "name": "go vet",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-11-14T14:44:14Z",
+          "completed_at": "2026-11-14T14:44:14Z"
+        },
+        {
+          "name": "go test",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10,
+          "started_at": "2026-11-14T14:44:14Z",
+          "completed_at": "2026-11-14T14:44:14Z"
+        },
+        {
+          "name": "go test -race",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 11,
+          "started_at": "2026-11-14T14:44:14Z",
+          "completed_at": "2026-11-14T14:44:14Z"
+        },
+        {
+          "name": "Post 安装 Go（版本取自 go.mod）",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 21,
+          "started_at": "2026-11-14T14:44:14Z",
+          "completed_at": "2026-11-14T14:44:14Z"
+        },
+        {
+          "name": "Post 检出代码",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22,
+          "started_at": "2026-11-14T14:44:14Z",
+          "completed_at": "2026-11-14T14:44:15Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23,
+          "started_at": "2026-11-14T14:44:15Z",
+          "completed_at": "2026-11-14T14:44:16Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/YsGqHY/mandaryn/check-runs/132481260564",
+      "labels": [
+        "windows-latest"
+      ],
+      "runner_id": 1000001642,
+      "runner_name": "GitHub Actions 1000001642",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 132481260596,
+      "run_id": 43606202027,
+      "workflow_name": "CI",
+      "head_branch": "master",
+      "run_url": "https://api.github.com/repos/YsGqHY/mandaryn/actions/runs/43606202027",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOVuItUs8AAAAe2H-cNA",
+      "head_sha": "987bd0dc464785270e566d8205eaa8568704e675",
+      "url": "https://api.github.com/repos/YsGqHY/mandaryn/actions/jobs/132481260596",
+      "html_url": "https://github.com/YsGqHY/mandaryn/actions/runs/43606202027/job/132481260596",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-11-14T14:41:49Z",
+      "started_at": "2026-11-14T14:41:52Z",
+      "completed_at": "2026-11-14T14:50:12Z",
+      "name": "Wails3 构建与产物",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-11-14T14:41:53Z",
+          "completed_at": "2026-11-14T14:41:56Z"
+        },
+        {
+          "name": "检出代码",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-11-14T14:41:56Z",
+          "completed_at": "2026-11-14T14:42:02Z"
+        },
+        {
+          "name": "安装 MSYS2 工具链（gcc / windres）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-11-14T14:42:02Z",
+          "completed_at": "2026-11-14T14:42:31Z"
+        },
+        {
+          "name": "安装 Go（版本取自 go.mod）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-11-14T14:42:31Z",
+          "completed_at": "2026-11-14T14:42:53Z"
+        },
+        {
+          "name": "安装 wails3 CLI（与 go.mod 的 wails v3 版本保持一致）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-11-14T14:42:53Z",
+          "completed_at": "2026-11-14T14:44:40Z"
+        },
+        {
+          "name": "安装 pnpm",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-11-14T14:44:40Z",
+          "completed_at": "2026-11-14T14:44:43Z"
+        },
+        {
+          "name": "安装 Node 并缓存 pnpm store",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-11-14T14:44:43Z",
+          "completed_at": "2026-11-14T14:44:57Z"
+        },
+        {
+          "name": "生成前端 bindings（被 .gitignore 排除，不生成则 typecheck 必失败）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-11-14T14:44:57Z",
+          "completed_at": "2026-11-14T14:45:31Z"
+        },
+        {
+          "name": "pnpm install",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-11-14T14:45:31Z",
+          "completed_at": "2026-11-14T14:45:49Z"
+        },
+        {
+          "name": "pnpm typecheck",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-11-14T14:45:50Z",
+          "completed_at": "2026-11-14T14:45:59Z"
+        },
+        {
+          "name": "pnpm build",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-11-14T14:45:59Z",
+          "completed_at": "2026-11-14T14:46:12Z"
+        },
+        {
+          "name": "构建标准产物（bin/mandaryn.exe）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-11-14T14:46:12Z",
+          "completed_at": "2026-11-14T14:47:45Z"
+        },
+        {
+          "name": "构建 nollm 精简产物（bin/mandaryn-nollm.exe）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-11-14T14:47:45Z",
+          "completed_at": "2026-11-14T14:47:56Z"
+        },
+        {
+          "name": "校验产物存在并输出大小",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-11-14T14:47:56Z",
+          "completed_at": "2026-11-14T14:47:56Z"
+        },
+        {
+          "name": "上传产物",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-11-14T14:47:56Z",
+          "completed_at": "2026-11-14T14:48:01Z"
+        },
+        {
+          "name": "Post 安装 Node 并缓存 pnpm store",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 27,
+          "started_at": "2026-11-14T14:48:01Z",
+          "completed_at": "2026-11-14T14:48:08Z"
+        },
+        {
+          "name": "Post 安装 pnpm",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 28,
+          "started_at": "2026-11-14T14:48:08Z",
+          "completed_at": "2026-11-14T14:48:08Z"
+        },
+        {
+          "name": "Post 安装 Go（版本取自 go.mod）",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 29,
+          "started_at": "2026-11-14T14:48:08Z",
+          "completed_at": "2026-11-14T14:50:02Z"
+        },
+        {
+          "name": "Post 检出代码",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 30,
+          "started_at": "2026-11-14T14:50:02Z",
+          "completed_at": "2026-11-14T14:50:05Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 31,
+          "started_at": "2026-11-14T14:50:05Z",
+          "completed_at": "2026-11-14T14:50:05Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/YsGqHY/mandaryn/check-runs/132481260596",
+      "labels": [
+        "windows-latest"
+      ],
+      "runner_id": 1000001644,
+      "runner_name": "GitHub Actions 1000001644",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}

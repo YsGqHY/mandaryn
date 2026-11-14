@@ -94,10 +94,14 @@ jobs:
       - name: go build（基线，CGO_ENABLED=1）
         run: go build ./internal/... .
 
+      # shell: bash —— Windows runner 上 run 默认走 PowerShell，`VAR=value cmd` 这种
+      # POSIX 前置赋值会报 "The term 'CGO_ENABLED=0' is not recognized"。Git Bash 随 runner 提供。
       - name: go build（CGO_ENABLED=0）
+        shell: bash
         run: CGO_ENABLED=0 go build ./internal/... .
 
       - name: go build（CGO_ENABLED=0 + nollm）
+        shell: bash
         run: CGO_ENABLED=0 go build -tags nollm ./internal/... .
 
       - name: go vet
@@ -258,12 +262,19 @@ jobs:
       - name: 构建 server 模式后端
         run: wails3 task build:server
 
+      # server 产物同样链接 sherpa-onnx（CGO_ENABLED=1 基线，ADR-01），运行时需要
+      # 3 个 DLL 与 exe 同目录；`common:build:server` 不像桌面 build 那样自动拷贝，
+      # 缺了会表现为进程 0xC0000135（STATUS_DLL_NOT_FOUND），E2E 在 webServer 启动即失败。
+      - name: 拷贝 CGO 运行时 DLL（sherpa-onnx / onnxruntime）
+        run: wails3 task windows:copy:runtime:dlls
+
       - name: 校验 server 产物
         shell: bash
         run: |
           set -euo pipefail
           test -f bin/mandaryn-server.exe || { echo "::error::缺少 bin/mandaryn-server.exe"; exit 1; }
           ls -lh bin/mandaryn-server.exe
+          ls -1 bin/*.dll
 
       # retries=1：只给一次重试，避免用反复重跑掩盖真实缺陷（本项目曾有一个
       # 「高亮完全不跟随播放」的缺陷被弱断言掩盖很久，见 playback-advance.spec.ts 注释）。

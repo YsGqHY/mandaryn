@@ -53,7 +53,11 @@ COPY . .
 # --frozen-lockfile：锁文件与 package.json 不一致时直接失败，而不是悄悄升级依赖
 RUN pnpm --dir frontend install --frozen-lockfile
 
-# 该 task 内部即 `go build -tags server,production`，产物为 bin/mandaryn-server（Linux 无后缀）
+# 该 task 内部即 `go build -tags server,production`，产物为 bin/mandaryn-server（Linux 无后缀）。
+# 必须 CGO_ENABLED=0：容器里没有 gtk4 / webkitgtk-6.0 头文件，开 CGO 会去 pkg-config 找它们
+# （wails 的 assetserver/webview 包）而失败；server 模式是纯 HTTP，不需要 GTK。
+# CLI 本身仍需 GTK3 头文件（见上方 go install -tags gtk3），两者互不影响。
+ENV CGO_ENABLED=0
 RUN wails3 task build:server
 
 # 构建期就断言产物存在：避免把「构建静默成功但没产物」带到运行期才暴露
