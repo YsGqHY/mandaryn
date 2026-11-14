@@ -1,0 +1,24 @@
+# 构建上下文瘦身：只排除「不需要进镜像」的东西，frontend/src 必须保留（前端构建要用）。
+.git
+.github
+.narrafork
+docs
+
+# 依赖与产物（镜像内会重新安装 / 重新构建）
+node_modules
+frontend/node_modules
+frontend/dist
+frontend/bindings
+frontend/test-results
+frontend/playwright-report
+frontend/e2e-report.json
+
+# E2E 运行时数据与报告
+.e2e-data
+.e2e-data-*
+e2e-artifacts
+
+# 本机构建产物（Linux 镜像里由 server 阶段自行构建 bin/mandaryn-server）
+bin
+*.exe
+*.dll

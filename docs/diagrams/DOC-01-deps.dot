@@ -1,0 +1,42 @@
+// DOC-01 文档依赖关系
+// 来源：docs/DOC-INDEX.md（原 Mermaid graph LR）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph DOC_01_deps {
+  graph [
+    rankdir=LR,
+    fontname="Microsoft YaHei", fontsize=14,
+    nodesep=0.35, ranksep=0.80,
+    bgcolor="white",
+    labelloc="t", label="文档基线依赖关系（DOC-00 ~ DOC-06）"
+  ];
+  node [
+    shape=box, style="rounded,filled", fillcolor="#ffffff",
+    color="#9aa0a6", fontcolor="#1f1f1f",
+    fontname="Microsoft YaHei", fontsize=11, penwidth=1.1,
+    margin="0.16,0.09"
+  ];
+  edge [
+    color="#5f6368", penwidth=1.1, arrowsize=0.7,
+    fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"
+  ];
+
+  A [label="DOC-00\n索引·术语", fillcolor="#eaf1fb", color="#3f6ea8"];
+  B [label="DOC-01\nPRD"];
+  C [label="DOC-02\n架构"];
+  D [label="DOC-03\n接口"];
+  E [label="DOC-04\n数据模型"];
+  F [label="DOC-05\nUX-SPEC"];
+  G [label="DOC-06\n部署运维"];
+
+  A -> B;
+  A -> C;
+  B -> C;
+  C -> D;
+  C -> E;
+  A -> F;
+  B -> F;
+  E -> D;
+  C -> G;
+  E -> G;
+  D -> G;
+}

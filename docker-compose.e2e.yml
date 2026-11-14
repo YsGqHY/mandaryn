@@ -1,0 +1,27 @@
+# 本地 E2E 容器编排：与 CI 共用同一份 Dockerfile.e2e，避免两套环境漂移。
+#
+# 用法（在仓库根目录，Windows 上需先启动 Docker Desktop 并确保 WSL2 后端可用）：
+#   docker compose -f docker-compose.e2e.yml build      # 构建镜像（首次较慢）
+#   docker compose -f docker-compose.e2e.yml run --rm e2e
+#   docker compose -f docker-compose.e2e.yml run --rm e2e pnpm e2e:portable --reporter=list
+#
+# 报告与 trace 会写到宿主机的 ./e2e-artifacts 与 ./frontend/test-results。
+
+services:
+  e2e:
+    # CI 里由 build-push-action 先构建并打上同名 tag，再用 --no-build 复用，避免重复构建
+    image: ${MANDARYN_E2E_IMAGE:-mandaryn-e2e:local}
+    build:
+      context: .
+      dockerfile: Dockerfile.e2e
+    environment:
+      E2E_CHANNEL: chromium
+      E2E_EXPECTED_SKIPPED: "5"
+      PLAYWRIGHT_JSON_OUTPUT_NAME: /reports/e2e-report.json
+    volumes:
+      # 报告落到宿主机，便于本地打开与 CI 上传
+      - ./e2e-artifacts:/reports
+      # Playwright 的 test-results（失败时的 trace / 截图）
+      - ./frontend/test-results:/app/frontend/test-results
+    # 默认命令由镜像 CMD 提供（pnpm e2e:portable）；需要跑别的用 `run --rm e2e <cmd>`
+    init: true

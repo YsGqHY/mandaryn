@@ -1,0 +1,43 @@
+// DATA-01 数据模型实体关系图
+// 来源：docs/DATA-MODEL.md §（原 Mermaid erDiagram）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+// 说明：基数沿用原图记号（1:N = ||--o{，1:0..1 = ||--o|）；
+//       原图 PK/FK 在字段后缀标出，这里同样保留为纯文本（避免 emoji 字体缺字）
+digraph DATA_01_er {
+  graph [
+    rankdir=LR,
+    fontname="Microsoft YaHei", fontsize=14,
+    nodesep=0.55, ranksep=0.85,
+    bgcolor="white", pad="0.25,0.25",
+    labelloc="t", label="数据模型（TBL-01 ~ TBL-12 核心实体）"
+  ];
+  node [
+    shape=box, style="rounded,filled", fillcolor="#ffffff",
+    color="#9aa0a6", fontcolor="#1f1f1f",
+    fontname="Microsoft YaHei", fontsize=10, penwidth=1.1,
+    margin="0.18,0.18"
+  ];
+  edge [
+    color="#5f6368", penwidth=1.1, arrowsize=0.7,
+    fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"
+  ];
+
+  sessions         [label="sessions\n──────────────\nid (PK)\nstatus\nmodel_source\nduration_ms", fillcolor="#eaf1fb", color="#3f6ea8"];
+  segments         [label="segments\n──────────────\nid (PK)\nsession_id (FK)\nseq\nstart_ms\nend_ms\ntext\nspeaker_id (FK)"];
+  speakers         [label="speakers\n──────────────\nid (PK)\nembedding_enc\ndim"];
+  roles            [label=<<B>roles</B><BR/><FONT POINT-SIZE="10">──────────────</FONT><BR/>id (PK)<BR/>name<BR/>color_token<BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">改名全局同步靠它</FONT>>];
+  session_speakers [label=<<B>session_speakers</B><BR/><FONT POINT-SIZE="10">──────────────</FONT><BR/>session_id (FK)<BR/>speaker_id (FK)<BR/>role_id (FK)<BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">会话×说话人绑定</FONT>>];
+  session_events   [label=<<B>session_events</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">降级/暂停在此打点</FONT>>];
+  bundles          [label="bundles\n(模型包注册表)"];
+  downloads        [label="downloads\n(断点续传状态)"];
+
+  sessions         -> segments         [label="1:N (CASCADE)"];
+  sessions         -> session_speakers [label="1:N (CASCADE)"];
+  sessions         -> session_events   [label="1:N (CASCADE)"];
+  speakers         -> session_speakers [label="1:N"];
+  roles            -> session_speakers [label="1:N"];
+  bundles          -> downloads        [label="bundleId@version"];
+
+  { rank=same; speakers; roles; }
+  { rank=same; segments; session_speakers; session_events; }
+}

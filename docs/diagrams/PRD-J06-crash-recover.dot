@@ -1,0 +1,24 @@
+// PRD-J06 用户旅程：异常关机后的会话恢复
+// 来源：docs/PRD.md（原 ASCII 箭头链）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph PRD_J06_crash_recover {
+  graph [
+    rankdir=TB, fontname="Microsoft YaHei", fontsize=13,
+    nodesep=0.28, ranksep=0.24, bgcolor="white",
+    labelloc=t, label="用户旅程：崩溃恢复"
+  ];
+  node [shape=box, style="rounded,filled", fillcolor="#ffffff", color="#9aa0a6",
+        fontcolor="#1f1f1f", fontname="Microsoft YaHei", fontsize=10,
+        penwidth=1.1, margin="0.14,0.08"];
+  edge [color="#5f6368", penwidth=1.1, arrowsize=0.6,
+        fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"];
+
+  d1 [label="录制中强制关机 → 重启应用", fillcolor="#fff3f3", color="#c26a6a"];
+  d2 [label="启动自检发现 .recording 残留"];
+  d3 [label="会话标记 interrupted，音频修补（补齐 WAV 头），已定稿片段回放可用",
+      fillcolor="#eef7f0", color="#4a8a5c"];
+  d4 [label="提示「上次录制未正常结束，已恢复：42 分钟音频 / 318 条片段」"];
+  d5 [label="可点「重新转写」（用当前模型补全未转写部分）"];
+
+  d1 -> d2 -> d3 -> d4 -> d5;
+}

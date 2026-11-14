@@ -1,0 +1,43 @@
+// ARCH-02c 运行时数据流 · 阶段二：转写（录制结束后独立任务，FR-03-4）
+// 来源：docs/ARCHITECTURE.md §1.2「阶段二：转写」（原 ASCII 流程图）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph ARCH_02c_transcription_phase {
+  graph [
+    rankdir=TB,
+    fontname="Microsoft YaHei", fontsize=14,
+    nodesep=0.35, ranksep=0.42,
+    bgcolor="white",
+    labelloc="t", label="阶段二：转写（录完之后的独立任务）"
+  ];
+  node [
+    shape=box, style="rounded,filled", fillcolor="#ffffff",
+    color="#9aa0a6", fontcolor="#1f1f1f",
+    fontname="Microsoft YaHei", fontsize=11, penwidth=1.1,
+    margin="0.16,0.09"
+  ];
+  edge [
+    color="#5f6368", penwidth=1.1, arrowsize=0.7,
+    fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"
+  ];
+
+  inst   [label="已封存录音实例（audio.wav + 元数据）", fillcolor="#eef7f0", color="#4a8a5c"];
+
+  trig1  [label="① 用户点「开始转写」", shape=note, style="filled", fillcolor="#fff8e1", color="#c9a227"];
+  trig2  [label=<<B>② 空闲自动</B>（NFR-08 headroom &gt; 0 且无录制）<BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">headroom = 整机份额减去其他进程占用</FONT>>, shape=note, style="filled", fillcolor="#fff8e1", color="#c9a227"];
+
+  read   [label="读取音频 → 解码/重采样 → 分句（VAD / 静音切分）"];
+  engine [label="离线引擎逐句转写（本地 sherpa-onnx / 在线端点）"];
+  spk    [label="声纹提取 → 全局归并 → 角色映射"];
+  store  [label="segments 落库 + transcription_status: running → done + EV: transcript:*", fillcolor="#eaf1fb", color="#3f6ea8"];
+
+  preempt[label="被预算抢占 → 让位，transcription_status 回 queued，已转句子保留", shape=note, style="filled", fillcolor="#fff3f3", color="#c26a6a"];
+
+  inst  -> read;
+  read  -> engine;
+  engine -> spk;
+  spk   -> store;
+
+  trig1 -> inst [style=dashed, arrowhead=none, color="#c9a227"];
+  trig2 -> inst [style=dashed, arrowhead=none, color="#c9a227"];
+  preempt -> store [style=dashed, arrowhead=none, color="#c26a6a"];
+}

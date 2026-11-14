@@ -1,0 +1,47 @@
+// UX-01 快捷键校验决策流程
+// 来源：docs/UX-SPEC.md（原 ASCII 决策树，4 步串行 + 各步拒绝分支）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+// 注：macOS 的 ⌘ ⌃ ⌥ ↑ 在 Microsoft YaHei 中无字形，故该 note 用 HTML 标签
+//     仅对这些符号切到 Segoe UI Symbol，其余文字与标点仍走中文字体，原字符不变。
+digraph UX_01_hotkey_validate {
+  graph [
+    rankdir=TB,
+    fontname="Microsoft YaHei", fontsize=14,
+    nodesep=0.40, ranksep=0.42,
+    bgcolor="white",
+    labelloc="t", label="快捷键组合校验流程"
+  ];
+  node [
+    shape=box, style="rounded,filled", fillcolor="#ffffff",
+    color="#9aa0a6", fontcolor="#1f1f1f",
+    fontname="Microsoft YaHei", fontsize=11, penwidth=1.1,
+    margin="0.16,0.10"
+  ];
+  edge [
+    color="#5f6368", penwidth=1.1, arrowsize=0.7,
+    fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"
+  ];
+
+  start [label="用户按下新组合", fillcolor="#eaf1fb", color="#3f6ea8"];
+
+  s1  [label="1) 系统保留黑名单\n→ 直接拒绝（不可绕过）"];
+
+  n1  [shape=note, style="filled", fillcolor="#fff8e1", color="#c9a227", fontsize=10,
+       label=<
+<FONT FACE="Microsoft YaHei">Win: Ctrl+Alt+Del、Ctrl+Shift+Esc、Win+*、Alt+Tab、Alt+F4</FONT><BR/>
+<FONT FACE="Microsoft YaHei">macOS: </FONT><FONT FACE="Segoe UI Symbol">⌘</FONT><FONT FACE="Microsoft YaHei">Space、</FONT><FONT FACE="Segoe UI Symbol">⌘</FONT><FONT FACE="Microsoft YaHei">Tab、</FONT><FONT FACE="Segoe UI Symbol">⌘</FONT><FONT FACE="Microsoft YaHei">Q、</FONT><FONT FACE="Segoe UI Symbol">⌘</FONT><FONT FACE="Microsoft YaHei">H、</FONT><FONT FACE="Segoe UI Symbol">⌃↑</FONT><FONT FACE="Microsoft YaHei"> 等 Mission Control 系</FONT><BR/>
+<FONT FACE="Microsoft YaHei">Linux: 一律靠第 3 步的注册探测（由 WM 决定）</FONT>
+>];
+
+  s2  [label="2) 软件内重复\n→ 拒绝，并高亮占用它的动作（可「替换」）"];
+  s3  [label="3) OS 注册探测（global）\n→ 临时 Register 再立即 Unregister"];
+  fail3 [label="失败 ⇒ 该组合已被其他软件占用\n→ 提示换组合", fillcolor="#fff3f3", color="#c26a6a"];
+  s4  [label="4) 通过 → 保存 + 真正注册\n→ emit 无事件（UI 直接刷新返回值）", fillcolor="#eef7f0", color="#4a8a5c"];
+
+  start -> s1;
+  s1 -> s2;
+  s2 -> s3;
+  s3 -> s4;
+  s3 -> fail3;
+  n1 -> s1 [style=dashed, arrowhead=none, color="#c9a227"];
+}

@@ -1,0 +1,52 @@
+// ARCH-07 本地模式 vs 在线模式（出站边界对比）
+// 来源：docs/ARCHITECTURE.md §（原 ASCII 双栏对比图）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph ARCH_07_local_vs_online {
+  graph [
+    rankdir=TB,
+    newrank=true,
+    fontname="Microsoft YaHei", fontsize=14,
+    nodesep=0.25, ranksep=0.40,
+    bgcolor="white",
+    labelloc="t", label="本地模式 与 在线模式（出站边界）"
+  ];
+  node [
+    shape=box, style="rounded,filled", fillcolor="#ffffff",
+    color="#9aa0a6", fontcolor="#1f1f1f",
+    fontname="Microsoft YaHei", fontsize=11, penwidth=1.1,
+    margin="0.16,0.09"
+  ];
+  edge [
+    color="#5f6368", penwidth=1.1, arrowsize=0.7,
+    fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"
+  ];
+
+  subgraph cluster_local {
+    label="本地模式";
+    style="rounded,filled"; fillcolor="#eef7f0"; color="#4a8a5c";
+    fontcolor="#1c4027"; fontsize=13; fontname="Microsoft YaHei";
+    l_audio [label="音频 ─► 引擎(本机) ─► 文本"];
+    l_disk  [label="└► 落盘(本机)"];
+    l_speak [label="声纹 ─► 本机聚类 ─► 本机库"];
+    l_out   [label="出站：仅模型下载（可关）", fillcolor="#fff8e1", color="#c9a227"];
+    // rank=same 必须写在 cluster 内部，否则节点会被移出 cluster
+    l_audio -> l_disk -> l_speak -> l_out [style=invis];
+  }
+
+  subgraph cluster_online {
+    label="在线模式";
+    style="rounded,filled"; fillcolor="#fdf6e8"; color="#a8823a";
+    fontcolor="#4a3510"; fontsize=13; fontname="Microsoft YaHei";
+    o_audio [label="音频 ─► HTTPS ─► 端点 ─► 文本"];
+    o_disk  [label="└► 落盘(本机，仍保留)"];
+    o_speak [label="声纹 ─► 本机聚类（永不出站）"];
+    o_out   [label="出站：模型下载 + 音频 chunk", fillcolor="#fff8e1", color="#c9a227"];
+    o_audio -> o_disk -> o_speak -> o_out [style=invis];
+  }
+
+  // 两栏逐行对齐
+  { rank=same; l_audio; o_audio; }
+  { rank=same; l_disk;  o_disk;  }
+  { rank=same; l_speak; o_speak; }
+  { rank=same; l_out;   o_out;   }
+}

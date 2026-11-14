@@ -1,0 +1,47 @@
+// ARCH-04 声纹提取与归并流程
+// 来源：docs/ARCHITECTURE.md §（原 ASCII 分叉流程图）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph ARCH_04_diarize {
+  graph [
+    rankdir=TB,
+    fontname="Microsoft YaHei", fontsize=14,
+    nodesep=0.45, ranksep=0.50,
+    bgcolor="white",
+    labelloc="t", label="声纹提取 → 会话内聚类 / 全局归并"
+  ];
+  node [
+    shape=box, style="rounded,filled", fillcolor="#ffffff",
+    color="#9aa0a6", fontcolor="#1f1f1f",
+    fontname="Microsoft YaHei", fontsize=11, penwidth=1.1,
+    margin="0.16,0.10"
+  ];
+  edge [
+    color="#5f6368", penwidth=1.1, arrowsize=0.7,
+    fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"
+  ];
+
+  audio  [label="句级音频(16kHz)"];
+  embed  [label=<<B>SpeakerEmbeddingExtractor</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">把一句音频压成声纹向量</FONT>>];
+  vec    [label="embedding(192/256-d)"];
+
+  cluster[shape=box, label=<<B>会话内聚类</B><BR/><FONT POINT-SIZE="10">（OfflineSpeakerDiarization / 层次聚类）</FONT><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">把这一场里的句子按声纹分组</FONT>>];
+  reg    [shape=box, label=<<B>全局注册表 SpeakerEmbeddingManager</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">跨会话的声纹总库，用来认出“上次那个人”</FONT>>];
+
+  map    [label="session_speakers 映射"];
+  search [label=<<B>Search(embedding, threshold)</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">在总库里按阈值找最像的已注册说话人</FONT>>];
+
+  role   [label="role_id（默认：说话人 N）"];
+  reuse  [label="命中 → 复用 speaker（跨会话同一人）"];
+
+  audio -> embed -> vec;
+  vec   -> cluster;
+  vec   -> reg;
+  cluster -> map;
+  reg     -> search;
+  map     -> role;
+  search  -> reuse;
+
+  { rank=same; cluster; reg; }
+  { rank=same; map; search; }
+  { rank=same; role; reuse; }
+}

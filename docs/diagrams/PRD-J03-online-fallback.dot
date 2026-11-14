@@ -1,0 +1,28 @@
+// PRD-J03 用户旅程：在线模式与网络中断降级
+// 来源：docs/PRD.md（原 ASCII 箭头链，含失败分支缩进）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph PRD_J03_online_fallback {
+  graph [
+    rankdir=TB, fontname="Microsoft YaHei", fontsize=13,
+    nodesep=0.30, ranksep=0.26, bgcolor="white",
+    labelloc=t, label="用户旅程：在线模式与降级"
+  ];
+  node [shape=box, style="rounded,filled", fillcolor="#ffffff", color="#9aa0a6",
+        fontcolor="#1f1f1f", fontname="Microsoft YaHei", fontsize=10,
+        penwidth=1.1, margin="0.14,0.08"];
+  edge [color="#5f6368", penwidth=1.1, arrowsize=0.6,
+        fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"];
+
+  a1 [label="设置 → 转写模型 → 选择「在线」", fillcolor="#eaf1fb", color="#3f6ea8"];
+  a2 [label="填写端点/密钥/模型名 → 【强制】隐私风险确认（勾选后才能保存）"];
+  a3 [label="测试连接 → 成功 → 保存（下一个会话生效）"];
+  a4 [label="开始录制 → 出字"];
+  a5 [label="第 3 分钟网络中断", fillcolor="#fff3f3", color="#c26a6a"];
+  a6 [label="重试 2 次（间隔 1s/3s）"];
+  a7 [label="仍失败 → 自动回退本地（若已装本地模型）", fillcolor="#fff8e1", color="#c9a227"];
+  a8 [label="会话标记 degraded，时间轴打点，顶部提示「已降级为本地转写」"];
+  a9 [label="音频持续落盘，续转从断点继续", fillcolor="#eef7f0", color="#4a8a5c"];
+  a10[label="网络恢复 → 不自动切回在线（避免二次抖动），提示「可手动切回」"];
+
+  a1 -> a2 -> a3 -> a4 -> a5 -> a6 -> a7 -> a8 -> a9 -> a10;
+}

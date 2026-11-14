@@ -1,0 +1,82 @@
+// MOD-01 模块结构图
+// 来源：CLAUDE.md「模块结构图」（原 Mermaid graph TD）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+// 排版说明：原图是 graph TD，但 18 个叶子节点横向排开会得到超宽图（不可读），
+//           故改为 rankdir=LR（层级仍是「父→子」的同一棵树，仅方向由纵向换为横向），
+//           并用两个 cluster 把 internal/ 与 frontend/ 两棵子树分开，便于阅读。
+// 注：原 Mermaid 的 3 条 click 指令改以 URL 属性保留在节点上（PNG 不可点击）。
+digraph MOD_01_modules {
+  graph [
+    rankdir=LR,
+    fontname="Microsoft YaHei", fontsize=14,
+    nodesep=0.22, ranksep=0.55,
+    bgcolor="white",
+    labelloc=t, label="模块结构图"
+  ];
+  node [
+    shape=box, style="rounded,filled", fillcolor="#ffffff",
+    color="#9aa0a6", fontcolor="#1f1f1f",
+    fontname="Microsoft YaHei", fontsize=10, penwidth=1.1,
+    margin="0.12,0.07"
+  ];
+  edge [
+    color="#5f6368", penwidth=1.0, arrowsize=0.6,
+    fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"
+  ];
+
+  A [label="mandaryn (vip.oberon.mandaryn)", fillcolor="#eaf1fb", color="#3f6ea8"];
+  M [label="main.go"];
+  B [label="build/", fillcolor="#fdf6e8", color="#a8823a", URL="./build/CLAUDE.md"];
+  D [label="docs/\nDOC-00 ~ DOC-06", fillcolor="#f7f2fa", color="#7d5a99", URL="./docs/DOC-INDEX.md"];
+
+  subgraph cluster_internal {
+    label="internal/";
+    style="rounded,filled"; fillcolor="#f2f6fc"; color="#5b81b0";
+    fontcolor="#1a3a5c"; fontsize=12; fontname="Microsoft YaHei";
+    I   [label="internal/", fillcolor="#f2f6fc", color="#5b81b0"];
+    IA  [label="internal/app/\napp.go + window_*.go + childwindow.go + systray*.go"];
+    IP  [label="internal/paths\n(待实现) 路径解析 ADR-02"];
+    IL2 [label="internal/{capture,asr,diarize,models,recording,perf}\n(待实现) L2 领域包"];
+    IS  [label="internal/services/\ngreet / preferences / appsettings / storagesvc / exportsvc / subprocess\n+ (待实现) capture/recording/transcript/sessions/models/engine/speakers/hotkeys/path"];
+    IE  [label="internal/events/events.go"];
+    IT  [label="internal/storage/\nSQLite + GORM + AutoMigrate"];
+    IU  [label="internal/utils/\nhttpx / procx / cryptox / logx / filex"];
+    I -> IA;
+    I -> IP;
+    I -> IL2;
+    I -> IS;
+    I -> IE;
+    I -> IT;
+    I -> IU;
+  }
+
+  subgraph cluster_frontend {
+    label="frontend/";
+    style="rounded,filled"; fillcolor="#eef7f0"; color="#4a8a5c";
+    fontcolor="#1c4027"; fontsize=12; fontname="Microsoft YaHei";
+    F  [label="frontend/", fillcolor="#eef7f0", color="#4a8a5c", URL="./frontend/CLAUDE.md"];
+    FC [label="src/components/\nAppLayout / TitleBar / Navigation / Skeleton / x-pro"];
+    FL [label="src/layouts/\n布局预设 + layoutRegistry"];
+    FP [label="src/pages/\nHomePage / SettingsPage(personalization,layout,language,database)\n+ (待实现) Record/Library/Session/Models"];
+    FE [label="e2e/\nPlaywright（server 模式）"];
+    FS [label="src/services/\ngreet / preferences / appsettings / storage / dialogs / export / subprocess / childwindow / systray"];
+    FT [label="src/styles/themes/\n(Mantine theme + --fd-* CSS 变量)"];
+    FB [label="bindings/ (生成)"];
+    F -> FC;
+    F -> FL;
+    F -> FP;
+    F -> FE;
+    F -> FS;
+    F -> FT;
+    F -> FB;
+  }
+
+  B1 [label="windows / darwin / linux / ios / android / docker"];
+
+  A -> M;
+  A -> I;
+  A -> F;
+  A -> B;
+  A -> D;
+  B -> B1;
+}

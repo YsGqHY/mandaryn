@@ -10,7 +10,7 @@ import { expect, test, type Page } from '@playwright/test';
 // 产物：docs/screenshots/*.png  —— 运行：cd frontend && pnpm e2e:screenshots
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OUT = path.join(root, 'docs', 'screenshots');
-const DB = path.join(process.env.E2E_DATA_DIR ?? path.join(root, '.e2e-data'), 'foundation.db');
+const DB = path.join(process.env.E2E_DATA_DIR ?? path.join(root, '.e2e-data'), 'mandaryn.db');
 mkdirSync(OUT, { recursive: true });
 
 const sql = (q: string) => execFileSync('sqlite3', [DB, q]);
@@ -45,7 +45,7 @@ const openSettings = async (page: Page, section: string) => {
 const LAYOUTS = ['classic', 'sidebar', 'topnav', 'titlebar', 'right', 'dock', 'floating', 'inset', 'focus'];
 
 test('layouts', async ({ page }) => {
-  setTheme('foundation-light');
+  setTheme('mandaryn-light');
   for (const id of LAYOUTS) {
     setPref('layout', id);
     await ready(page);
@@ -55,7 +55,7 @@ test('layouts', async ({ page }) => {
 });
 
 test('focus drawer open', async ({ page }) => {
-  setTheme('foundation-light');
+  setTheme('mandaryn-light');
   setPref('layout', 'focus');
   await ready(page);
   await page.getByRole('button', { name: /打开导航菜单|菜单/ }).first().click();
@@ -65,18 +65,18 @@ test('focus drawer open', async ({ page }) => {
 });
 
 test('pages', async ({ page }) => {
-  setTheme('foundation-light');
+  setTheme('mandaryn-light');
   setPref('layout', 'sidebar');
   await ready(page);
-  await page.getByRole('button', { name: /X-Pro/ }).first().click();
+
+  // 产品主页面（录制 / 会话库）：验证导航可达且页面能渲染，同时留档截图。
+  await page.getByRole('button', { name: /录制/ }).first().click();
   await page.waitForTimeout(1200);
-  await shot(page, 'page-xpro-grid');
-  await page
-    .locator('main')
-    .getByText('Charts Pro')
-    .evaluate((el) => el.scrollIntoView({ block: 'start' }));
-  await page.waitForTimeout(800);
-  await shot(page, 'page-xpro-charts');
+  await shot(page, 'page-record');
+
+  await page.getByRole('button', { name: /会话库/ }).first().click();
+  await page.waitForTimeout(1200);
+  await shot(page, 'page-library');
 
   await openSettings(page, '布局');
   await shot(page, 'page-settings-layout');
@@ -90,8 +90,8 @@ test('pages', async ({ page }) => {
 
 test('themes', async ({ page }) => {
   for (const [theme, layout] of [
-    ['foundation-dark', 'sidebar'],
-    ['foundation-obsidian', 'inset'],
+    ['mandaryn-dark', 'sidebar'],
+    ['mandaryn-obsidian', 'inset'],
   ] as const) {
     setTheme(theme);
     setPref('layout', layout);
@@ -103,7 +103,7 @@ test('themes', async ({ page }) => {
 });
 
 test('tray panel and child window', async ({ page }) => {
-  setTheme('foundation-light');
+  setTheme('mandaryn-light');
   await page.setViewportSize({ width: 320, height: 420 });
   await page.goto('/systray.html');
   await page.waitForTimeout(1200);

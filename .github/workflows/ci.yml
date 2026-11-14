@@ -1,0 +1,365 @@
+name: CI
+
+# 触发：所有分支的 push 与 PR，外加手动触发（便于首次验证与失败复跑）
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支上的新提交取消进行中的旧运行，省 runner 额度
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# 最小权限：CI 只读仓库
+permissions:
+  contents: read
+
+env:
+  # 版本固定（改这里就要同步改 go.mod / frontend 依赖，见各步骤注释）
+  NODE_VERSION: '24'
+  PNPM_VERSION: '11.5.0'
+  WAILS_VERSION: 'v3.1.0'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1) Linux 编译门禁：验证「无 cgo 也能编译」这条路径没被破坏
+  #    Wails v3 在 linux/darwin 上 CGO_ENABLED=0 时必须配 -tags purego
+  #    （buildguard 会在缺少该标签时报 undefined 符号），Windows 不需要。
+  #    注意：这里只做编译与静态检查，不跑测试、不产出可用产物。
+  # ---------------------------------------------------------------------------
+  linux-compile:
+    name: Linux 编译门禁（CGO-free）
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go（版本取自 go.mod）
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: 校验 LICENSE 存在且为 MIT
+        run: |
+          set -euo pipefail
+          test -f LICENSE || { echo '::error::缺少 LICENSE 文件'; exit 1; }
+          grep -q 'MIT License' LICENSE || { echo '::error::LICENSE 不是 MIT 全文'; exit 1; }
+
+      - name: go vet（含 _test.go 编译检查）
+        run: CGO_ENABLED=0 go vet -tags purego ./internal/...
+
+      - name: go build（CGO_ENABLED=0 + purego）
+        run: CGO_ENABLED=0 go build -tags purego ./internal/... .
+
+      - name: go build（CGO_ENABLED=0 + purego + nollm）
+        run: CGO_ENABLED=0 go build -tags 'purego nollm' ./internal/... .
+
+  # ---------------------------------------------------------------------------
+  # 2) Windows 静态检查与测试：这是唯一能真实跑测试的 runner
+  #    - CGO_ENABLED=1 是既定基线（ADR-01），需要 gcc → 用 msys2 的 UCRT64 工具链
+  #    - -race 需要 cgo，同样依赖 gcc
+  # ---------------------------------------------------------------------------
+  windows-test:
+    name: Windows 检查与测试
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 MSYS2 工具链（提供 gcc，供 CGO 与 -race 使用）
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: mingw-w64-ucrt-x86_64-gcc
+          path-type: inherit
+
+      - name: 安装 Go（版本取自 go.mod）
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: 确认 CGO 可用（gcc 就位）
+        run: |
+          gcc --version
+          go env CGO_ENABLED GOOS GOARCH
+
+      - name: go build（基线，CGO_ENABLED=1）
+        run: go build ./internal/... .
+
+      - name: go build（CGO_ENABLED=0）
+        run: CGO_ENABLED=0 go build ./internal/... .
+
+      - name: go build（CGO_ENABLED=0 + nollm）
+        run: CGO_ENABLED=0 go build -tags nollm ./internal/... .
+
+      - name: go vet
+        run: go vet ./internal/...
+
+      - name: go test
+        run: go test ./internal/...
+
+      - name: go test -race
+        run: go test -race ./internal/...
+
+  # ---------------------------------------------------------------------------
+  # 3) Wails3 构建与产物：前端 typecheck/build + 两个 exe + artifact
+  #    frontend/bindings 被 .gitignore 排除，必须先 generate 才能 typecheck
+  # ---------------------------------------------------------------------------
+  windows-build:
+    name: Wails3 构建与产物
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 MSYS2 工具链（gcc / windres）
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: mingw-w64-ucrt-x86_64-gcc
+          path-type: inherit
+
+      - name: 安装 Go（版本取自 go.mod）
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: 安装 wails3 CLI（与 go.mod 的 wails v3 版本保持一致）
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: 安装 Node 并缓存 pnpm store
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: 生成前端 bindings（被 .gitignore 排除，不生成则 typecheck 必失败）
+        run: wails3 task generate:bindings
+
+      - name: pnpm install
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: pnpm typecheck
+        working-directory: frontend
+        run: pnpm typecheck
+
+      - name: pnpm build
+        working-directory: frontend
+        run: pnpm build
+
+      - name: 构建标准产物（bin/mandaryn.exe）
+        run: wails3 task build
+
+      - name: 构建 nollm 精简产物（bin/mandaryn-nollm.exe）
+        run: wails3 task build:nollm
+
+      - name: 校验产物存在并输出大小
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in bin/mandaryn.exe bin/mandaryn-nollm.exe; do
+            if [ ! -f "$f" ]; then
+              echo "::error::缺少产物 $f"
+              exit 1
+            fi
+          done
+          echo "=== 产物 ==="
+          ls -lh bin/mandaryn.exe bin/mandaryn-nollm.exe
+          echo "=== 运行时 DLL（标准产物需要，nollm 不需要）==="
+          ls -lh bin/*.dll || echo "::warning::未找到运行时 DLL"
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: mandaryn-windows-amd64
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            bin/mandaryn.exe
+            bin/mandaryn-nollm.exe
+            bin/*.dll
+
+  # ---------------------------------------------------------------------------
+  # 4) E2E（Wails server 模式 + Playwright）
+  #    为什么要 server 模式：CI runner 没有桌面会话，原生窗口起不来；server 模式是
+  #    纯 HTTP + 嵌入式前端，Playwright 用 Chromium 驱动即可，且能跑到真实后端与 SQLite。
+  #    覆盖范围：录制落盘、转写失败隔离、回放高亮与跳转、崩溃恢复、分页等。
+  #    明确覆盖不到：需要模型包 / 原生「另存为」/ 真实音频设备 / Win11 20348+ 的用例
+  #    —— 它们以设计性 skip 存在，由汇总脚本对账（见 e2e/summarize-ci.mjs）。
+  # ---------------------------------------------------------------------------
+  e2e-windows:
+    name: E2E（Windows / server 模式）
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 必须早于 setup-go：CGO 依赖 msys2 提供的 gcc
+      - name: 安装 MSYS2 工具链（gcc）
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: mingw-w64-ucrt-x86_64-gcc
+          path-type: inherit
+
+      - name: 安装 Go（版本取自 go.mod）
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: 安装 wails3 CLI（与 go.mod 的 wails v3 版本保持一致）
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      # cache: pnpm 必须放在 pnpm/action-setup 之后，否则找不到 pnpm 无法定位 store
+      - name: 安装 Node 并缓存 pnpm store
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: 生成前端 bindings（被 .gitignore 排除，不生成则 typecheck/build 必失败）
+        run: wails3 task generate:bindings
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      # build:server 内部即 `go build -tags server,production`：server 标签让 wails 走
+      # 纯 HTTP 后端（也绕过 buildguard 的 CGO 要求），产物为 bin/mandaryn-server.exe
+      - name: 构建 server 模式后端
+        run: wails3 task build:server
+
+      - name: 校验 server 产物
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f bin/mandaryn-server.exe || { echo "::error::缺少 bin/mandaryn-server.exe"; exit 1; }
+          ls -lh bin/mandaryn-server.exe
+
+      # retries=1：只给一次重试，避免用反复重跑掩盖真实缺陷（本项目曾有一个
+      # 「高亮完全不跟随播放」的缺陷被弱断言掩盖很久，见 playback-advance.spec.ts 注释）。
+      # trace 只在首次重试时开启，失败时上传，便于定位 flaky 与真实缺陷的区别。
+      # 不加 continue-on-error：失败就该红。汇总步骤用 if: always() 仍会执行，
+      # 因此失败时既能拿到摘要，也不会被「绿色」掩盖。
+      #
+      # 跑**平台无关子集**（e2e:portable）而不是全量：product-flow / crash-recovery 需要
+      # 真实音频设备做设备回环录制，而托管 runner 没有音频端点，跑全量会稳定失败。
+      # 这两条用例请在带声卡的 self-hosted runner 上用 `pnpm e2e` 覆盖。
+      - name: 运行 E2E
+        id: e2e
+        working-directory: frontend
+        env:
+          E2E_CHANNEL: msedge
+          # Playwright 的 json reporter 用这个变量决定报告落盘位置
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report.json
+          E2E_EXPECTED_SKIPPED: '5'
+        run: |
+          pnpm e2e:portable --reporter=list,json --retries=1 --trace=on-first-retry
+
+      # 汇总写入 Job Summary，并在「跳过数偏离预期」或「有失败」时置红。
+      # 单独一步：即使上一步已失败，也要把跳过原因与失败清单写进摘要再收尾。
+      - name: 汇总 E2E 结果并校验跳过数
+        if: always()
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report.json
+          E2E_EXPECTED_SKIPPED: '5'
+        run: node e2e/summarize-ci.mjs
+
+      - name: 上传 E2E 报告与 trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report-windows
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            frontend/e2e-report.json
+            frontend/test-results/
+
+  # ---------------------------------------------------------------------------
+  # 5) E2E（容器化 / Linux）
+  #    与 e2e-windows **并存**，不是替换：
+  #      - 本 job 证明「同一套用例在 Linux 上也能过」+ 容器环境可复现（与本地同一 Dockerfile）；
+  #      - e2e-windows 证明「在真实产品平台上也能过」（路径 / .exe / SIGKILL→TerminateProcess 等）。
+  #    两者都只跑**平台无关子集**（pnpm e2e:portable）：product-flow 与 crash-recovery
+  #    依赖真实音频设备做设备回环录制，容器与托管 runner 都没有音频端点，跑全量会红。
+  #    需要覆盖那两条用例时，请在带声卡的 self-hosted runner 上执行 `pnpm e2e`。
+  # ---------------------------------------------------------------------------
+  e2e-container:
+    name: E2E（容器化 / Linux）
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MANDARYN_E2E_IMAGE: mandaryn-e2e:ci
+      E2E_EXPECTED_SKIPPED: '5'
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 准备 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 与本地完全同一份 Dockerfile：本地 `docker compose build` 走的也是它
+      - name: 构建 E2E 镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.e2e
+          load: true
+          tags: mandaryn-e2e:ci
+          cache-from: type=gha,scope=e2e
+          cache-to: type=gha,mode=max,scope=e2e
+
+      # 用同一个 compose 文件运行：镜像已在上一步 load，compose 会直接复用而不重建
+      - name: 运行 E2E（容器内）
+        run: |
+          mkdir -p e2e-artifacts
+          docker compose -f docker-compose.e2e.yml run --rm e2e
+
+      - name: 汇总 E2E 结果并校验跳过数
+        if: always()
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-artifacts/e2e-report.json
+          E2E_EXPECTED_SKIPPED: '5'
+        run: node frontend/e2e/summarize-ci.mjs
+
+      - name: 上传 E2E 报告与 trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report-container
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            e2e-artifacts/
+            frontend/test-results/

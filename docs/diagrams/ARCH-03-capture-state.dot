@@ -1,0 +1,41 @@
+// ARCH-03 捕获状态机
+// 来源：docs/ARCHITECTURE.md §（原 ASCII 状态图，含 500ms 轮询与重连退避）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph ARCH_03_capture_state {
+  graph [
+    rankdir=LR,
+    fontname="Microsoft YaHei", fontsize=14,
+    nodesep=0.55, ranksep=0.75,
+    bgcolor="white",
+    labelloc="t", label="捕获状态机（每 500ms 轮询 + 平台事件）"
+  ];
+  node [
+    shape=box, style="rounded,filled", fillcolor="#ffffff",
+    color="#9aa0a6", fontcolor="#1f1f1f",
+    fontname="Microsoft YaHei", fontsize=11, penwidth=1.1,
+    margin="0.16,0.10"
+  ];
+  edge [
+    color="#5f6368", penwidth=1.1, arrowsize=0.7,
+    fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"
+  ];
+
+  normal      [label="正常采集"];
+  reconnecting[label="Reconnecting\n(按 ExeName 重解析)"];
+  fallback    [label="DeviceFallback\n(迁移到新默认设备)"];
+  interrupted [label="Interrupted\n(会话保留可回放)"];
+
+  poll   [label="每 500ms 轮询 + 平台事件", shape=note, style="filled", fillcolor="#fff8e1", color="#c9a227"];
+  backoff[label="退避序列：200ms → 1s → 3s（共 3 次）；\n每次失败发 EV: capture:invalid", shape=note, style="filled", fillcolor="#fff8e1", color="#c9a227"];
+
+  normal       -> reconnecting [label="进程消失"];
+  reconnecting -> normal       [label="重连成功(≤3次)"];
+  reconnecting -> interrupted  [label="3 次失败"];
+  normal       -> fallback     [label="设备失效"];
+  fallback     -> normal       [label="设备恢复"];
+  interrupted  -> normal       [label="设备恢复 / 用户手动重选"];
+  normal       -> normal       [label="轮询"];
+
+  poll    -> normal [style=dashed, arrowhead=none, color="#c9a227"];
+  backoff -> reconnecting [style=dashed, arrowhead=none, color="#c9a227"];
+}

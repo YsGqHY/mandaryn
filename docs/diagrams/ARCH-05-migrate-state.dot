@@ -1,0 +1,51 @@
+// ARCH-05 数据/模型目录迁移状态机
+// 来源：docs/ARCHITECTURE.md §（原 ASCII 状态链 + 失败/取消分支）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph ARCH_05_migrate_state {
+  graph [
+    rankdir=LR,
+    fontname="Microsoft YaHei", fontsize=14,
+    nodesep=0.40, ranksep=0.55,
+    bgcolor="white",
+    labelloc="t", label="目录迁移状态机"
+  ];
+  node [
+    shape=box, style="rounded,filled", fillcolor="#ffffff",
+    color="#9aa0a6", fontcolor="#1f1f1f",
+    fontname="Microsoft YaHei", fontsize=11, penwidth=1.1,
+    margin="0.16,0.10"
+  ];
+  edge [
+    color="#5f6368", penwidth=1.1, arrowsize=0.7,
+    fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"
+  ];
+
+  idle      [label="idle"];
+  preflight [label=<<B>preflight</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">预检空间与权限</FONT>>];
+  copying   [label=<<B>copying</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">复制到新目录</FONT>>];
+  verifying [label=<<B>verifying</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">逐文件哈希比对</FONT>>];
+  switching [label=<<B>switching</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">原子切换配置</FONT>>];
+  cleaning  [label=<<B>cleaning</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">清理旧目录</FONT>>];
+  done      [label="done"];
+  rollback  [label=<<B>rollback</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">还原配置，旧路径可用</FONT>>, fillcolor="#fff3f3", color="#c26a6a"];
+  failed    [label="failed\n(旧路径仍可用)", fillcolor="#fff3f3", color="#c26a6a"];
+
+  idle      -> preflight;
+  preflight -> copying;
+  copying   -> verifying;
+  verifying -> switching;
+  switching -> cleaning;
+  cleaning  -> done;
+
+  // 任一阶段失败 → rollback
+  preflight -> rollback [label="失败", style=dashed, color="#c26a6a"];
+  copying   -> rollback [label="失败", style=dashed, color="#c26a6a"];
+  verifying -> rollback [label="失败", style=dashed, color="#c26a6a"];
+  switching -> rollback [label="失败", style=dashed, color="#c26a6a"];
+  cleaning  -> rollback [label="失败", style=dashed, color="#c26a6a"];
+
+  // 用户取消：任一阶段均可触发（原图以一条长横线表示）
+  idle -> rollback [label="用户取消（任一阶段）", style=dashed, color="#8a8a8a"];
+
+  rollback -> failed;
+}

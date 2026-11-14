@@ -1,0 +1,44 @@
+// ARCH-02b 运行时数据流 · 阶段一可选支路：边录边转（FR-03-10，默认关）
+// 来源：docs/ARCHITECTURE.md §1.2「阶段一（可选支路）：边录边转」
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph ARCH_02b_live_transcribe {
+  graph [
+    rankdir=LR,
+    fontname="Microsoft YaHei", fontsize=14,
+    nodesep=0.35, ranksep=0.55,
+    bgcolor="white",
+    labelloc="t", label="阶段一（可选支路）：边录边转（默认关）"
+  ];
+  node [
+    shape=box, style="rounded,filled", fillcolor="#ffffff",
+    color="#9aa0a6", fontcolor="#1f1f1f",
+    fontname="Microsoft YaHei", fontsize=11, penwidth=1.1,
+    margin="0.16,0.09"
+  ];
+  edge [
+    color="#5f6368", penwidth=1.1, arrowsize=0.7,
+    fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"
+  ];
+
+  ring    [label="环形缓冲"];
+  vad     [label=<<B>VAD(端点检测)</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">判断句子起止，切出可转写的片段</FONT>>];
+  segbuf  [label="分段缓冲(句)"];
+  offline [label=<<B>离线引擎(二次校正)</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">拿到整句上下文后重转一遍，更准</FONT>>];
+  stream  [label="流式引擎(partial)"];
+  partial [label="partial 文本"];
+  pipe    [label=<<B>转写管道(去抖)</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">把抖动的中间结果稳定成最终文本</FONT>>];
+  out     [label="segments + EV: transcript:*", fillcolor="#eef7f0", color="#4a8a5c"];
+
+  ring -> vad;
+  ring -> stream;
+  vad  -> segbuf;
+  segbuf -> offline;
+  stream -> partial;
+  partial -> pipe;
+  offline -> out;
+  pipe    -> out;
+
+  { rank=same; vad; stream; }
+  { rank=same; segbuf; partial; }
+  { rank=same; offline; pipe; }
+}

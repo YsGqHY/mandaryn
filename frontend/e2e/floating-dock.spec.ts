@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { chooseLayout, openApp } from './helpers';
+import { chooseLayout, openApp, waitForStableBox } from './helpers';
 
 // 悬浮 Dock：拖到任何位置都必须完整留在内容区内（不进入标题栏 —— macOS 上那里是原生拖拽区 + 红绿灯），
 // 且松手后手柄仍可再次拖动。
@@ -11,6 +11,8 @@ test('floating dock stays inside content area and remains draggable', async ({ p
   const handle = dock.getByRole('button', { name: /拖动以移动 Dock/ });
   const main = page.locator('main');
   await expect(dock).toBeVisible();
+  // Dock 的落位由 effect 异步写入：等它定下来再测坐标，否则 pointerdown 会落空（首轮最易命中）
+  await waitForStableBox(dock);
 
   const drag = async (toX: number, toY: number) => {
     const h = (await handle.boundingBox())!;

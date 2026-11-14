@@ -1,0 +1,36 @@
+// COM-02 前端调用链（View → ViewModel → services → bindings / 事件）
+// 来源：docs/API.md「前端调用边界」（原 ASCII 缩进链）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph COM_02_frontend_chain {
+  graph [
+    rankdir=TB,
+    fontname="Microsoft YaHei", fontsize=14,
+    nodesep=0.35, ranksep=0.38,
+    bgcolor="white",
+    labelloc="t", label="前端调用链（禁直连 bindings）"
+  ];
+  node [
+    shape=box, style="rounded,filled", fillcolor="#ffffff",
+    color="#9aa0a6", fontcolor="#1f1f1f",
+    fontname="Microsoft YaHei", fontsize=11, penwidth=1.1,
+    margin="0.14,0.09"
+  ];
+  edge [
+    color="#5f6368", penwidth=1.1, arrowsize=0.7,
+    fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"
+  ];
+
+  view [label="View 组件", fillcolor="#eaf1fb", color="#3f6ea8"];
+  vm   [label="ViewModel hook (useRecord / useSession / useModels / useSpeakers)"];
+  svc  [label="services/<domain>/XxxService.ts", fillcolor="#eef7f0", color="#4a8a5c"];
+
+  static_call [label="静态方法调用：import { Start } from '@bindings/vip.oberon.mandaryn/internal/services/recordingsvc'"];
+  event_sub   [label="事件订阅：Events.On('transcript:segment', ...)  ← 只在这一层", fillcolor="#fff8e1", color="#c9a227"];
+
+  view -> vm;
+  vm   -> svc;
+  svc  -> static_call;
+  svc  -> event_sub;
+
+  { rank=same; static_call; event_sub; }
+}

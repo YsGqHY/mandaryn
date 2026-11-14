@@ -1,0 +1,43 @@
+// PRD-01 信息架构（五大页面与各自内容）
+// 来源：docs/PRD.md（原 ASCII 树，┌─/├─/└─ 表示页面 → 内容）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+// 注：这是产品信息架构（页面 → 能力），不是文件目录树。
+digraph PRD_01_ia {
+  graph [
+    rankdir=LR,
+    fontname="Microsoft YaHei", fontsize=14,
+    nodesep=0.28, ranksep=0.60,
+    bgcolor="white",
+    labelloc=t, label="信息架构（五大页面）"
+  ];
+  node [
+    shape=box, style="rounded,filled", fillcolor="#ffffff",
+    color="#9aa0a6", fontcolor="#1f1f1f",
+    fontname="Microsoft YaHei", fontsize=10, penwidth=1.1,
+    margin="0.12,0.07"
+  ];
+  edge [
+    color="#5f6368", penwidth=1.0, arrowsize=0.6,
+    fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"
+  ];
+
+  record  [label="录制（Record）", fillcolor="#eaf1fb", color="#3f6ea8"];
+  library [label="会话库（Library）", fillcolor="#eaf1fb", color="#3f6ea8"];
+  session [label="会话详情（Session）", fillcolor="#eaf1fb", color="#3f6ea8"];
+  models  [label="模型（Models）", fillcolor="#eaf1fb", color="#3f6ea8"];
+  settings[label="设置（Settings）", fillcolor="#eaf1fb", color="#3f6ea8"];
+
+  r1 [label="选源 → 录制控制 → 录音实例（默认不转写，可选边录边转）"];
+  l1 [label="会话列表 → 待转写/转写中 → 发起转写 → 搜索/筛选 → 批量导出/删除"];
+  s1 [label="播放条 + 歌词式同步 + 角色侧栏"];
+  m1 [label="已装 / 可下载 / 下载进度 / 根目录迁移 / 代理"];
+  t1 [label="个人化 · 语言 · 音频源 · 转写模型 · 快捷键 · 隐私 · 数据存储"];
+
+  record   -> r1;
+  library  -> l1;
+  session  -> s1;
+  models   -> m1;
+  settings -> t1;
+
+  { rank=same; record; library; session; models; settings; }
+}

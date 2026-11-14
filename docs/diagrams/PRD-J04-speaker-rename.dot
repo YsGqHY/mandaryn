@@ -1,0 +1,24 @@
+// PRD-J04 用户旅程：说话人命名与全局同步
+// 来源：docs/PRD.md（原 ASCII 箭头链）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph PRD_J04_speaker_rename {
+  graph [
+    rankdir=TB, fontname="Microsoft YaHei", fontsize=13,
+    nodesep=0.28, ranksep=0.24, bgcolor="white",
+    labelloc=t, label="用户旅程：说话人命名"
+  ];
+  node [shape=box, style="rounded,filled", fillcolor="#ffffff", color="#9aa0a6",
+        fontcolor="#1f1f1f", fontname="Microsoft YaHei", fontsize=10,
+        penwidth=1.1, margin="0.14,0.08"];
+  edge [color="#5f6368", penwidth=1.1, arrowsize=0.6,
+        fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"];
+
+  b1 [label="录制 40 分钟 3 人会议 → 结束 → 详情页显示「说话人 1/2/3」",
+      fillcolor="#eaf1fb", color="#3f6ea8"];
+  b2 [label="F2 重命名「说话人 1」→「张三」"];
+  b3 [label="本会话所有片段立即变为「张三」（颜色不变）", fillcolor="#eef7f0", color="#4a8a5c"];
+  b4 [label="打开上周的会议会话 → 同一说话人同样显示「张三」（声纹已归并）"];
+  b5 [label="发现两人被并成一个 → 「拆分为新角色」→ 只影响被拆出的片段"];
+
+  b1 -> b2 -> b3 -> b4 -> b5;
+}

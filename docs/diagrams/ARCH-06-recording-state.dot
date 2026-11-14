@@ -1,0 +1,48 @@
+// ARCH-06 录制状态机
+// 来源：docs/ARCHITECTURE.md §6（原 Mermaid stateDiagram-v2）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph ARCH_06_recording_state {
+  graph [
+    rankdir=LR,
+    fontname="Microsoft YaHei", fontsize=14,
+    nodesep=0.42, ranksep=0.62,
+    bgcolor="white",
+    labelloc="t", label="录制状态机（ST-01 ~ ST-09）"
+  ];
+  node [
+    shape=box, style="rounded,filled", fillcolor="#ffffff",
+    color="#9aa0a6", fontcolor="#1f1f1f",
+    fontname="Microsoft YaHei", fontsize=11, penwidth=1.1,
+    margin="0.16,0.10"
+  ];
+  edge [
+    color="#5f6368", penwidth=1.1, arrowsize=0.7,
+    fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"
+  ];
+
+  start       [label="", shape=circle, style=filled, fillcolor="#333333", color="#333333", width=0.18];
+  end_        [label="", shape=doublecircle, style=filled, fillcolor="#ffffff", color="#333333", width=0.18];
+  idle        [label="idle"];
+  preparing   [label="preparing"];
+  recording   [label="recording"];
+  paused      [label="paused"];
+  finalizing  [label=<<B>finalizing</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">收尾：封口 WAV、写元数据</FONT>>];
+  completed   [label=<<B>completed</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">录音实例已封存（转写另行触发）</FONT>>];
+  interrupted [label=<<B>interrupted</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">崩溃残留，音频修补后可回放</FONT>>, fillcolor="#fff3f3", color="#c26a6a"];
+  failed      [label="failed", fillcolor="#fff3f3", color="#c26a6a"];
+
+  start       -> idle;
+  idle        -> preparing   [label="开始"];
+  preparing   -> recording   [label="就绪"];
+  preparing   -> failed      [label="源/引擎失败"];
+  recording   -> paused      [label="暂停 / 设备失效"];
+  paused      -> recording   [label="继续"];
+  recording   -> finalizing  [label="停止"];
+  paused      -> finalizing  [label="停止"];
+  finalizing  -> completed   [label="成功"];
+  finalizing  -> interrupted [label="写库失败"];
+  recording   -> interrupted [label="崩溃/源永久失效"];
+  interrupted -> finalizing  [label="重新转写"];
+  completed   -> end_;
+  failed      -> end_;
+}

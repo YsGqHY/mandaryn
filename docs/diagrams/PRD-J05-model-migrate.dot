@@ -1,0 +1,31 @@
+// PRD-J05 用户旅程：模型目录迁移（含失败分支）
+// 来源：docs/PRD.md（原 ASCII 箭头链 + 「失败分支」两行）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph PRD_J05_model_migrate {
+  graph [
+    rankdir=TB, fontname="Microsoft YaHei", fontsize=13,
+    nodesep=0.30, ranksep=0.26, bgcolor="white",
+    labelloc=t, label="用户旅程：模型目录迁移"
+  ];
+  node [shape=box, style="rounded,filled", fillcolor="#ffffff", color="#9aa0a6",
+        fontcolor="#1f1f1f", fontname="Microsoft YaHei", fontsize=10,
+        penwidth=1.1, margin="0.14,0.08"];
+  edge [color="#5f6368", penwidth=1.1, arrowsize=0.6,
+        fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"];
+
+  c1 [label="设置 → 数据存储 → 模型目录：~/.mandaryn → 选择 D:\\mandaryn-models",
+      fillcolor="#eaf1fb", color="#3f6ea8"];
+  c2 [label="预览：将迁移 3 个模型包 / 共 4.2GB / 目标剩余 96GB  ✅"];
+  c3 [label="执行 → 校验目标可写 → 复制（进度）→ 逐文件哈希比对"];
+  c4 [label="切换配置（原子）→ 重新加载引擎自检通过 → 清理旧目录"];
+  c5 [label="完成：「模型已迁移，立即可用」", fillcolor="#eef7f0", color="#4a8a5c"];
+
+  f1 [label="失败分支：复制中途失败/哈希不一致\n→ 删除临时目录、旧路径保持不变、报告原因",
+      fillcolor="#fff3f3", color="#c26a6a"];
+  f2 [label="失败分支：切换后自检失败\n→ 自动回退旧路径并提示",
+      fillcolor="#fff3f3", color="#c26a6a"];
+
+  c1 -> c2 -> c3 -> c4 -> c5;
+  c3 -> f1 [label="失败", style=dashed, color="#c26a6a"];
+  c4 -> f2 [label="自检失败", style=dashed, color="#c26a6a"];
+}

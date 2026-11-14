@@ -1,0 +1,97 @@
+# syntax=docker/dockerfile:1.7
+#
+# E2E 容器镜像：本地与 CI **共用同一份定义**，避免两套环境漂移。
+#
+# 两个阶段：
+#   server  —— 构建 Wails server 模式后端（纯 HTTP + 嵌入式前端，无需桌面会话）
+#   runtime —— Playwright 官方镜像 + 我们构建出的后端产物，直接跑 pnpm e2e:portable
+#
+# 关键点：server 模式用 `-tags server,production` 且 CGO_ENABLED=0 ——
+#   `server` 标签让 Wails 走纯 HTTP 后端，同时绕过 buildguard 对 CGO 的要求
+#   （buildguard 的约束是 `... && !cgo && !purego && !server`），
+#   因此容器里不需要 gcc / GTK，镜像小且构建快。
+
+ARG GO_VERSION=1.26
+ARG NODE_VERSION=24.13.0
+ARG PNPM_VERSION=11.5.0
+ARG WAILS_VERSION=v3.1.0
+ARG PLAYWRIGHT_VERSION=1.64.1
+
+# ---------------------------------------------------------------------------
+# 阶段 1：构建 server 模式后端
+# ---------------------------------------------------------------------------
+FROM golang:${GO_VERSION}-bookworm AS server
+
+ARG NODE_VERSION
+ARG PNPM_VERSION
+ARG WAILS_VERSION
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl xz-utils ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+# 前端构建需要 Node：版本与本地 / CI 固定值一致（见 .github/workflows/ci.yml 的 env）
+RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz \
+ && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
+ && rm /tmp/node.tar.xz \
+ && node -v
+
+RUN npm install -g pnpm@${PNPM_VERSION} && pnpm -v
+
+ENV PATH="/root/go/bin:${PATH}"
+RUN go install github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}
+
+WORKDIR /src
+COPY . .
+
+# --frozen-lockfile：锁文件与 package.json 不一致时直接失败，而不是悄悄升级依赖
+RUN pnpm --dir frontend install --frozen-lockfile
+
+# 该 task 内部即 `go build -tags server,production`，产物为 bin/mandaryn-server（Linux 无后缀）
+RUN wails3 task build:server
+
+# 构建期就断言产物存在：避免把「构建静默成功但没产物」带到运行期才暴露
+RUN test -x bin/mandaryn-server
+
+# ---------------------------------------------------------------------------
+# 阶段 2：运行 E2E
+# ---------------------------------------------------------------------------
+FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble AS runtime
+
+ARG NODE_VERSION
+ARG PNPM_VERSION
+
+# 覆盖镜像自带的 Node：E2E 用到 `node:sqlite`（需 Node ≥ 22.5），
+# 且要与本地 / CI 的固定版本一致，否则可能出现只在容器里才复现的差异。
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl xz-utils ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o /tmp/node.tar.xz \
+ && tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
+ && rm /tmp/node.tar.xz \
+ && node -v
+
+RUN npm install -g pnpm@${PNPM_VERSION} && pnpm -v
+
+WORKDIR /app
+
+# 后端产物：E2E 的 serve.mjs / serverctl.ts 会按 bin/mandaryn-server（Linux 无 .exe）探测
+COPY --from=server /src/bin/mandaryn-server /app/bin/mandaryn-server
+
+# 前端依赖直接从构建阶段复制：同一 lockfile、同一平台，省去二次安装
+COPY --from=server /src/frontend/node_modules /app/frontend/node_modules
+COPY --from=server /src/frontend/package.json /src/frontend/pnpm-lock.yaml /app/frontend/
+COPY --from=server /src/frontend/playwright.config.ts /app/frontend/
+COPY --from=server /src/frontend/e2e /app/frontend/e2e
+
+# 容器里没有 msedge，用 Playwright 镜像自带的 chromium
+ENV E2E_CHANNEL=chromium
+# 报告写到挂载卷，便于本地查看与 CI 上传
+ENV PLAYWRIGHT_JSON_OUTPUT_NAME=/reports/e2e-report.json
+# 设计性跳过（需模型包 / 原生对话框 / 真实进程）共 5 个，由 summarize-ci.mjs 对账
+ENV E2E_EXPECTED_SKIPPED=5
+
+WORKDIR /app/frontend
+
+# 默认跑「平台无关子集」：排除依赖真实音频设备的 product-flow / crash-recovery
+CMD ["pnpm", "e2e:portable", "--reporter=list,json"]

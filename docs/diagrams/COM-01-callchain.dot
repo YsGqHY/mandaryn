@@ -1,0 +1,82 @@
+// COM-01 通信链路（4 条：前端调用 / 后端事件 / 启动就绪 / 跨窗口同步）
+// 来源：CLAUDE.md「通信链路」（原 ASCII 缩进调用链，用 └── 表示层级）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph COM_01_callchain {
+  graph [
+    rankdir=TB,
+    newrank=true,
+    fontname="Microsoft YaHei", fontsize=14,
+    nodesep=0.28, ranksep=0.30,
+    bgcolor="white",
+    labelloc="t", label="通信链路"
+  ];
+  node [
+    shape=box, style="rounded,filled", fillcolor="#ffffff",
+    color="#9aa0a6", fontcolor="#1f1f1f",
+    fontname="Microsoft YaHei", fontsize=10, penwidth=1.1,
+    margin="0.12,0.07"
+  ];
+  edge [
+    color="#5f6368", penwidth=1.0, arrowsize=0.6,
+    fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"
+  ];
+
+  subgraph cluster_c1 {
+    label="① 前端 → 后端调用";
+    style="rounded,filled"; fillcolor="#eaf1fb"; color="#3f6ea8";
+    fontcolor="#1a3a5c"; fontsize=12; fontname="Microsoft YaHei";
+    c1_1 [label="React 组件 (View)"];
+    c1_2 [label="ViewModel (use<Page>)"];
+    c1_3 [label="services/GreetService.ts"];
+    c1_4 [label="@bindings/vip.oberon.mandaryn/internal/services/greet (Wails 生成)"];
+    c1_5 [label="后端 internal/services/greet.Greet"];
+    c1_1 -> c1_2 -> c1_3 -> c1_4 -> c1_5;
+  }
+
+  subgraph cluster_c2 {
+    label="② 后端 → 前端事件";
+    style="rounded,filled"; fillcolor="#eef7f0"; color="#4a8a5c";
+    fontcolor="#1c4027"; fontsize=12; fontname="Microsoft YaHei";
+    c2_1 [label="后端 internal/events/events.go (RegisterEvent[string](\"time\"))"];
+    c2_2 [label="internal/app/app.go: app.Event.Emit(\"time\", ...)"];
+    c2_3 [label="前端 shared/hooks/useTimeEvent.ts (Events.On)"];
+    c2_1 -> c2_2 -> c2_3;
+  }
+
+  subgraph cluster_c3 {
+    label="③ 布局预设 / 启动就绪";
+    style="rounded,filled"; fillcolor="#fdf6e8"; color="#a8823a";
+    fontcolor="#4a3510"; fontsize=12; fontname="Microsoft YaHei";
+    c3_1 [label="PreferencesProvider（从 SQLite 读回 layout 等偏好 → ready=true）"];
+    c3_2 [label="AppLayout: useLayoutPreset() → layoutRegistry.resolve(preferences.layout) → CSS Grid data-* 属性"];
+    c3_3 [label="useAppLayout: ready → signalAppReady()（shared/appReady.ts）"];
+    c3_4 [label="main.tsx 监听 foundation:app-ready（兜底 1500ms）→ 淡出 index.html 启动骨架"];
+    c3_1 -> c3_2;
+    c3_1 -> c3_3;
+    c3_3 -> c3_4;
+    { rank=same; c3_2; c3_3; }
+  }
+
+  subgraph cluster_c4 {
+    label="④ 跨窗口设置同步";
+    style="rounded,filled"; fillcolor="#f7f2fa"; color="#7d5a99";
+    fontcolor="#33204a"; fontsize=12; fontname="Microsoft YaHei";
+    c4_1 [label="后端 internal/events/events.go (RegisterEvent[string](\"appsettings:changed\") = AppSettingsChanged)"];
+    c4_2 [label="internal/services/appsettings 任一 setter 写库成功: app.Event.Emit(\"appsettings:changed\", \"<字段名>\")"];
+    c4_3 [label="前端 services/appsettings/AppSettingsService.onChanged (Events.On)"];
+    c4_4 [label="MandarynThemeProvider（themeChoice / customTheme，200ms 防抖后重拉）"];
+    c4_5 [label="I18nProvider（localeChoice，重拉）"];
+    c4_6 [label="主窗口 / 子窗口（child.tsx）/ 托盘面板（systrayEntry.tsx）主题、语言实时同步"];
+    c4_1 -> c4_2 -> c4_3;
+    c4_3 -> c4_4;
+    c4_3 -> c4_5;
+    c4_4 -> c4_6;
+    c4_5 -> c4_6;
+    { rank=same; c4_4; c4_5; }
+  }
+
+  // 四个簇自上而下排列（不可见边）
+  c1_5 -> c2_1 [style=invis];
+  c2_3 -> c3_1 [style=invis];
+  c3_4 -> c4_1 [style=invis];
+}

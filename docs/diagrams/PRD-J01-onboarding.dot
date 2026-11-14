@@ -1,0 +1,25 @@
+// PRD-J01 用户旅程：首次启动与准备就绪
+// 来源：docs/PRD.md（原 ASCII 箭头链）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph PRD_J01_onboarding {
+  graph [
+    rankdir=TB, fontname="Microsoft YaHei", fontsize=13,
+    nodesep=0.28, ranksep=0.26, bgcolor="white",
+    labelloc=t, label="用户旅程：首次启动"
+  ];
+  node [shape=box, style="rounded,filled", fillcolor="#ffffff", color="#9aa0a6",
+        fontcolor="#1f1f1f", fontname="Microsoft YaHei", fontsize=10,
+        penwidth=1.1, margin="0.14,0.08"];
+  edge [color="#5f6368", penwidth=1.1, arrowsize=0.6,
+        fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"];
+
+  start [label="启动应用", fillcolor="#eaf1fb", color="#3f6ea8"];
+  s1 [label="欢迎页：说明「默认本地转写、不联网」"];
+  s2 [label="模型检查：无本地模型 → 引导「下载推荐模型」（含体积/内存提示）"];
+  s3 [label="下载完成 → 自动校验 → 「准备就绪」", fillcolor="#eef7f0", color="#4a8a5c"];
+  s4 [label="选择音频源（枚举运行中的应用；KOOK 在列表中）"];
+  s5 [label="按 Ctrl+Alt+R → 录制开始 → 首次出字（FFD 目标 ≤ 900ms）"];
+  s6 [label="按 Ctrl+Alt+R 结束 → 进入会话详情"];
+
+  start -> s1 -> s2 -> s3 -> s4 -> s5 -> s6;
+}

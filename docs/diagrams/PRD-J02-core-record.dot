@@ -1,0 +1,36 @@
+// PRD-J02 用户旅程：核心录制 → 封存 → 空闲转写 → 回放
+// 来源：docs/PRD.md（原 ASCII 箭头链，已按「录完先存、空闲再转」更新）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph PRD_J02_core_record {
+  graph [
+    rankdir=TB, fontname="Microsoft YaHei", fontsize=13,
+    nodesep=0.28, ranksep=0.24, bgcolor="white",
+    labelloc=t, label="用户旅程：录制 → 空闲转写 → 回放"
+  ];
+  node [shape=box, style="rounded,filled", fillcolor="#ffffff", color="#9aa0a6",
+        fontcolor="#1f1f1f", fontname="Microsoft YaHei", fontsize=10,
+        penwidth=1.1, margin="0.14,0.08"];
+  edge [color="#5f6368", penwidth=1.1, arrowsize=0.6,
+        fontname="Microsoft YaHei", fontsize=9, fontcolor="#3c4043"];
+
+  start [label="选源（记忆上次）→ Ctrl+Alt+R → 只录音（实时电平 + 时长 + 已存大小，默认不出字）",
+         fillcolor="#eaf1fb", color="#3f6ea8"];
+  pause [label="中途需要离开 → Ctrl+Alt+P 暂停 → 回来继续"];
+  seal  [label="结束录制 → 自动封存录音实例（标题=日期+应用名）→ 状态「已保存 · 未转写」",
+         fillcolor="#eef7f0", color="#4a8a5c"];
+  idle  [label="继续忙自己的事（软件此时不跑推理，不抢算力）"];
+  tr    [label="机器空闲时自动开始转写（或随时手动点「开始转写」）→ 进度条 + 逐句出字"];
+  done  [label="转写完成", fillcolor="#eef7f0", color="#4a8a5c"];
+  play  [label="打开会话 → 播放 → 文字随进度高亮居中滚动"];
+  jump  [label="想听某人说的一段 → 点击那条片段直接跳转"];
+  seek  [label="拖动进度条定位 → 释放后高亮与滚动归位"];
+
+  start -> pause;
+  pause -> seal;
+  seal -> idle;
+  idle -> tr;
+  tr -> done;
+  done -> play;
+  play -> jump;
+  jump -> seek;
+}

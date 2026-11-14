@@ -1,0 +1,78 @@
+// ARCH-01 分层架构 L0–L5
+// 来源：docs/ARCHITECTURE.md §1（原 ASCII 框线图）
+// 字体：Windows 用 "Microsoft YaHei"；Linux/macOS 改为 "Noto Sans CJK SC"
+digraph ARCH_01_layers {
+  graph [
+    rankdir=BT,
+    fontname="Microsoft YaHei", fontsize=14,
+    nodesep=0.28, ranksep=0.55,
+    bgcolor="white", compound=true,
+    labelloc="t", label="L0–L5 分层架构"
+  ];
+  node [
+    shape=box, style="rounded,filled", fillcolor="#ffffff",
+    color="#9aa0a6", fontcolor="#1f1f1f",
+    fontname="Microsoft YaHei", fontsize=11, penwidth=1.1,
+    margin="0.18,0.10"
+  ];
+  edge [color="#9aa0a6", arrowhead=none, style=dashed, penwidth=1.0];
+
+  subgraph cluster_L5 {
+    label="L5　前端 View (React 19 + Mantine 9)";
+    style="rounded,filled"; fillcolor="#eaf1fb"; color="#3f6ea8";
+    fontcolor="#1a3a5c"; fontsize=12; fontname="Microsoft YaHei";
+    l5_pages [label="RecordPage / LibraryPage / SessionPage / ModelsPage / SettingsPage"];
+    l5_vm    [label="ViewModel hook（唯一状态编排点）"];
+  }
+
+  subgraph cluster_L4 {
+    label="L4　前端 services/ 层（薄适配，禁直连 bindings）";
+    style="rounded,filled"; fillcolor="#f2f6fc"; color="#5b81b0";
+    fontcolor="#1a3a5c"; fontsize=12; fontname="Microsoft YaHei";
+    l4_dummy [shape=point, style=invis, width=0.02, height=0.30, label=""];
+  }
+
+  subgraph cluster_L3 {
+    label="L3　Wails Service 薄壳（internal/services/<domain>）";
+    style="rounded,filled"; fillcolor="#eef7f0"; color="#4a8a5c";
+    fontcolor="#1c4027"; fontsize=12; fontname="Microsoft YaHei";
+    l3 [label="capturesvc　recordingsvc　transcriptsvc　sessionsvc\nmodelssvc　enginesvc　speakersvc　hotkeysvc (+既有 appsettings 等)"];
+  }
+
+  subgraph cluster_L2 {
+    label="L2　领域能力（无 Wails 依赖，可单测）";
+    style="rounded,filled"; fillcolor="#fdf6e8"; color="#a8823a";
+    fontcolor="#4a3510"; fontsize=12; fontname="Microsoft YaHei";
+    l2_capture   [label=<<B>capture/</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">只采集指定应用的音频（按进程树）</FONT>>];
+    l2_asr       [label=<<B>asr/</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">语音转文字：本地/在线引擎与路由</FONT>>];
+    l2_diarize   [label=<<B>diarize/</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">声纹提取与说话人聚类</FONT>>];
+    l2_models    [label=<<B>models/</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">模型包下载、校验与注册</FONT>>];
+    l2_recording [label=<<B>recording/</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">录制编排与录音实例落盘</FONT>>];
+    { rank=same; l2_capture; l2_asr; l2_diarize; l2_models; l2_recording; }
+  }
+
+  subgraph cluster_L1 {
+    label="L1　基础设施";
+    style="rounded,filled"; fillcolor="#f7f2fa"; color="#7d5a99";
+    fontcolor="#33204a"; fontsize=12; fontname="Microsoft YaHei";
+    l1_storage [label="storage/(SQLite+GORM)"];
+    l1_utils   [label=<<B>utils/(httpx procx cryptox logx filex)</B><BR/><FONT POINT-SIZE="8">&#160;</FONT><BR/><FONT POINT-SIZE="9" COLOR="#5f6368">横切工具：网络/子进程/加密/日志/原子写</FONT>>];
+    { rank=same; l1_storage; l1_utils; }
+  }
+
+  subgraph cluster_L0 {
+    label="L0　平台与第三方";
+    style="rounded,filled"; fillcolor="#f5f5f5"; color="#7a7a7a";
+    fontcolor="#2b2b2b"; fontsize=12; fontname="Microsoft YaHei";
+    l0 [label="WASAPI / Core Audio / PipeWire ·  sherpa-onnx · 在线 HTTP 端点"];
+  }
+
+  // 层序：rankdir=BT 下 tail 在下、head 在上
+  l0 -> l1_storage  [style=invis];
+  l1_storage -> l2_capture [style=invis];
+  l2_capture -> l3  [style=invis];
+  l3 -> l4_dummy    [style=invis];
+  l4_dummy -> l5_vm [style=invis];
+  // L5 框内：页面在上、ViewModel 在下（原图用 └── 表示从属）
+  l5_vm -> l5_pages [style=solid, arrowhead=none];
+}
