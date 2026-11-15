@@ -85,6 +85,10 @@ task package INSTALL_SCOPE=user   # 装到 %LOCALAPPDATA%\Programs，免 UAC
 
 # 2b) MSI（企业分发）
 task package FORMAT=msi            # 产物：bin/mandaryn-amd64.msi
+# 构建前会自动 `wix extension add` 两个扩展（首次需联网）：WixToolset.UI.wixext、
+# WixToolset.Util.wixext —— **必须锁 6.0.2**：不指定版本会拉到 7.x，与 WiX v6
+# 不兼容（报 WIX6101: Could not find expected package root folder wixext6）。
+# 许可页 RTF 由 build/windows/msi/make-license-rtf.sh 从根 LICENSE 生成。
 
 # 3) server 模式（E2E / 无头）
 task build:server     # 产物：bin/mandaryn-server
@@ -489,7 +493,7 @@ rm -f "$DATA"/mandaryn.db-wal "$DATA"/mandaryn.db-shm
 | 覆盖安装 | 原地覆盖；**装前检测运行中的 `mandaryn.exe`**（`nsExec`+`tasklist` 按映像名匹配，不用 `FindWindow` 以免漏判）。交互模式弹框要求关闭；**静默 `/S` 直接以退出码 2 失败**——否则锁定文件会让 `File` 失败而退出码仍为 0，装出一个空目录 | `MajorUpgrade` 自动卸载旧版 |
 | 降级 | 不拦截，但 Release 说明需提示 | **拒绝**（`DowngradeErrorMessage`） |
 | 卸载 | 删除 `INSTDIR`、快捷方式与 ARP 项；**不删 `dataRoot`**（库/录音/日志/模型） | 同左 |
-| 连数据一起删 | 卸载页独立勾选项，**默认不勾**（`nsDialogs` 自定义页）；静默卸载不进该页 → 保留数据 | 独立 dialog，默认不选 **（待实现）** |
+| 连数据一起删 | 卸载页独立勾选项，**默认不勾**（`nsDialogs` 自定义页）；静默卸载不进该页 → 保留数据 | 卸载页独立勾选框（`UninstallOptionsDlg`，默认不勾），绑公开属性 `REMOVEDATA`；也可 `msiexec /x app.msi REMOVEDATA=1` 静默指定 |
 
 > **卸载绝不删 `%AppData%\Mandaryn`**：那里有用户录音与转写结果，误删不可恢复。
 > 「清理数据」必须是一次显式勾选 + 二次确认。
