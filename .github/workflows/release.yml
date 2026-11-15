@@ -157,13 +157,16 @@ jobs:
         uses: actions/download-artifact@v4
         with: { name: exe-unsigned, path: bin }
 
-      # 令牌不可用时早停：否则每个文件都要等一次超时
-      - name: 检查令牌可用性
+      # 令牌/证书/私钥/时间戳一次性逐项自检，代替原先只查 osslsigncode + pcscd 的粗检。
+      # 手工检查看不出「私钥不在卡里」「URI 的 label 写错」这类问题，签名时只会得到
+      # 一句笼统报错；--preflight 会把每一项单独给结论。
+      - name: 环境预检（令牌 / 证书 / 私钥 / 时间戳）
         run: |
           set -euo pipefail
           command -v osslsigncode >/dev/null || { echo "::error::缺少 osslsigncode（apt install osslsigncode）"; exit 1; }
-          systemctl is-active --quiet pcscd || { echo "::error::pcscd 未运行（systemctl enable --now pcscd）"; exit 1; }
-          command -v pcsc_scan >/dev/null && { pcsc_scan -r | head -5 || true; }
+          # pkcs11-tool 来自 opensc：没有它就查不了证书/私钥是否真在卡里
+          command -v pkcs11-tool >/dev/null || echo "::warning::未装 opensc，预检将跳过证书/私钥检查"
+          build/linux/sign.sh --preflight
 
       - name: 签 exe
         run: build/linux/sign.sh --target exe --input bin/mandaryn.exe
@@ -210,30 +213,25 @@ jobs:
       - name: 安装 wails3 CLI
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
 
-      - name: 安装 pnpm / Node
-        uses: pnpm/action-setup@v4
-        with: { version: '${{ env.PNPM_VERSION }}' }
-
-      - name: 安装 Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-
-      - name: 生成 bindings 并装依赖
-        run: |
-          wails3 task common:generate:bindings
-          cd frontend && pnpm install --frozen-lockfile
+      # 不再需要 pnpm / Node / bindings：打包已不构建（见下方「打三产物」说明），
+      # exe 与运行时 DLL 全部来自构建/签名作业的产物。省掉这几步能显著缩短 CI 时间。
 
       # 用签名后的 exe 覆盖构建产物：打包任务会把 bin/mandaryn.exe 装进安装器
+      # 启用了签名但签名失败时不能拿未签名 exe 往下走 —— 那样签出来的安装器里
+      # 装的仍是未签名 exe，用户的 SmartScreen 提示照旧。
+      - name: 拒绝继续（启用了签名但 exe 签名失败）
+        if: vars.SIGNING_ENABLED == 'true' && needs.sign-exe.result != 'success'
+        run: |
+          echo "::error::SIGNING_ENABLED=true 但签 exe 作业结果=${{ needs.sign-exe.result }}，拒绝打包未签名 exe。"
+          exit 1
+
       - name: 取回已签名 exe（启用签名时）
         if: needs.sign-exe.result == 'success'
         uses: actions/download-artifact@v4
         with: { name: exe-signed, path: bin }
 
       - name: 取回未签名 exe（未启用签名时）
-        if: needs.sign-exe.result != 'success'
+        if: needs.sign-exe.result == 'skipped'
         uses: actions/download-artifact@v4
         with: { name: exe-unsigned, path: bin }
 
@@ -290,6 +288,13 @@ jobs:
         uses: actions/download-artifact@v4
         with: { name: artifacts-unsigned, path: bin }
 
+      # 同一台签名机，与 sign-exe 同样的自检。多次跑预检是幂等的（只读）。
+      - name: 环境预检（令牌 / 证书 / 私钥 / 时间戳）
+        run: |
+          set -euo pipefail
+          command -v osslsigncode >/dev/null || { echo "::error::缺少 osslsigncode（apt install osslsigncode）"; exit 1; }
+          build/linux/sign.sh --preflight
+
       - name: 签安装器与 MSI
         run: |
           set -euo pipefail
@@ -312,19 +317,45 @@ jobs:
   publish:
     name: 发布（草稿 Release）
     needs: [build, package, sign-installer]
+    # always()：sign-installer 被跳过（未启用签名）时也要发布。
+    # 但「跳过」与「失败」必须区别对待 —— 见下方拒绝发布的步骤。
     if: always() && needs.package.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # 启用了签名但签名失败时，绝不能拿未签名产物去发版：
+      # 那样流程"看起来"跑完了，发出去的却是未签名包（用户的 SmartScreen 提示照旧）。
+      - name: 拒绝发布（启用了签名但签名失败）
+        if: vars.SIGNING_ENABLED == 'true' && needs.sign-installer.result != 'success'
+        run: |
+          echo "::error::SIGNING_ENABLED=true 但签名作业结果=${{ needs.sign-installer.result }}，拒绝发布未签名产物。"
+          echo "请修好签名（在签名机跑 build/linux/sign.sh --preflight 逐项排查）后重跑。"
+          exit 1
+
       - name: 下载已签名产物
         if: needs.sign-installer.result == 'success'
         uses: actions/download-artifact@v4
         with: { name: artifacts-signed, path: bin }
 
       - name: 下载未签名产物（未启用签名时）
-        if: needs.sign-installer.result != 'success'
+        if: needs.sign-installer.result == 'skipped'
         uses: actions/download-artifact@v4
         with: { name: artifacts-unsigned, path: bin }
+
+      # 签了名就要证明"确实带签名"：sign.sh 的 verify 是在签名机上做的，
+      # 这里对**最终待发布文件**再独立验一次，防止产物在中转/上传中丢失签名。
+      - name: 校验产物确实带 Authenticode 签名
+        if: needs.sign-installer.result == 'success'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq osslsigncode
+          for f in bin/mandaryn-amd64-installer.exe bin/mandaryn-amd64.msi; do
+            echo "── verify $f"
+            if ! osslsigncode verify -in "$f"; then
+              echo "::error::$f 没有有效 Authenticode 签名（或证书链不可用）"
+              exit 1
+            fi
+          done
 
       # 校验和必须在**所有签名之后**生成：签名改变文件字节（含时间戳），先算必然对不上
       - name: 生成 SHA256SUMS
