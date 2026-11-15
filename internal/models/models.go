@@ -175,6 +175,11 @@ func New(opts Options) *Manager {
 		migState:   contract.MigrateState{Phase: contract.MigrateIdle},
 		migChanged: make(chan struct{}),
 	}
+	// 启动即校验全局代理：配错了要让运维在日志里立刻看到，
+	// 而不是等用户点下载才失败。错误文本已确保不含凭据。
+	if _, ok, perr := globalProxyFromEnv(); perr != nil && ok {
+		m.log().Warn("global http proxy config is invalid", "env", EnvHTTPProxy, "error", perr.Error())
+	}
 	return m
 }
 
