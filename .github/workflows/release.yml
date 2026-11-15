@@ -240,12 +240,18 @@ jobs:
       - name: 安装打包工具（NSIS + WiX）
         run: choco install nsis wixtoolset --no-progress -y
 
-      # 打包任务内部依赖 build:frontend，因此直接跑 package 即可
+      # 注意：这里**不能**用 `wails3 task windows:package`。package 带 build 依赖，而
+      # `go build -o bin/mandaryn.exe` 会把上面刚取回的已签名 exe 覆盖成未签名版本，
+      # 结果安装器里装的是没有签名的 exe（签名段全部白做）。
+      # create:* 不依赖 build，只要求 bin/ 里已有 exe，正是为这条流程准备的。
+      # 任务全名带平台前缀（windows:），没有去前缀的别名。
       - name: 打三产物
+        shell: bash
         run: |
-          wails3 task package
-          wails3 task package FORMAT=msi
-          wails3 task package FORMAT=portable
+          set -euo pipefail
+          wails3 task windows:create:nsis:installer INSTALL_SCOPE=machine
+          wails3 task windows:create:msi:package
+          wails3 task windows:create:portable:zip
 
       - name: 校验产物齐全
         shell: bash

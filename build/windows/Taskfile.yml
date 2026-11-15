@@ -178,6 +178,13 @@ tasks:
 
       NSIS 与 MSI **二选一**：两者各写一套 ARP 条目，同时装会出现两个「Mandaryn」。
       便携 zip 与它们**可共存**（不写注册表、不建快捷方式）。
+
+      **构建只在这里做一次**：create:* 任务本身不依赖 build，只要求 bin/mandaryn.exe
+      已存在。这一点对签名流程是必须的 —— CI 里已签名的 exe 从签名机取回后，
+      若打包阶段再跑一次 build，`go build -o bin/mandaryn.exe` 会把已签名的 exe
+      覆盖成未签名版本，最终装进安装器的就是没有签名的 exe（签名段全部白做）。
+    deps:
+      - task: build
     cmds:
       - task: '{{if eq (.FORMAT | default "nsis") "msix"}}create:msix:package{{else if eq (.FORMAT | default "nsis") "msi"}}create:msi:package{{else if eq (.FORMAT | default "nsis") "portable"}}create:portable:zip{{else}}create:nsis:installer{{end}}'
         vars:
@@ -193,16 +200,14 @@ tasks:
 
       包里含 3 个运行时 DLL（必须与 exe 同目录）与许可声明；data\ 内放一个 README，
       保证解压后该目录存在 —— 空目录在部分解压工具里会被丢弃，那样便携模式就不会触发。
-    deps:
-      - task: build
     preconditions:
-      - sh: 'test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/sherpa-onnx-c-api.dll" && test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/onnxruntime.dll"'
+      - sh: 'test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/{{.APP_NAME}}.exe"'
+        msg: "bin/ 里缺少 {{.APP_NAME}}.exe：先跑 wails3 task build（create:* 不再代跑构建）"
+      - sh: 'command -v wix >/dev/null 2>&1 || ls -d "/c/Program Files/WiX Toolset v"*/bin/wix.exe >/dev/null 2>&1 || ls -d "/c/Program Files (x86)/WiX Toolset v"*/bin/wix.exe >/dev/null 2>&1'
+        msg: "未找到 WiX（wix.exe）：请安装 WiX Toolset v4+（CI: choco install wixtoolset）"
+      # 与 NSIS 同样的断言：缺 DLL 直接失败，避免做出「能装但起不来」的包。
+      - sh: 'test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/sherpa-onnx-c-api.dll" && test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/sherpa-onnx-cxx-api.dll" && test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/onnxruntime.dll"'
         msg: "bin/ 里缺少 CGO 运行时 DLL（sherpa-onnx-* / onnxruntime）：先跑 wails3 task build"
-    vars:
-      ARCH: '{{.ARCH | default ARCH}}'
-      VERSION:
-        sh: |
-          sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1
     cmds:
       - cmd: |
           set -e
@@ -226,20 +231,14 @@ tasks:
 
       需要 WiX Toolset（v4+）：`wix --version` 应可用；CI 用 `choco install wixtoolset`。
       签名 MSI 必须用 signtool（wails3 内置签名器不支持 MSI）。
-    deps:
-      - task: build
     preconditions:
+      - sh: 'test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/{{.APP_NAME}}.exe"'
+        msg: "bin/ 里缺少 {{.APP_NAME}}.exe：先跑 wails3 task build（create:* 不再代跑构建）"
       - sh: 'command -v wix >/dev/null 2>&1 || ls -d "/c/Program Files/WiX Toolset v"*/bin/wix.exe >/dev/null 2>&1 || ls -d "/c/Program Files (x86)/WiX Toolset v"*/bin/wix.exe >/dev/null 2>&1'
         msg: "未找到 WiX（wix.exe）：请安装 WiX Toolset v4+（CI: choco install wixtoolset）"
       # 与 NSIS 同样的断言：缺 DLL 直接失败，避免做出「能装但起不来」的包。
       - sh: 'test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/sherpa-onnx-c-api.dll" && test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/sherpa-onnx-cxx-api.dll" && test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/onnxruntime.dll"'
         msg: "bin/ 里缺少 CGO 运行时 DLL（sherpa-onnx-* / onnxruntime）：先跑 wails3 task build"
-    vars:
-      ARCH: '{{.ARCH | default ARCH}}'
-      # 版本唯一来源：build/config.yml 的 info.version（与前端 __APP_VERSION__、NSIS 同源）
-      VERSION:
-        sh: |
-          sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1
     cmds:
       - cmd: |
           set -e
@@ -273,6 +272,13 @@ tasks:
             -o "{{.ROOT_DIR}}/{{.BIN_DIR}}/{{.APP_NAME}}-{{.ARCH}}.msi"
           echo "MSI 已生成：{{.BIN_DIR}}/{{.APP_NAME}}-{{.ARCH}}.msi（version={{.VERSION}}）"
         platforms: [windows]
+    vars:
+      # 必须显式声明：本任务被直接调用（CI 里为了不覆盖已签名 exe 而绕过 package）
+      # 时拿不到 wails3 task 包装注入的 ARCH，产物名会变成 mandaryn-.msi。
+      ARCH: '{{.ARCH | default ARCH}}'
+      VERSION:
+        sh: |
+          sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1
 
   generate:syso:
     summary: Generates Windows `.syso` file
@@ -285,11 +291,11 @@ tasks:
   create:nsis:installer:
     summary: Creates an NSIS installer
     dir: build/windows/nsis
-    deps:
-      - task: build
     preconditions:
       - sh: '[ "{{.INSTALL_SCOPE}}" = "user" ] || [ "{{.INSTALL_SCOPE}}" = "machine" ]'
         msg: "INSTALL_SCOPE must be 'user' or 'machine', got '{{.INSTALL_SCOPE}}'"
+      - sh: 'test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/{{.APP_NAME}}.exe"'
+        msg: "bin/ 里缺少 {{.APP_NAME}}.exe：先跑 wails3 task build（create:* 不再代跑构建）"
       # 前置断言：DLL 必须已经由 copy:runtime:dlls 拷到 bin/。
       # 直接失败比装出一个「缺 DLL 的安装包」好得多 —— 那类问题要等用户双击才暴露。
       - sh: 'test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/sherpa-onnx-c-api.dll" && test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/sherpa-onnx-cxx-api.dll" && test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/onnxruntime.dll"'
@@ -313,8 +319,9 @@ tasks:
 
   create:msix:package:
     summary: Creates an MSIX package
-    deps:
-      - task: build
+    preconditions:
+      - sh: 'test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/{{.APP_NAME}}.exe"'
+        msg: "bin/ 里缺少 {{.APP_NAME}}.exe：先跑 wails3 task build（create:* 不再代跑构建）"
     cmds:
       - |-
         wails3 tool msix \
@@ -363,6 +370,8 @@ tasks:
       configured globally via `wails3 setup` (~/.config/wails/defaults.yaml).
       Password is retrieved from system keychain (run: wails3 setup signing)
     deps:
+      # create:nsis:installer 不再代跑构建（见 package 任务说明），这里显式补上
+      - task: build
       - task: create:nsis:installer
         vars:
           INSTALL_SCOPE: '{{.INSTALL_SCOPE | default "machine"}}'
