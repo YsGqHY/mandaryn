@@ -471,6 +471,7 @@ type PrivacySettings struct {
 - `https` 表示「以 TLS 连接代理」（CONNECT over TLS），与「目标是否 https」无关；
 - 凭据仅用于 `Proxy-Authorization`，**禁止**写入 URL query 或日志；
 - `UseForDownload` / `UseForOnline` 分别控制两条出站链路（ARCH §4.6.2）。
+- **全局代理优先**：运维设置 `MANDARYN_HTTP_PROXY`（标准 URL，可内嵌 `user:pass@`）后，**模型下载与模型清单源获取**统一走它，不再看 `UseForDownload`；该变量为空时完全回到上表语义。在线转写不受该变量影响。配置非法返回 `ERR_DOWNLOAD_PROXY` 而非回落直连（DEPLOYMENT §4.7）。
 
 #### 2.9.2 性能预算（NFR-08）
 

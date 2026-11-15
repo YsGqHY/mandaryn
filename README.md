@@ -239,6 +239,10 @@ task package
 | `MANDARYN_MODEL_ROOT` | 覆盖 `modelRoot` |
 | `MANDARYN_LOG_LEVEL` | `info` / `debug` / `off` |
 | `MANDARYN_OFFLINE` | 置 `1` 时**禁止一切出站**（下载与在线转写均禁用） |
+| `MANDARYN_HTTP_PROXY` | 全局 HTTP 代理（`http://[user:pass@]host:port`，也支持 `https` / `socks5`），**模型下载与清单源获取共用**；为空时保持直连 |
+| `MANDARYN_HTTP_NO_PROXY` | 上述代理的直连例外（逗号分隔，支持 `*` 与 `.suffix`） |
+| `MANDARYN_MODEL_CATALOG` | 覆盖模型清单基址（企业内网自建镜像） |
+| `MANDARYN_MODEL_MIRRORS` | 覆盖清单 / 下载镜像基址（逗号分隔，最多 3 个） |
 | `MANDARYN_SERVER_PORT` | server 模式监听端口（仅 `-tags server`） |
 
 路径按 `cli` > `env` > `user` > `default` **四级单向覆盖**，且**来源永远可见**：设置页会同时显示「当前生效值 + 来源徽章」与「你的设置（未生效）」，

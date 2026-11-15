@@ -476,7 +476,7 @@ Downloader.Start(bundleId):
 
 | 机制 | 细节 |
 |------|------|
-| 代理 | `httpx` 客户端按 `app_settings.proxy*` 构造 `http.Transport`（支持 http/https/socks5 + 认证）；下载与在线转写分别开关 |
+| 代理 | 由 `internal/models/proxy.go` 构造 `http.Transport`（`Proxy: http.ProxyURL`，socks5 走 `DialContext`；支持 http/https/socks5 + 认证 + `noProxy`）。**全局代理** `MANDARYN_HTTP_PROXY`（统一 URL，标准形式 `http://user:pass@host:port`）优先，覆盖**模型下载与清单获取**两条链路（两者共用 `Manager.httpClient()`，不分别配置）；未设时回落设置页 `app_settings.proxy*`（下载与在线转写分别开关）；都没有则直连。配置非法一律报错，不静默直连 |
 | 校验 | 单文件 sha256（流式）+ 整包 manifest 摘要；不一致 → 删除该文件重下（最多 1 次） |
 | 进度 | 汇总所有分片 bytesDone；事件 4Hz 节流 |
 | 并发限制 | 同时最多 2 个 bundle 下载（避免占满带宽影响转写） |

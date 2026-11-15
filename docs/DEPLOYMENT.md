@@ -150,6 +150,10 @@ task build:nollm      # 产物：bin/mandaryn-nollm[.exe]，与标准产物互�
 | `MANDARYN_MODEL_ROOT` | `~/.mandaryn` | 覆盖 `modelRoot` | **优先于设置页的值**（便于运维强制），优先级见 §4.1 |
 | `MANDARYN_LOG_LEVEL` | 未设 | `debug` 强制开启调试模式；`info`/`off` 强制关闭 | 覆盖设置页「调试模式」开关（设置页显示「由环境变量接管」并禁用开关，用户层值保留）；在日志初始化后立即生效，可记下启动阶段；其他值忽略并记一条警告 |
 | `MANDARYN_OFFLINE` | 未设 | 置 `1` 时**禁止一切出站**（下载与在线转写均禁用） | 企业离线部署强制项（§8） |
+| `MANDARYN_HTTP_PROXY` | 未设 | 全局 HTTP 代理（标准 URL 形式，可内嵌凭据） | **模型下载与模型清单源获取共用这一份**；优先级高于设置页，详见 §4.7 |
+| `MANDARYN_HTTP_NO_PROXY` | 未设 | 全局代理的直连例外（逗号分隔，支持 `*` 与 `.suffix`） | 仅配合 `MANDARYN_HTTP_PROXY` 生效 |
+| `MANDARYN_MODEL_CATALOG` | GitHub Releases | 覆盖模型清单基址（目录或 `.json` 直链） | 企业内网自建镜像；出站**仍受**代理与离线开关约束 |
+| `MANDARYN_MODEL_MIRRORS` | 内置 hf-mirror | 覆盖清单 / 下载镜像基址（逗号分隔，最多 3 个生效） | 同上 |
 | `MANDARYN_SERVER_PORT` | `8080` | server 模式监听端口 | 仅 `-tags server` |
 | `E2E_DATA_DIR` / `E2E_PORT` / `E2E_CHANNEL` | — | Playwright E2E 专用 | 仅测试 |
 
@@ -242,6 +246,66 @@ MANDARYN_OFFLINE=1
 | 用户改目录后显示「已保存，待解除生效」，生效值不变 | ✅ |
 | 故意把变量指向只读目录 → 启动仍成功并回退 + 红字 | ✅ |
 | 解除变量并重启 → 自动应用暂存值 | ✅ |
+
+### 4.7 全局 HTTP 代理（`MANDARYN_HTTP_PROXY`）
+
+企业网络里访问 GitHub Releases / 镜像站通常必须经代理。这里提供**一个**统一入口，
+**模型下载**与**模型清单源获取**共用同一份设置 —— 不按用途分别配置，也不存在
+「清单能拉下来、模型下不动」这种半通状态（两者走同一个 `Manager.httpClient()`）。
+
+| 项 | 说明 |
+|----|------|
+| 变量 | `MANDARYN_HTTP_PROXY`（必填项为空 = 不启用） |
+| 格式 | 标准 URL：`scheme://[user:pass@]host[:port]` |
+| scheme | `http`（默认）、`https`（**以 TLS 连接代理**，CONNECT over TLS）、`socks5`（含 `socks5h` 别名） |
+| 省略 scheme | `host:port` 按 `http` 处理（**不会**静默回落直连） |
+| 内嵌凭据 | 支持 `http://user:pass@host:port`；密码含 `@` `:` 等字符须按 URL 规则转义（如 `p%40ss%3Aword`） |
+| 默认端口 | `http`→80、`https`→443、`socks5`→1080 |
+| 直连例外 | `MANDARYN_HTTP_NO_PROXY`：逗号分隔，支持 `*`（全部直连）、精确主机、`.suffix`（该域及其子域） |
+| 作用范围 | **模型下载 + 模型清单源获取**；在线转写仍由设置页「用于在线转写」开关独立控制（`FR-05-5`） |
+| 优先级 | `MANDARYN_HTTP_PROXY` > 设置页 `proxy_*` > 直连 |
+| 生效时机 | 每次出站前重新读取该变量；环境变量在进程启动时定型，因此**修改变量后需重启应用**才生效（无需改任何配置项 / 重新登录） |
+| 凭据保护 | 密码只在内存中明文存在；**不进日志、不进 `outbound_log`、不进错误详情/诊断包** |
+
+**示例**
+
+```bash
+# 1) 普通 HTTP 代理
+export MANDARYN_HTTP_PROXY="http://proxy.corp.lan:3128"
+
+# 2) 带认证（密码里有特殊字符要转义）
+export MANDARYN_HTTP_PROXY="http://alice:p%40ss%3Aword@proxy.corp.lan:3128"
+
+# 3) 内网地址直连，其余走代理
+export MANDARYN_HTTP_PROXY="http://proxy.corp.lan:3128"
+export MANDARYN_HTTP_NO_PROXY=".corp.lan,localhost,127.0.0.1"
+
+# 4) SOCKS5（DNS 交给代理解析）
+export MANDARYN_HTTP_PROXY="socks5h://127.0.0.1:1080"
+
+# 5) 不启用（保持原有直连行为）
+unset MANDARYN_HTTP_PROXY
+```
+
+Windows（PowerShell）：
+
+```powershell
+[Environment]::SetEnvironmentVariable('MANDARYN_HTTP_PROXY', 'http://proxy.corp.lan:3128', 'User')
+[Environment]::SetEnvironmentVariable('MANDARYN_HTTP_NO_PROXY', '.corp.lan,localhost', 'User')
+```
+
+**行为与排障**
+
+| 场景 | 行为 |
+|------|------|
+| 变量未设 / 为空串 | 完全保持原有行为：直连，或按设置页代理配置出站 |
+| 地址非法（未知 scheme / 无主机 / 端口越界 / 带 path 或 query / 只有密码没用户名） | **不静默直连**：启动时记一条 `WARN`（`env=MANDARYN_HTTP_PROXY`，不含凭据与 URL）；下载请求返回 `ERR_DOWNLOAD_PROXY`；清单获取因三级回退对外报 `ERR_DOWNLOAD_NETWORK`（附缓存或内置清单，界面不空白），代理错误保留在错误链里 |
+| 代理不可达 / 认证失败 | `ERR_DOWNLOAD_PROXY`；清单获取按三级回退给出缓存或内置清单并附 `ERR_DOWNLOAD_NETWORK`，界面不会空白 |
+| 同时开了 `MANDARYN_OFFLINE=1` | 离线优先，请求在发出前就被拒绝（`ERR_OFFLINE_ENFORCED`），代理不生效 |
+| 只改了密码（主机/用户不变） | 代理 client 会重建，不会继续用旧凭据 |
+
+> **为什么「非法即失败」而不是回落到直连**：静默直连会让运维以为流量已过代理，
+> 实际裸奔出网 —— 与「代理密码坏密文不静默直连」同一条原则。
 
 ---
 

@@ -65,7 +65,90 @@
   - `Capabilities()` 取「系统版本满足 **且** 已实现」双条件，通过 `processLoopbackImplemented = false` 常量显式表达"未实现"，绝不虚报；
   - `Open` 对应用源**诚实拒绝**，不静默退化成设备回环（否则用户以为分路成功，事后才发现录进了别的应用，属隐私事故）；
   - 拒绝文案包含最低版本与当前实际版本，直接可展示。
-- 状态：未解决
+- 状态：**已解决**（S1 收尾，方案 A「原生进程回环 + 运行时探测」）。
+
+  实现要点：
+  - 新增 `probe_windows.go`：手写 `IActivateAudioInterfaceCompletionHandler`（虚表 + 事件通知），用
+    `windows.NewLazySystemDLL("Mmdevapi.dll")` 直接调**导出函数** `ActivateAudioInterfaceAsync`
+    （它不是 COM 方法，不需要虚表），参数经 `PROPVARIANT(VT_BLOB)` 传入
+    `AUDIOCLIENT_ACTIVATION_PARAMS{PROCESS_LOOPBACK, TargetProcessId, INCLUDE_TARGET_PROCESS_TREE}`。
+  - 新增 `capture_process_windows.go`：进程树根 PID → 异步激活 → **固定 44.1kHz/16bit/2ch PCM**
+    初始化（**不得调 `GetMixFormat`**，VAD 虚拟设备没有混合格式）→ 复用既有
+    `loopbackStream` / `loopbackChannel` 的 pump / drain / 队列 / 溢出丢最旧 / Close 语义。
+  - `open()` 改为按源类型选择 COM 套间：设备回环 STA，进程回环 **MTA**
+    （`ActivateAudioInterfaceAsync` 的硬性要求）。
+  - **能力判定改为「实测探测」**：`caps_windows.go` 不再用 Build 号推断，只认
+    `processLoopbackAvailable()` 的结论；`20348` 退化为 `Reason` 文案素材。
+    `Reason` 现在能区分「本机实测不支持」与「本版本尚未实现」两种原因。
+  - 新增独立诊断工具 `cmd/probe-processloopback`，可先拿结论再排障。
+- 实测结论（本机 Windows 10 Build **19045**）：**可用**。
+  `ActivateAudioInterfaceAsync + PROCESS_LOOPBACK` 返回 `S_OK` —— 官方文档标注的
+  20348 是「头文件随 SDK 公开发布」的版本，不代表运行时到该版本才支持。
+  这正是「能力只认探测、不认版本号」的直接依据（FR-02-4）。
+- 端到端验证（`.narrafork/14761.wav`，44.1k/16bit/2ch/17.12s，由 powershell SoundPlayer 播放）：
+  - 抓 6 秒得 264600 帧，峰值 0.5384；
+  - 源与捕获各取 10ms RMS 包络做归一化互相关，最佳对齐 -0.73s，**相关系数 0.9942**
+    → 抓到的内容与目标应用播放的音频同源，不是混音或静音流；
+  - 目标进程**重启后**（PID 变化）同一 `app:powershell.exe` 仍能续抓（两轮各 66150 帧）；
+  - 进程在跑但不出声时可正常打开（Present ≠ Producing）。
+
+## S1-18 PROCESS_LOOPBACK 被拒：E_ILLEGAL_METHOD_CALL（0x8000000E）
+- 现象：首次实现时 `ActivateAudioInterfaceAsync` 同步返回 `E_ILLEGAL_METHOD_CALL`，
+  连「真实设备 + `ACTIVATION_TYPE_DEFAULT`」这种一定支持的操作也失败；把
+  `completionHandler` 传 `NULL` 则返回 `E_INVALIDARG`（说明 API 本身是活的、参数校验在跑）。
+- 根因：**回调对象缺少 `IAgileObject`**。系统需要把 completion handler 封送进音频服务的套间，
+  官方样例通过 `RuntimeClassFlags<ClassicCom> + FtmBase` 隐含满足该语义；裸 `IUnknown`
+  会被拒。`E_INVALIDARG`/`E_ILLEGAL_METHOD_CALL` 的差异只取决于 handler 是否为空，
+  与设备路径、PROPVARIANT、套间模型无关。
+- 处置：`QueryInterface` 额外接受 `IID_IAgileObject`（并转发 `IID_IMarshal` 给
+  `CoCreateFreeThreadedMarshaler`，与 FtmBase 行为对齐）。
+- 状态：已解决
+
+## S1-19 手写 COM 虚表槽位寻址错误
+- 现象：激活后进程崩溃，`Exception 0xc0000005`，`PC=0xffffffffffffffff`（跳到 -1）。
+- 根因：`Release` / `GetActivateResult` 的槽位写法是「对象地址 + slot 偏移」，
+  但 COM 对象首字是**虚表指针**，槽位必须从**虚表**再偏移一次。给对象地址加偏移
+  读到的是对象字段（垃圾），当成函数指针调用就跳到野地址。
+- 处置：统一走 `comMethod(p, slot)`：先 `vtbl := *(*unsafe.Pointer)(p)`，再 `unsafe.Add(vtbl, slot*8)`。
+- 状态：已解决
+
+## S1-20 uintptr 转换导致回调对象被分配到栈上
+- 现象：能力探测偶发失败，且「测试通过、生产失败」——同样代码在 `_test.go` 里正常，
+  在 `open()` 路径里失败。
+- 根因：把 `uintptr(unsafe.Pointer(h))` 传给 syscall 后，Go 的逃逸分析看不到指针「逃出去」，
+  于是把 `h` 分配在当前 goroutine 的**栈**上；而激活是异步的，等栈帧回收后系统仍在用这个
+  地址读写 vtable 与参数。测试里 `h` 因为被 return 出去才意外逃逸到堆，掩盖了问题。
+- 处置：用包级 `activateHandlers sync.Map` 持有回调对象，既强制堆分配又保证异步期间可达。
+- 状态：已解决
+
+## S1-21 栈上出参缓冲在 syscall 前后失效（最隐蔽）
+- 现象：`ActivateAudioInterfaceAsync` 返回 `S_OK`，但出参 `operation` 始终为 `nil`
+  （表现为激活失败）。规律：经 `snapshotProcesses()` 之后**必挂**，不做快照时正常；
+  在函数开头多调一次激活后，**第二次反而成功**。
+- 根因：拿局部变量的地址 `&operation` 转成 `uintptr` 传给 Windows API。该地址指向
+  **当前 goroutine 的栈**，一旦前后发生栈增长/栈拷贝（例如进程快照触发 GC 与栈扩张），
+  地址即失效：API 把结果写进旧地址，调用方看到的是「成功但没回填」。
+- 处置：所有交给系统的**参数与出参缓冲**一律放在堆对象上（`activateHandler` 的字段：
+  `params` / `pv` / `operation` / `activateResult` / `activated`），**禁止**使用栈上局部变量的地址。
+  字符串路径由 `UTF16PtrFromString` 分配在堆，安全。
+- 状态：已解决
+
+## S1-22 GetActivateResult 只能调用一次
+- 现象：回调里读取激活结果后，等待线程再读就失败/为空。
+- 根因：`IActivateAudioInterfaceAsyncOperation::GetActivateResult` 规定只能调用一次。
+  若在 `ActivateCompleted` 里消费掉，等待线程就拿不到接口。
+- 处置：回调**只置位事件**，不消费结果；由等待线程唯一一次调用 `GetActivateResult`。
+- 状态：已解决
+
+## S1-23 进程回环在目标退出后不发事件
+- 现象：杀掉目标进程后，`Channel.Err()` 在 10s 内没有收到任何错误。
+- 根因：进程级回环在目标进程消失后**只是停止出包**，不保证触发
+  `AUDCLNT_E_DEVICE_INVALIDATED` 之类的事件（与设备回环拔设备的行为不同）。
+- 处置：如实记录能力边界，测试不判失败。**源失效的可靠判定不能只靠 `Channel.Err()`**：
+  建议上层（recordingsvc / monitor）对应用源定期校验根进程存活（如 500ms 轮询
+  `Probe`），主动触发 `capture:invalid`（FR-02-5 / UC-03）。此项待后续里程碑实现。
+- 状态：**未解决**（已知边界，需上层补轮询）
+
 
 ## S1-08 应用源枚举依赖「当前有音频会话」
 - 现象：已安装但当前没在放声音的应用不会出现在 `ListSources` 里。
@@ -146,18 +229,28 @@
 
 | 状态 | 条目 |
 |------|------|
-| 未解决 | S1-07（进程级捕获未实现）、S1-09（默认设备标记的 i18n 缺口）、S1-17（go.mod 的 indirect 注释）|
+| 未解决 | S1-23（进程回环目标退出后不发事件，需上层轮询补）、S1-09（默认设备标记的 i18n 缺口）、S1-17（go.mod 的 indirect 注释）|
 | 已绕过 | S1-01、S1-02、S1-03、S1-11 |
-| 已解决 | S1-04、S1-05、S1-06、S1-13、S1-14、S1-15、S1-16 |
+| 已解决 | S1-04、S1-05、S1-06、S1-07、S1-13、S1-14、S1-15、S1-16、S1-18、S1-19、S1-20、S1-21、S1-22 |
 | 改设计 | S1-08、S1-10、S1-12 |
 
-**未解决 3 条**，均需后续处理：
-- S1-07 依赖平台异步激活 API 与更严格的系统版本，且本机 Build 19045 无法验证；
+**未解决 3 条**：
+- S1-23 进程回环在目标进程退出后不触发事件，源失效必须由上层主动轮询根进程存活；
+  这是平台行为，不是实现缺陷（设备回环拔设备时仍会正常上报）；
 - S1-09 需要给 `contract.Source` 增字段（由主 agent 统一改契约）；
 - S1-17 需要主 agent 在收口时跑 `go mod tidy`（轻微，不影响编译）。
 
 **给后续里程碑的提醒**
-- 不要为了「让界面上出现应用列表」而把 `ProcessLoopback` 改成 true——那会引导用户选择必然失败的源。
-- 实现进程级捕获时，唯一需要改的开关是 `caps_windows.go` 的 `processLoopbackImplemented`，其余调用方无需变动。
+- **能力判定只认实测探测结果，不要退回用 Build 号推断**。本机 Build 19045 实测支持
+  `PROCESS_LOOPBACK`，而文档标注的门槛是 20348 —— 靠版本号判断会得出错误结论（S1-07）。
+- 判断「能不能用」时优先跑 `go run ./cmd/probe-processloopback`，它会把真实 HRESULT 打出来。
+- 不要把 `ProcessLoopback` 改成 true 而不实现 `Open`：那会引导用户选择必然失败的源（FR-02-4）。
+  `processLoopbackImplemented` 与实际实现必须同时变动。
 - 若将来给 `contract.Source` 加 `IsDefault`，记得同步删除 `capture.DefaultDeviceSuffix` 与对应的测试断言。
-- 装配 `capturesvc` 时（`internal/app`）需要两步：`capturesvc.New(holder)`，再 `SetSourcesChangedHandler(...)` 把源变化接到事件总线；退出时调 `StopMonitor()`。不接回调则只有「UI 请求时枚举」的被动行为。
+- 装配 `capturesvc` 时（`internal/app`）需要两步：`capturesvc.New(holder)`，再
+  `SetSourcesChangedHandler(...)` 把源变化接到事件总线；退出时调 `StopMonitor()`。
+  不接回调则只有「UI 请求时枚举」的被动行为。
+- 写任何 Win32/COM 互操作代码前，先读 S1-19 / S1-20 / S1-21 三条——它们都是「编译通过、
+  逻辑看着对、但运行时随机失败」的类型，且都源于同一个约束：**指针一旦转成 uintptr
+  交给系统，对象就必须在堆上且生命周期由调用方保证**。
+
