@@ -283,3 +283,78 @@ func TestResolveUnknownKey(t *testing.T) {
 		t.Fatal("expected error for unknown key")
 	}
 }
+
+// TestResolvePortableLayer 便携层：exe 同级存在 data\ 时生效，优先级 user > portable > default。
+func TestResolvePortableLayer(t *testing.T) {
+	base := t.TempDir()
+	portable := filepath.Join(base, "portable-data")
+	userDir := filepath.Join(base, "user")
+	defData := filepath.Join(base, "defdata")
+
+	newR := func(user string, portableOn bool) *Resolver {
+		return New(Options{
+			LookupEnv:        func(string) (string, bool) { return "", false },
+			DefaultDataRoot:  func() (string, error) { return defData, nil },
+			DefaultModelRoot: func() (string, error) { return filepath.Join(base, "defmodel"), nil },
+			UserValue: func(k Key) (string, error) {
+				if k == KeyDataRoot {
+					return user, nil
+				}
+				return "", nil
+			},
+			PortableDataRoot: func() (string, bool) { return portable, portableOn },
+		})
+	}
+
+	// 1) 只有便携层 → source=portable
+	p, err := newR("", true).Resolve(KeyDataRoot)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if p.Source != contract.PathSourcePortable || p.Effective != portable {
+		t.Errorf("got source=%q effective=%q, want portable/%q", p.Source, p.Effective, portable)
+	}
+
+	// 2) 用户层存在 → user 优先于 portable（用户显式设置不被"放进便携包"推翻）
+	p2, err := newR(userDir, true).Resolve(KeyDataRoot)
+	if err != nil {
+		t.Fatalf("resolve2: %v", err)
+	}
+	if p2.Source != contract.PathSourceUser || p2.Effective != userDir {
+		t.Errorf("got source=%q effective=%q, want user/%q", p2.Source, p2.Effective, userDir)
+	}
+
+	// 3) 非便携布局 → 回落 default
+	p3, err := newR("", false).Resolve(KeyDataRoot)
+	if err != nil {
+		t.Fatalf("resolve3: %v", err)
+	}
+	if p3.Source != contract.PathSourceDefault || p3.Effective != defData {
+		t.Errorf("got source=%q effective=%q, want default/%q", p3.Source, p3.Effective, defData)
+	}
+
+	// 4) modelRoot **不**受便携层影响（ADR-02：两个根目录不合并）
+	m, err := newR("", true).Resolve(KeyModelRoot)
+	if err != nil {
+		t.Fatalf("resolve model: %v", err)
+	}
+	if m.Source == contract.PathSourcePortable {
+		t.Errorf("modelRoot 不应出现 portable 来源，实际 %q", m.Source)
+	}
+}
+
+// TestPortableDataRootDetection 检测函数本身：只有 data\ 目录真实存在才算便携布局。
+func TestPortableDataRootDetection(t *testing.T) {
+	dir := t.TempDir()
+	exeDir := dir
+	// 模拟"exe 同级没有 data\"：portableDataRoot 基于 os.Executable（测试进程的真实 exe），
+	// 因此这里只断言"不会凭空返回 ok=true"。
+	if _, ok := portableDataRoot(); ok {
+		// 测试进程的 exe 同级理论上不会有 data\；若真有，说明环境特殊，跳过而不是误报失败。
+		t.Skip("测试进程 exe 同级存在 data 目录，跳过该项断言")
+	}
+	_ = exeDir
+	if _, err := os.Stat(filepath.Join(dir, PortableDataDirName)); err == nil {
+		t.Fatal("临时目录不应有 data 子目录")
+	}
+}

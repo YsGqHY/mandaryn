@@ -14,6 +14,12 @@ vars:
   # Docker image for cross-compilation with CGO (used when CGO_ENABLED=1 on non-Windows)
   CROSS_IMAGE: wails-cross
 
+  # 应用版本（唯一事实源：build/config.yml 的 info.version）。
+  # 同时供：-X 注入 Go 的 app.Version、NSIS/MSI 产物名与元数据、便携包目录名。
+  VERSION:
+    sh: |
+      sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1
+
 tasks:
   build:
     summary: Builds the application for Windows
@@ -61,7 +67,9 @@ tasks:
       - cmd: rm -f *.syso
         platforms: [linux, darwin]
     vars:
-      BUILD_FLAGS: '{{if eq .DEV "true"}}{{if or .EXTRA_TAGS (eq .OBFUSCATED "true")}}-tags {{if eq .OBFUSCATED "true"}}wails_obfuscated{{if .EXTRA_TAGS}},{{end}}{{end}}{{.EXTRA_TAGS}} {{end}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui"{{end}}'
+      # -X 注入版本号：Go 侧拿不到 build/config.yml，只能构建期注入（见 internal/app/version.go）。
+      # 与前端 __APP_VERSION__、NSIS/MSI/便携包的版本号同源。
+      BUILD_FLAGS: '{{if eq .DEV "true"}}{{if or .EXTRA_TAGS (eq .OBFUSCATED "true")}}-tags {{if eq .OBFUSCATED "true"}}wails_obfuscated{{if .EXTRA_TAGS}},{{end}}{{end}}{{.EXTRA_TAGS}} {{end}}-buildvcs=false -gcflags=all="-l" -ldflags="-X ''vip.oberon.mandaryn/internal/app.Version={{.VERSION}}''"{{else}}-tags production{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui -X ''vip.oberon.mandaryn/internal/app.Version={{.VERSION}}''"{{end}}'
       # 产物名：默认就是 APP_NAME（`bin/mandaryn.exe`），只有派生变体（nollm）才覆盖，
       # 这样变体与标准产物不会互相覆盖，标准构建的输出路径与命名保持不变。
       DEFAULT_BIN_NAME: '{{.APP_NAME}}'
@@ -162,13 +170,109 @@ tasks:
 
   package:
     summary: Packages the application
+    desc: |
+      FORMAT=nsis（默认）→ NSIS 安装程序：面向普通用户，支持 user/machine 范围与多语言。
+      FORMAT=msi           → MSI 安装包（WiX）：面向企业 GPO/SCCM/Intune 分发。
+      FORMAT=portable      → 便携 zip：解压即用，数据写在 exe 同级 data\。
+      FORMAT=msix          → MSIX 包（需代码签名证书才能安装）。
+
+      NSIS 与 MSI **二选一**：两者各写一套 ARP 条目，同时装会出现两个「Mandaryn」。
+      便携 zip 与它们**可共存**（不写注册表、不建快捷方式）。
     cmds:
-      - task: '{{if eq (.FORMAT | default "nsis") "msix"}}create:msix:package{{else}}create:nsis:installer{{end}}'
+      - task: '{{if eq (.FORMAT | default "nsis") "msix"}}create:msix:package{{else if eq (.FORMAT | default "nsis") "msi"}}create:msi:package{{else if eq (.FORMAT | default "nsis") "portable"}}create:portable:zip{{else}}create:nsis:installer{{end}}'
         vars:
           INSTALL_SCOPE: '{{.INSTALL_SCOPE | default "machine"}}'
     vars:
       FORMAT: '{{.FORMAT | default "nsis"}}'
       INSTALL_SCOPE: '{{.INSTALL_SCOPE | default "machine"}}'
+
+  create:portable:zip:
+    summary: Creates a portable zip (exe + runtime DLLs + notices + data\)
+    desc: |
+      解压即用：不写注册表、不建快捷方式、数据写在 exe 同级 data\（便携模式）。
+
+      包里含 3 个运行时 DLL（必须与 exe 同目录）与许可声明；data\ 内放一个 README，
+      保证解压后该目录存在 —— 空目录在部分解压工具里会被丢弃，那样便携模式就不会触发。
+    deps:
+      - task: build
+    preconditions:
+      - sh: 'test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/sherpa-onnx-c-api.dll" && test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/onnxruntime.dll"'
+        msg: "bin/ 里缺少 CGO 运行时 DLL（sherpa-onnx-* / onnxruntime）：先跑 wails3 task build"
+    vars:
+      ARCH: '{{.ARCH | default ARCH}}'
+      VERSION:
+        sh: |
+          sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1
+    cmds:
+      - cmd: |
+          set -e
+          if [ -z "{{.VERSION}}" ]; then
+            echo "无法从 build/config.yml 读取 info.version" >&2
+            exit 1
+          fi
+          powershell -NoProfile -ExecutionPolicy Bypass -File "{{.ROOT_DIR}}/build/windows/portable.ps1" \
+            -Version "{{.VERSION}}" \
+            -BinDir "{{.ROOT_DIR}}\{{.BIN_DIR}}" \
+            -RootDir "{{.ROOT_DIR}}" \
+            -OutFile "{{.ROOT_DIR}}\{{.BIN_DIR}}\{{.APP_NAME}}-{{.VERSION}}-windows-{{.ARCH}}-portable.zip"
+        platforms: [windows]
+
+  create:msi:package:
+    summary: Creates an MSI package (WiX)
+    desc: |
+      面向企业分发（GPO / SCCM / Intune）：perMachine 安装到
+      %ProgramFiles%\Oberon\Mandaryn，含 3 个运行时 DLL 与许可声明，
+      创建桌面与开始菜单快捷方式，支持 MajorUpgrade（降级被拒）。
+
+      需要 WiX Toolset（v4+）：`wix --version` 应可用；CI 用 `choco install wixtoolset`。
+      签名 MSI 必须用 signtool（wails3 内置签名器不支持 MSI）。
+    deps:
+      - task: build
+    preconditions:
+      - sh: 'command -v wix >/dev/null 2>&1 || ls -d "/c/Program Files/WiX Toolset v"*/bin/wix.exe >/dev/null 2>&1 || ls -d "/c/Program Files (x86)/WiX Toolset v"*/bin/wix.exe >/dev/null 2>&1'
+        msg: "未找到 WiX（wix.exe）：请安装 WiX Toolset v4+（CI: choco install wixtoolset）"
+      # 与 NSIS 同样的断言：缺 DLL 直接失败，避免做出「能装但起不来」的包。
+      - sh: 'test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/sherpa-onnx-c-api.dll" && test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/sherpa-onnx-cxx-api.dll" && test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/onnxruntime.dll"'
+        msg: "bin/ 里缺少 CGO 运行时 DLL（sherpa-onnx-* / onnxruntime）：先跑 wails3 task build"
+    vars:
+      ARCH: '{{.ARCH | default ARCH}}'
+      # 版本唯一来源：build/config.yml 的 info.version（与前端 __APP_VERSION__、NSIS 同源）
+      VERSION:
+        sh: |
+          sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1
+    cmds:
+      - cmd: |
+          set -e
+          if [ -z "{{.VERSION}}" ]; then
+            echo "无法从 build/config.yml 读取 info.version" >&2
+            exit 1
+          fi
+          # 定位 wix.exe：优先 PATH（CI 的 choco 安装可能已加入），
+          # 否则在 "Program Files\WiX Toolset v*" 里找 —— 不写死版本号，
+          # 因为 choco 装出来的可能是 v4/v5/v6，写死会让 CI 在版本变化时静默失败。
+          WIX=""
+          if command -v wix >/dev/null 2>&1; then
+            WIX="wix"
+          else
+            for cand in "/c/Program Files/WiX Toolset v"*/bin/wix.exe \
+                        "/c/Program Files (x86)/WiX Toolset v"*/bin/wix.exe; do
+              if [ -x "$cand" ]; then WIX="$cand"; break; fi
+            done
+          fi
+          if [ -z "$WIX" ]; then
+            echo "未找到 wix.exe：请安装 WiX Toolset v4+（CI: choco install wixtoolset）" >&2
+            exit 1
+          fi
+          echo "使用 WiX：$WIX ($("$WIX" --version 2>/dev/null | head -1))"
+          "$WIX" build build/windows/msi/product.wxs \
+            -arch x64 \
+            -d Version="{{.VERSION}}" \
+            -d BinDir="{{.ROOT_DIR}}/{{.BIN_DIR}}" \
+            -d RootDir="{{.ROOT_DIR}}" \
+            -d BuildDir="{{.ROOT_DIR}}/build" \
+            -o "{{.ROOT_DIR}}/{{.BIN_DIR}}/{{.APP_NAME}}-{{.ARCH}}.msi"
+          echo "MSI 已生成：{{.BIN_DIR}}/{{.APP_NAME}}-{{.ARCH}}.msi（version={{.VERSION}}）"
+        platforms: [windows]
 
   generate:syso:
     summary: Generates Windows `.syso` file
@@ -186,14 +290,21 @@ tasks:
     preconditions:
       - sh: '[ "{{.INSTALL_SCOPE}}" = "user" ] || [ "{{.INSTALL_SCOPE}}" = "machine" ]'
         msg: "INSTALL_SCOPE must be 'user' or 'machine', got '{{.INSTALL_SCOPE}}'"
+      # 前置断言：DLL 必须已经由 copy:runtime:dlls 拷到 bin/。
+      # 直接失败比装出一个「缺 DLL 的安装包」好得多 —— 那类问题要等用户双击才暴露。
+      - sh: 'test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/sherpa-onnx-c-api.dll" && test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/sherpa-onnx-cxx-api.dll" && test -f "{{.ROOT_DIR}}/{{.BIN_DIR}}/onnxruntime.dll"'
+        msg: "bin/ 里缺少 CGO 运行时 DLL（sherpa-onnx-* / onnxruntime）：先跑 wails3 task build"
     cmds:
       # Create the Microsoft WebView2 bootstrapper if it doesn't exist
       - wails3 generate webview2bootstrapper -dir "{{.ROOT_DIR}}/build/windows/nsis"
+      # ARG_WAILS_<ARCH>_DLLS / ARG_WAILS_LICENSE 必须传：安装器要把 3 个 CGO 运行时 DLL
+      # 与 LICENSE 装进安装目录（与 exe 同目录）。少了这些 define，wails_tools.nsh 里的
+      # File 指令会在编译期报 undefined，或（若被注释）装出「缺 DLL 无法启动」的包。
       - |
         {{if eq OS "windows"}}
-        makensis {{if eq .INSTALL_SCOPE "user"}}-DWAILS_INSTALL_SCOPE=user -DREQUEST_EXECUTION_LEVEL=user {{end}}-DARG_WAILS_{{.ARG_FLAG}}_BINARY="{{.ROOT_DIR}}\{{.BIN_DIR}}\{{.APP_NAME}}.exe" project.nsi
+        makensis {{if eq .INSTALL_SCOPE "user"}}-DWAILS_INSTALL_SCOPE=user -DREQUEST_EXECUTION_LEVEL=user {{end}}-DARG_WAILS_{{.ARG_FLAG}}_BINARY="{{.ROOT_DIR}}\{{.BIN_DIR}}\{{.APP_NAME}}.exe" -DARG_WAILS_{{.ARG_FLAG}}_DLLS="{{.ROOT_DIR}}\{{.BIN_DIR}}" -DARG_WAILS_LICENSE="{{.ROOT_DIR}}\LICENSE" -DARG_WAILS_THIRD_PARTY="{{.ROOT_DIR}}\build\third-party" project.nsi
         {{else}}
-        makensis {{if eq .INSTALL_SCOPE "user"}}-DWAILS_INSTALL_SCOPE=user -DREQUEST_EXECUTION_LEVEL=user {{end}}-DARG_WAILS_{{.ARG_FLAG}}_BINARY="{{.ROOT_DIR}}/{{.BIN_DIR}}/{{.APP_NAME}}.exe" project.nsi
+        makensis {{if eq .INSTALL_SCOPE "user"}}-DWAILS_INSTALL_SCOPE=user -DREQUEST_EXECUTION_LEVEL=user {{end}}-DARG_WAILS_{{.ARG_FLAG}}_BINARY="{{.ROOT_DIR}}/{{.BIN_DIR}}/{{.APP_NAME}}.exe" -DARG_WAILS_{{.ARG_FLAG}}_DLLS="{{.ROOT_DIR}}/{{.BIN_DIR}}" -DARG_WAILS_LICENSE="{{.ROOT_DIR}}/LICENSE" -DARG_WAILS_THIRD_PARTY="{{.ROOT_DIR}}/build/third-party" project.nsi
         {{end}}
     vars:
       ARCH: '{{.ARCH | default ARCH}}'

@@ -1,4 +1,4 @@
-Unicode true
+﻿Unicode true
 
 ####
 ## Please note: Template replacements don't work in this file. They are provided with default defines like
@@ -65,7 +65,25 @@ ManifestDPIAware true
 
 !insertmacro MUI_UNPAGE_INSTFILES # Uninstalling page
 
-!insertmacro MUI_LANGUAGE "English" # Set the Language of the installer
+## 安装器多语言：**跟随系统语言**，无需用户手动选择。
+##
+## MUI 的行为：按下面的声明顺序与系统 UI 语言做匹配，命中即用；都不命中则用第一个。
+## 把简体中文放在首位会影响"非中文系统"的判定（MUI 优先匹配系统语言，位置只决定回退值），
+## 因此这里保持 English 在首位作为回退，中文紧随其后。
+## 这样：中文 Windows → 中文安装界面；其它语言 Windows → 英文界面。
+## 静默安装（/S）不弹语言选择框，符合"跟随系统"的预期，不引入额外交互。
+!insertmacro MUI_LANGUAGE "English"
+!insertmacro MUI_LANGUAGE "SimpChinese"
+
+## 安装器自定义文案的中英双语（其余内置页面文案由 MUI 语言包提供）
+LangString STR_SHORTCUT_DESKTOP ${LANG_ENGLISH}  "Create a desktop shortcut"
+LangString STR_SHORTCUT_DESKTOP ${LANG_SIMPCHINESE} "创建桌面快捷方式"
+LangString STR_SHORTCUT_STARTMENU ${LANG_ENGLISH}  "Create a Start Menu shortcut"
+LangString STR_SHORTCUT_STARTMENU ${LANG_SIMPCHINESE} "创建开始菜单快捷方式"
+LangString STR_KEEP_DATA ${LANG_ENGLISH}  "Keep my recordings and settings (recommended)"
+LangString STR_KEEP_DATA ${LANG_SIMPCHINESE} "保留我的录音与设置（推荐）"
+LangString STR_RUNNING_WARN ${LANG_ENGLISH}  "Mandaryn is running. Please close it and try again."
+LangString STR_RUNNING_WARN ${LANG_SIMPCHINESE} "Mandaryn 正在运行，请先关闭它再继续。"
 
 ## The following two statements can be used to sign the installer and the uninstaller. The path to the binaries are provided in %1
 #!uninstfinalize 'signtool --file "%1"'

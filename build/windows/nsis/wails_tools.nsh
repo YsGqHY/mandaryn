@@ -109,12 +109,32 @@ RequestExecutionLevel "${REQUEST_EXECUTION_LEVEL}"
     !ifdef SUPPORTS_AMD64
         ${if} ${IsNativeAMD64}
             File "/oname=${PRODUCT_EXECUTABLE}" "${ARG_WAILS_AMD64_BINARY}"
+            ; CGO 运行时 DLL 必须与 exe 同目录：mandaryn.exe 的导入表直接引用
+            ; sherpa-onnx-c-api.dll，而 sherpa 又依赖 onnxruntime.dll。
+            ; 缺任意一个，进程在 main 之前就失败（"找不到 sherpa-onnx-c-api.dll"）。
+            ; 注意：这些 DLL 不能用「单文件打包/内嵌解压」替代 —— 静态导入在加载器阶段解析，
+            ; 我们的代码来不及把内嵌的 DLL 写出来（详见 docs/DEPLOYMENT.md）。
+            File "${ARG_WAILS_AMD64_DLLS}\sherpa-onnx-c-api.dll"
+            File "${ARG_WAILS_AMD64_DLLS}\sherpa-onnx-cxx-api.dll"
+            File "${ARG_WAILS_AMD64_DLLS}\onnxruntime.dll"
+            File "/oname=LICENSE" "${ARG_WAILS_LICENSE}"
+            ; 第三方许可声明（Apache-2.0 / MIT）：随二进制一并分发，合规要求。
+            File "/oname=sherpa-onnx-go-windows-LICENSE" "${ARG_WAILS_THIRD_PARTY}\sherpa-onnx-go-windows-LICENSE"
+            File "/oname=onnxruntime-LICENSE" "${ARG_WAILS_THIRD_PARTY}\onnxruntime-LICENSE"
+            File "/oname=THIRD-PARTY-NOTICES.md" "${ARG_WAILS_THIRD_PARTY}\THIRD-PARTY-NOTICES.md"
         ${EndIf}
     !endif
 
     !ifdef SUPPORTS_ARM64
         ${if} ${IsNativeARM64}
             File "/oname=${PRODUCT_EXECUTABLE}" "${ARG_WAILS_ARM64_BINARY}"
+            File "${ARG_WAILS_ARM64_DLLS}\sherpa-onnx-c-api.dll"
+            File "${ARG_WAILS_ARM64_DLLS}\sherpa-onnx-cxx-api.dll"
+            File "${ARG_WAILS_ARM64_DLLS}\onnxruntime.dll"
+            File "/oname=LICENSE" "${ARG_WAILS_LICENSE}"
+            File "/oname=sherpa-onnx-go-windows-LICENSE" "${ARG_WAILS_THIRD_PARTY}\sherpa-onnx-go-windows-LICENSE"
+            File "/oname=onnxruntime-LICENSE" "${ARG_WAILS_THIRD_PARTY}\onnxruntime-LICENSE"
+            File "/oname=THIRD-PARTY-NOTICES.md" "${ARG_WAILS_THIRD_PARTY}\THIRD-PARTY-NOTICES.md"
         ${EndIf}
     !endif
 !macroend

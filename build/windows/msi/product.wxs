@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Mandaryn 的 MSI 安装包定义（WiX v4+ 语法，本机 v6.0.2 验证）。
+
+  设计取舍：
+  - **perMachine**：装到 %ProgramFiles%\Oberon\Mandaryn，供企业用 GPO/SCCM/Intune 分发。
+    与 NSIS 安装包**二选一**（两者各写一套 ARP 条目，同时装会出现两个「Mandaryn」）。
+  - **MajorUpgrade**：新版本自动卸载旧版再装，避免残留文件；降级被明确拒绝。
+  - 三个 CGO 运行时 DLL 与 exe 同目录：`mandaryn.exe` 的导入表直接引用
+    sherpa-onnx-c-api.dll，它再依赖 onnxruntime.dll（详见 docs/DEPLOYMENT.md §1.1）。
+  - 卸载**不删** `%AppData%\Mandaryn`（用户录音与转写结果在那里），
+    因此这里不定义任何针对该目录的 RemoveFile/RemoveFolder。
+  - 快捷方式挂在主 exe 的 File 元素上：卸载时随组件一起移除。
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package
+      Name="Mandaryn"
+      Manufacturer="Oberon"
+      Version="$(var.Version)"
+      UpgradeCode="8f3d6c1e-4b2a-4f77-9a10-6c5e2b8d4a71"
+      Scope="perMachine"
+      Compressed="yes"
+      InstallerVersion="500">
+
+    <!-- 新版本覆盖安装：自动移除旧版；禁止降级 -->
+    <MajorUpgrade
+        DowngradeErrorMessage="已安装更高版本的 Mandaryn，请先卸载后再安装此版本。" />
+
+    <!-- 每用户安装的数据目录**不**归 MSI 管；这里显式声明不触碰 -->
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+
+    <!--
+      必须显式声明媒体模板：WiX v4+ 不再默认嵌入 cab。
+      缺了它生成的 MSI 只有几十 KB，exe 与 DLL 都不会被打进去
+      （安装时会因找不到源文件而失败）。
+      第 2 个参数 0 = 全部内容打进单个内嵌 cab。
+    -->
+    <MediaTemplate EmbedCab="yes" MaximumUncompressedMediaSize="512" />
+
+    <Icon Id="AppIcon" SourceFile="$(var.BuildDir)\windows\icon.ico" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="COMPANYDIR" Name="Oberon">
+        <Directory Id="INSTALLDIR" Name="Mandaryn">
+
+          <!-- 主程序 + 快捷方式（注册为 keypath） -->
+          <Component Id="MainExecutable" Guid="*">
+            <File Id="MandarynExe"
+                  Source="$(var.BinDir)\mandaryn.exe"
+                  KeyPath="yes">
+              <!-- 开始菜单快捷方式 -->
+              <Shortcut Id="StartMenuShortcut"
+                        Directory="ProgramMenuDir"
+                        Name="Mandaryn"
+                        Description="按应用分路录制并转写中文语音"
+                        WorkingDirectory="INSTALLDIR"
+                        Advertise="yes" />
+              <!-- 桌面快捷方式 -->
+              <Shortcut Id="DesktopShortcut"
+                        Directory="DesktopFolder"
+                        Name="Mandaryn"
+                        Description="按应用分路录制并转写中文语音"
+                        WorkingDirectory="INSTALLDIR"
+                        Advertise="yes" />
+            </File>
+          </Component>
+
+          <!--
+            运行时 DLL 作为一个组件：卸载/升级时整组处理。
+            缺任意一个，进程在 main() 之前就失败（「找不到 sherpa-onnx-c-api.dll」）。
+          -->
+          <Component Id="RuntimeDlls" Guid="AFEE39CC-D472-564E-A831-9AC7F5353C15">
+            <File Id="SherpaCApi"
+                  Source="$(var.BinDir)\sherpa-onnx-c-api.dll"
+                  KeyPath="yes" />
+            <File Id="SherpaCxxApi" Source="$(var.BinDir)\sherpa-onnx-cxx-api.dll" />
+            <File Id="OnnxRuntime" Source="$(var.BinDir)\onnxruntime.dll" />
+          </Component>
+
+          <!-- 许可与第三方声明（合规要求） -->
+          <Component Id="Notices" Guid="0E8725B1-7955-5C67-879D-51D61189FE2E">
+            <File Id="LicenseMit" Source="$(var.RootDir)\LICENSE" KeyPath="yes" />
+            <File Id="LicenseSherpa"
+                  Source="$(var.RootDir)\build\third-party\sherpa-onnx-go-windows-LICENSE" />
+            <File Id="LicenseOnnx"
+                  Source="$(var.RootDir)\build\third-party\onnxruntime-LICENSE" />
+            <File Id="ThirdPartyNotices"
+                  Source="$(var.RootDir)\build\third-party\THIRD-PARTY-NOTICES.md" />
+          </Component>
+
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <!-- 开始菜单程序组（卸载时若为空则删除） -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ProgramMenuDir" Name="Mandaryn" />
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Mandaryn" Level="1" AllowAbsent="no">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="RuntimeDlls" />
+      <ComponentRef Id="Notices" />
+    </Feature>
+
+  </Package>
+</Wix>

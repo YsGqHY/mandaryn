@@ -15,6 +15,9 @@ const (
 	PathSourceUser    = "user"
 	PathSourceEnv     = "env"
 	PathSourceCLI     = "cli"
+	// PathSourcePortable 便携模式：exe 同级存在 data\ 目录时自动采用（见 docs/DEPLOYMENT.md §3）。
+	// 优先级低于 user、高于 default —— 用户显式设置不该被"把 exe 放进便携包"这一动作推翻。
+	PathSourcePortable = "portable"
 )
 
 // ResolvedPath 路径解析结果（API-9.11）。

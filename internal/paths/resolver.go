@@ -56,6 +56,12 @@ type Options struct {
 	DefaultDataRoot  func() (string, error)
 	DefaultModelRoot func() (string, error)
 
+	// PortableDataRoot 返回「便携模式」的数据目录（exe 同级 data\），ok=false 表示不是便携布局。
+	//
+	// 只在 dataRoot 的分层里参与（优先级 user > portable > default）。nil 时用默认实现
+	// （见 portableDataRoot），这样装配层不必显式接线，测试可替换成固定行为。
+	PortableDataRoot func() (string, bool)
+
 	// UserValue 返回「用户设置层」保存的值（dataRoot: storage.json；modelRoot: app_settings.model_root）。
 	// 返回空串表示用户没设过。可为 nil（视作未设）。
 	UserValue func(Key) (string, error)
@@ -86,6 +92,9 @@ func New(opts Options) *Resolver {
 	}
 	if opts.DefaultModelRoot == nil {
 		opts.DefaultModelRoot = defaultModelRoot
+	}
+	if opts.PortableDataRoot == nil {
+		opts.PortableDataRoot = portableDataRoot
 	}
 	return &Resolver{opts: opts, cache: make(map[Key]contract.ResolvedPath, 2)}
 }
@@ -160,6 +169,19 @@ func (r *Resolver) resolve(key Key) (contract.ResolvedPath, error) {
 			source: contract.ResolvedPath{Source: contract.PathSourceUser},
 			name:   "", value: userValue,
 		})
+	}
+	// 便携层：exe 同级存在 data\ 目录即采用（优先级低于 user、高于 default）。
+	//
+	// 只对 dataRoot 生效：modelRoot 的默认位置是 ~/.mandaryn（模型可能几十 GB、
+	// 可被迁移到别的磁盘），把它也塞进便携目录会让"把 exe 拷到 U 盘"意外搬家模型
+	// （ADR-02：两个根目录语义不同，不合并）。
+	if key == KeyDataRoot {
+		if v, ok := r.opts.PortableDataRoot(); ok && strings.TrimSpace(v) != "" {
+			layers = append(layers, layer{
+				source: contract.ResolvedPath{Source: contract.PathSourcePortable},
+				name:   "", value: v,
+			})
+		}
 	}
 	// 默认层是**兜底**，不是前置条件：它解析失败（例如 %AppData% 缺失、
 	// HOME 未定义）时只应把默认层从候选里剔除，不能让已经拿到 cli/env/user
@@ -385,6 +407,24 @@ func defaultModelRoot() (string, error) {
 		return "", fmt.Errorf("paths: cannot resolve home dir: %w", err)
 	}
 	return filepath.Join(home, "."+ModelDirName), nil
+}
+
+// portableDataRoot 检测便携布局：exe 同级存在 data\ 目录时返回它（ok=true）。
+//
+// 便携包的形态：解压后 exe 旁边有一个 data\ 目录。这样"把 exe 拷到 U 盘"就自带数据，
+// 不写用户目录（也便于多副本并存）。只认**已存在**的目录：不去创建它，否则任何安装版
+// 都不会有该目录，行为与现在一致；反过来若我们主动创建，就会把普通安装误判成便携。
+func portableDataRoot() (string, bool) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", false
+	}
+	cand := filepath.Join(filepath.Dir(exe), PortableDataDirName)
+	st, err := os.Stat(cand)
+	if err != nil || !st.IsDir() {
+		return "", false
+	}
+	return cand, true
 }
 
 // probeWritable 校验目录可创建且可写：建目录 → 写临时文件 → 删除。

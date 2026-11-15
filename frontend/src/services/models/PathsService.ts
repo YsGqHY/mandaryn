@@ -25,6 +25,9 @@ export const PATH_SOURCE_DEFAULT = 'default';
 export const PATH_SOURCE_USER = 'user';
 export const PATH_SOURCE_ENV = 'env';
 export const PATH_SOURCE_CLI = 'cli';
+// 便携模式：exe 同级存在 data\ 目录时后端自动采用。它不是"被接管"，
+// 因此不参与 isManagedSource（用户仍可在设置里改 dataRoot 覆盖它）。
+export const PATH_SOURCE_PORTABLE = 'portable';
 
 // isManagedSource 判断某个来源是否「被上层接管」（用户改设置不会生效）。
 export const isManagedSource = (source: string): boolean =>

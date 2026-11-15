@@ -96,6 +96,14 @@ tasks:
       - task: frontend:run
         vars:
           SCRIPT: '{{if eq .DEV "true"}}build:dev{{else}}build{{end}}'
+      # vite 的 emptyOutDir 会清空 frontend/dist，连带删掉入库的 .gitkeep。
+      # 该文件是 main.go 里 `//go:embed all:frontend/dist` 的占位：目录不存在时
+      # 连 `go build ./...` 都会失败（CI 的纯 Go 门禁没有前端构建产物）。
+      # 在这里补回来，避免每次构建都在工作区留下一个"被删除"的假改动。
+      - cmd: touch dist/.gitkeep
+        platforms: [linux, darwin]
+      - cmd: powershell -NoProfile -Command "if (-not (Test-Path 'dist/.gitkeep')) { New-Item -ItemType File -Path 'dist/.gitkeep' -Force | Out-Null }"
+        platforms: [windows]
     env:
       PRODUCTION: '{{if eq .DEV "true"}}false{{else}}true{{end}}'
 

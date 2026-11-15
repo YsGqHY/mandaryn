@@ -23,6 +23,9 @@ const (
 	MasterKeyFileName = ".master.key"
 	// LogsDirName 日志子目录名（相对 dataRoot）。
 	LogsDirName = "logs"
+	// PortableDataDirName 便携包的标记目录名：exe 同级存在该目录即视为便携模式，
+	// 并把它当作 dataRoot（来源标记 contract.PathSourcePortable）。
+	PortableDataDirName = "data"
 	// SessionsDirName 会话音频子目录名（相对 dataRoot）。
 	SessionsDirName = "sessions"
 )
