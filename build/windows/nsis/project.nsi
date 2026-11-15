@@ -51,6 +51,13 @@ ManifestDPIAware true
 
 !include "MUI.nsh"
 
+## 检测"是否已有实例在运行"要用到字符串查找（tasklist 输出里找进程名），
+## 以及 uninstall 页的勾选框（nsDialogs）。两者都是 NSIS 自带头文件，无需插件。
+!include "LogicLib.nsh"
+!include "StrFunc.nsh"
+!include "nsDialogs.nsh"
+${StrLoc}
+
 !define MUI_ICON "..\icon.ico"
 !define MUI_UNICON "..\icon.ico"
 # !define MUI_WELCOMEFINISHPAGE_BITMAP "resources\leftimage.bmp" #Include this to add a bitmap on the left side of the Welcome Page. Must be a size of 164x314
@@ -64,6 +71,34 @@ ManifestDPIAware true
 !insertmacro MUI_PAGE_FINISH # Finished installation page.
 
 !insertmacro MUI_UNPAGE_INSTFILES # Uninstalling page
+
+## 卸载时是否连数据一起删 —— 默认**不删**。
+##
+## 数据（录音、转写结果、设置）在 $APPDATA\Mandaryn，与安装目录无关；删掉无法恢复，
+## 所以默认保留，且必须由用户在独立页面显式勾选。这也与文档承诺一致：
+## 卸载不删除用户数据（DEPLOYMENT §6.4）。
+## 静默卸载（/S）不会进入这个页面，$RemoveUserData 保持未勾选状态 → 保留数据。
+Var RemoveUserData
+Var UnDataCheckbox
+
+UninstPage custom un.DataPage un.DataPageLeave
+
+Function un.DataPage
+    !insertmacro MUI_HEADER_TEXT "$(STR_UNINSTALL_OPTIONS)" "$(STR_KEEP_DATA_HINT)"
+    nsDialogs::Create 1018
+    Pop $0
+    ${If} $0 == error
+        Abort
+    ${EndIf}
+    ${NSD_CreateCheckbox} 0 0 100% 12u "$(STR_DELETE_DATA)"
+    Pop $UnDataCheckbox
+    ; 刻意不 Check：默认保留数据
+    nsDialogs::Show
+FunctionEnd
+
+Function un.DataPageLeave
+    ${NSD_GetState} $UnDataCheckbox $RemoveUserData
+FunctionEnd
 
 ## 安装器多语言：**跟随系统语言**，无需用户手动选择。
 ##
@@ -84,6 +119,12 @@ LangString STR_KEEP_DATA ${LANG_ENGLISH}  "Keep my recordings and settings (reco
 LangString STR_KEEP_DATA ${LANG_SIMPCHINESE} "保留我的录音与设置（推荐）"
 LangString STR_RUNNING_WARN ${LANG_ENGLISH}  "Mandaryn is running. Please close it and try again."
 LangString STR_RUNNING_WARN ${LANG_SIMPCHINESE} "Mandaryn 正在运行，请先关闭它再继续。"
+LangString STR_UNINSTALL_OPTIONS ${LANG_ENGLISH}  "Uninstall options"
+LangString STR_UNINSTALL_OPTIONS ${LANG_SIMPCHINESE} "卸载选项"
+LangString STR_KEEP_DATA_HINT ${LANG_ENGLISH}  "Your recordings and settings are kept by default."
+LangString STR_KEEP_DATA_HINT ${LANG_SIMPCHINESE} "默认保留你的录音与设置。"
+LangString STR_DELETE_DATA ${LANG_ENGLISH}  "Also delete my recordings and settings (cannot be undone)"
+LangString STR_DELETE_DATA ${LANG_SIMPCHINESE} "同时删除我的录音与设置（不可恢复）"
 
 ## The following two statements can be used to sign the installer and the uninstaller. The path to the binaries are provided in %1
 #!uninstfinalize 'signtool --file "%1"'
@@ -98,8 +139,42 @@ OutFile "..\..\..\bin\${INFO_PROJECTNAME}-${ARCH}-installer.exe" # Name of the i
 !endif
 ShowInstDetails show # This will always show the installation details.
 
+## 检测目标进程是否在运行。
+##
+## 为什么必须做：覆盖安装时 installer 要替换 $INSTDIR\mandaryn.exe，而运行中的 exe
+## 被 Windows 锁定 → File 指令失败，用户看到的是「安装完成后程序还是旧版」或
+## 一串 NSIS 错误弹窗。提前拦住并提示关闭，比事后排查便宜得多。
+##
+## 为什么用 tasklist 而不是 FindWindow：FindWindow 依赖窗口标题/类名（我们并不
+## 控制标题，用户改语言或改标题就会漏判）；tasklist 按映像名匹配，与 UI 无关。
+## nsExec 是 NSIS 自带插件，不需要额外分发 nsProcess.dll。
+##
+## 静默安装（/S）不能弹窗：无人值守环境弹窗会永久挂住 CI。但也**不能**放着不管 ——
+## 实测过：应用运行时静默安装，NSIS 的 File 指令遇到锁定文件会失败，而退出码仍是 0，
+## 结果装出一个空目录（"装完了但程序不在"），比报错更难查。
+## 因此静默模式下直接以退出码 2 失败，让调用方（脚本/CI）看到明确的错误。
+Function CheckAppNotRunning
+    nsExec::ExecToStack 'cmd /c tasklist /FI "IMAGENAME eq ${PRODUCT_EXECUTABLE}" /NH'
+    Pop $0          ; 退出码
+    Pop $1          ; 输出
+
+    ${StrLoc} $2 "$1" "${PRODUCT_EXECUTABLE}" ">"
+    ${If} $2 != ""
+        ${If} ${Silent}
+            DetailPrint "${PRODUCT_EXECUTABLE} is running; aborting silent install (files are locked)."
+            SetErrorLevel 2
+            Quit
+        ${Else}
+            MessageBox MB_OK|MB_ICONSTOP "$(STR_RUNNING_WARN)"
+            SetErrorLevel 2
+            Quit
+        ${EndIf}
+    ${EndIf}
+FunctionEnd
+
 Function .onInit
    !insertmacro wails.checkArchitecture
+   Call CheckAppNotRunning
 FunctionEnd
 
 Section
@@ -123,7 +198,15 @@ SectionEnd
 Section "uninstall" 
     !insertmacro wails.setShellContext
 
+    ; WebView2 的缓存目录（Wails v2 时代的路径，v3 未必存在；保留以免遗留垃圾）
     RMDir /r "$AppData\${PRODUCT_EXECUTABLE}" # Remove the WebView2 DataPath
+
+    ; 用户数据：只有用户在卸载页显式勾选"同时删除我的录音与设置"才删。
+    ; 注意目录名是 AppDirName（internal/paths/names.go = "Mandaryn"），
+    ; 不是 PRODUCT_EXECUTABLE —— 后者带 .exe，是文件名不是目录名。
+    ${If} $RemoveUserData == ${BST_CHECKED}
+        RMDir /r "$APPDATA\${INFO_PRODUCTNAME}"
+    ${EndIf}
 
     RMDir /r $INSTDIR
 
