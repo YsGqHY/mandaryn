@@ -19,13 +19,37 @@
 
 | 形态 | 平台 | 说明 | 是否含模型 |
 |------|------|------|-----------|
-| 标准安装包 | Windows `.exe`(NSIS) / `.msix`；macOS `.dmg`；Linux `.AppImage`/`.deb`/`.rpm` | 完整功能（本地 + 在线） | ❌（首次启动下载） |
-| 精简安装包 `nollm` | 全平台 | `-tags nollm`：**不含本地推理**（sherpa-onnx / 声纹提取被 `!nollm` 排除，改链恒失败桩），只能走在线引擎；**可选产物，非 CGO 兜底** | ❌ |
+| 标准安装包（NSIS） | Windows `.exe` 安装程序 | 完整功能（本地 + 在线）。安装目录含 exe + **3 个 CGO 运行时 DLL** + 许可声明；创建桌面与开始菜单快捷方式；可按 `INSTALL_SCOPE=user` 装到 `%LOCALAPPDATA%\Programs` 免提权 | ❌（首次启动下载） |
+| 标准安装包（MSI） | Windows `.msi` | 面向企业分发（GPO / SCCM / Intune），WiX 构建（`FORMAT=msi`）。与 NSIS **二选一**安装，二者各自一套 ARP 条目 | ❌ |
+| 便携压缩包 | Windows `.zip` | 解压即用，无需安装（`FORMAT=portable`）。exe 同级放置 `data\` 时自动作为 `dataRoot`（来源标记 `portable`） | ❌ |
+| 标准安装包（其它平台） | macOS `.dmg`；Linux `.AppImage`/`.deb`/`.rpm` | 完整功能 | ❌ |
+| 精简安装包 `nollm` | 全平台 | `-tags nollm`：**不含本地推理**（sherpa-onnx / 声纹提取被 `!nollm` 排除，改链恒失败桩），只能走在线引擎；**可选产物，非 CGO 兜底**。注意：`nollm` 不需要那 3 个 DLL | ❌ |
 | 离线模型包 | 通用 `.zip` | 可直接放入 `modelRoot` 或经「导入离线包」导入 | ✅ |
 | Server 版二进制 | 全平台 | `-tags server,production`，无 GUI，纯 HTTP（E2E 与无头录制） | ❌ |
-| 便携版 | Windows | 通过 `MANDARYN_DATA_DIR` 指向同目录实现 | ❌ |
+
+### 1.1 运行时 DLL 布局（Windows，**不可改成单文件内嵌**）
+
+`mandaryn.exe` 的 PE 导入表**直接引用** `sherpa-onnx-c-api.dll`，后者再依赖 `onnxruntime.dll`：
+
+```
+mandaryn.exe
+├─ 导入 sherpa-onnx-c-api.dll   ← 静态导入，Windows 加载器在 main() 之前解析
+    └─ 导入 onnxruntime.dll
+sherpa-onnx-cxx-api.dll         ← C++ API，导入 sherpa-onnx-c-api.dll
+```
+
+因此这三个 DLL **必须与 exe 同目录**（或处于进程创建时已生效的搜索路径），并且：
+
+- **不做单文件内嵌 + 运行时解压**：解压发生在我们自己的代码里，而导入表解析在 `main()` 之前，
+  届时文件还没被写出来 —— 现象是「找不到 sherpa-onnx-c-api.dll」。
+- **进程内 `SetDllDirectory` / `AddDllDirectory` 无效**：同理，调用时机永远晚于导入解析。
+- **`0xC000007B`（"not a valid Win32 application"）在本项目多为「依赖解析失败」**，不是位数问题：
+  实测缺少 `onnxruntime.dll` 时报的正是该码。
+- 若要真正把 DLL 放到 exe 目录之外，唯一可行方向是绕开静态导入（`LoadLibraryEx` +
+  `LOAD_WITH_ALTERED_SEARCH_PATH`，需纯 Go 动态加载或代理 DLL），成本显著，当前不采用。
 
 **版本号**：语义化 `MAJOR.MINOR.PATCH`；唯一事实源为 `build/config.yml` 的 `info.version`（前端经 `__APP_VERSION__` 读取）。
+
 
 ---
 
@@ -55,8 +79,12 @@ export PATH="$(go env GOBIN):$PATH"                                          # w
 # 1) 依赖 + 绑定 + 前端 + 后端（一条链）
 task build            # 产物：bin/mandaryn[.exe]
 
-# 2) 打包安装器
-task package          # 产物：bin/ 下各平台安装包
+# 2) 打包安装器（Windows：NSIS，含运行时 DLL 与许可声明）
+task package          # 产物：bin/mandaryn-amd64-installer.exe
+task package INSTALL_SCOPE=user   # 装到 %LOCALAPPDATA%\Programs，免 UAC
+
+# 2b) MSI（企业分发）
+task package FORMAT=msi            # 产物：bin/mandaryn-amd64.msi
 
 # 3) server 模式（E2E / 无头）
 task build:server     # 产物：bin/mandaryn-server
@@ -64,6 +92,10 @@ task build:server     # 产物：bin/mandaryn-server
 # 4) nollm 精简产物（仅在线引擎，体积敏感场景）
 task build:nollm      # 产物：bin/mandaryn-nollm[.exe]，与标准产物互不覆盖
 ```
+
+> **打包前置断言**：`create:nsis:installer` 会先检查 `bin/` 下是否已有
+> `sherpa-onnx-c-api.dll` / `sherpa-onnx-cxx-api.dll` / `onnxruntime.dll`，
+> 缺失则直接失败。原因是「能装但起不来」的安装包要等用户双击才暴露，代价太高（见 §1.1）。
 
 **构建链顺序不可颠倒**：`go mod tidy` → `generate:bindings`（**必须带 `-ts`**）→ `tsc -b` → `vite build` → `go build`（依赖 `frontend/dist` 供 `//go:embed all:frontend/dist`）。
 
@@ -124,6 +156,44 @@ task build:nollm      # 产物：bin/mandaryn-nollm[.exe]，与标准产物互�
 #        捕获能力探测（进程级是否可用）、绑定文件与后端签名一致
 ```
 
+### 2.5 代码签名（可选，Windows）
+
+签名统一入口是 `build/windows/sign.ps1`，**CI 与本地用同一条命令**：
+
+```powershell
+build/windows/sign.ps1 -Target exe       -InputPath bin\mandaryn.exe
+build/windows/sign.ps1 -Target installer -InputPath bin\mandaryn-amd64-installer.exe
+build/windows/sign.ps1 -Target msi       -InputPath bin\mandaryn-amd64.msi
+```
+
+**后端可插拔**：由 `build/windows/signing.config.psd1` 的 `backend` 决定（该文件**不入库**，模板见 `signing.config.example.psd1`）。
+
+| backend | 适用 | 关键配置 |
+|---------|------|----------|
+| `token-csp` | USB 令牌 / 智能卡（私钥不出设备） | `thumbprint`（可选 `csp` + `keyContainer`） |
+| `pfx` | 可导出 `.pfx`（**仅**自签名或旧证书） | `pfxPath` + `pfxPasswordEnvVar` |
+| `cloud-esigner` | 预留：云签名服务，尚未实现 | — |
+
+**接入新后端只改一个文件**：在 `build/windows/signers/` 加一个 `<backend>.ps1`，实现 `Sign-With<X> -InputPath -Config` 并 `return` 退出码，再在 `sign.ps1` 的 `elseif` 链里补一行。**不需要**改 `release.yml`、`Taskfile.yml` 或任何 Go 代码。
+
+**签名顺序是硬约束**（写错等于没签）：
+
+```
+build → 签 exe → package / FORMAT=msi / FORMAT=portable → 签 installer + MSI → verify → SHA256SUMS
+```
+
+- **exe 必须在打包前签**：NSIS/MSI 会把 exe 嵌进包里，先打包后签 exe 时安装出来的仍是未签名程序。
+- **SHA256SUMS 必须在所有签名之后生成**：签名改变文件字节（含时间戳），先算哈希必然对不上。
+- **便携 zip 不必单独签**：它装的是已签过的 exe，Authenticode 签的是 PE 文件本身。
+
+**签名后必须 verify**：`sign.ps1` 默认在签名成功后立刻 `signtool verify /pa /all`，失败即非 0 退出。`-SkipVerify` 只用于自签名证书的本地测试，**CI 不得使用**。
+
+**为什么 CI 里要判断凭据是否存在**：`release.yml` 用 `SIGN_ENABLED = secrets.WIN_SIGN_PFX_BASE64 != ''` 决定是否签。没有证书时整条流水线照常产出未签名产物，证书到位后只需加 Secrets，不改工作流。
+
+**硬件令牌的限制**：GitHub 托管 runner **接不了 USB 令牌**。令牌型证书必须改用自托管 runner（`runs-on: [self-hosted, windows, signing]`），并在该机器上放好 `signing.config.psd1`（填 `thumbprint`）。
+
+> 完整操作手册（检测证书形态、令牌驱动、逐步命令、常见失败、CI 接法）见仓库根 `.narrafork/自部署签名-USB令牌操作方案.md`（该目录不入库，属本地运维文档）。
+
 ---
 
 ## 3. 运行时目录与权限
@@ -136,6 +206,18 @@ task build:nollm      # 产物：bin/mandaryn-nollm[.exe]，与标准产物互�
 | `dataRoot/sessions/<id>/audio.wav` | — | recording | 同上 |
 | `dataRoot/logs/` | — | logx | 同上 |
 | `modelRoot` | **`~/.mandaryn`** | models 层 | 读写 + 可执行（模型目录无执行需求，仅读） |
+
+**Windows 安装目录（`INSTDIR`）**：
+
+| 项 | machine（默认） | user（`INSTALL_SCOPE=user`） |
+|----|-----------------|------------------------------|
+| 路径 | `%ProgramFiles%\Oberon\Mandaryn` | `%LOCALAPPDATA%\Programs\Mandaryn` |
+| 内容 | `mandaryn.exe`、3 个运行时 DLL、`LICENSE`、两份第三方 LICENSE、`THIRD-PARTY-NOTICES.md`、`uninstall.exe` | 同左 |
+| 权限 | **普通用户只读**（安装需提权） | 当前用户可写（免 UAC） |
+| 与自更新的关系 | 应用无权重写 exe → **不做静默自更新**（见 §6.5） | 理论上可写，但 MSI 与 NSIS 共用一套发布策略，故同样不做 |
+
+**便携模式 `dataRoot`**：exe 同级存在 `data\` 目录时自动采用它（来源 `portable`），
+优先级 `cli > env > user > portable > default`。只认**已存在**的 `data\` 目录（不主动创建，否则普通安装会被误判为便携）。
 
 > 两套根目录**不可混淆**（DATA-MODEL §1.1）。`dataRoot` 迁移走 `storagesvc`（需重启）；
 > `modelRoot` 迁移走 `modelssvc`（即时，带校验与回滚）。
@@ -390,6 +472,48 @@ rm -f "$DATA"/mandaryn.db-wal "$DATA"/mandaryn.db-shm
 
 **模型清单 schema**：固定 `schemaVersion: 1`；新增字段只增不改；旧版遇到未知字段必须忽略而非报错。
 
+### 6.4 安装 / 升级 / 卸载行为（Windows）
+
+| 动作 | NSIS | MSI |
+|------|----------------|----------------|
+| 安装范围 | `INSTALL_SCOPE=machine`（默认，`%ProgramFiles%`，需提权）/ `user`（`%LOCALAPPDATA%\Programs`，免 UAC） | `perMachine`（+ 可选的 `perUser`） |
+| 快捷方式 | 开始菜单（现有）；桌面（现有脚本已写，若系统重定向桌面需兜底） | `ProgramMenuFolder` + `DesktopFolder` |
+| 覆盖安装 | 原地覆盖（先检测运行中的 `mandaryn.exe` 并提示关闭）**（待实现提示）** | `MajorUpgrade` 自动卸载旧版 |
+| 降级 | 不拦截，但 Release 说明需提示 | **拒绝**（`DowngradeErrorMessage`） |
+| 卸载 | 删除 `INSTDIR`、快捷方式与 ARP 项；**不删 `dataRoot`**（库/录音/日志/模型） | 同左 |
+| 连数据一起删 | 独立勾选项，默认不选 **（待实现）** | 独立 dialog，默认不选 **（待实现）** |
+
+> **卸载绝不删 `%AppData%\Mandaryn`**：那里有用户录音与转写结果，误删不可恢复。
+> 「清理数据」必须是一次显式勾选 + 二次确认。
+
+**NSIS 与 MSI 二选一**：两者各写一套 ARP/卸载条目，同时安装会出现两个「Mandaryn」。
+发布说明必须写明；企业环境建议只用 MSI。
+
+### 6.5 检查更新（**不做静默自更新**）
+
+应用内提供「检查更新」，但**不自动替换二进制**。原因：
+
+- Wails Updater v1 **不支持 `.msi`**，且只替换**单个**磁盘目标；我们的安装目录是 exe + 3 DLL，
+  多顶层条目的压缩包会被拒绝；
+- `machine` 范围安装到 `%ProgramFiles%`，普通用户对该目录**无写权限**，
+  自更新会连续失败（Updater 会重试 20 次后放弃）。
+
+**已实现**（设置 → 关于与更新）。此前置条件：默认清单地址指向 GitHub Releases latest API，
+**匿名访问只对公开仓库有效**；私有仓库会拿到 404，界面显示「无法访问版本清单」而非「已是最新」。
+私有仓库部署需用 `MANDARYN_UPDATE_URL` 指向公开托管的清单。
+
+流程：
+
+```
+设置 → 关于与更新 → 检查更新
+  1. 出站查 GitHub Releases latest（经 httpx + outbound 留痕 + MANDARYN_OFFLINE 闸门）
+  2. 语义版本比较：无新版 → 提示「已是最新」
+  3. 有新版 → 非阻塞提示 + 「打开下载页」按钮（app.Browser.OpenURL）
+  4. 用户手动下载安装包并按 §6.4 覆盖安装
+```
+
+> 离线模式下**不发起**任何请求，直接说明「已开启离线模式，无法检查更新」。
+
 ---
 
 ## 7. 模型分发
@@ -476,7 +600,11 @@ SLD 本地 P95 ≤ 1500ms / 在线 P95 ≤ 2500ms；回放同步误差 ≤ 80ms�
 
 | # | 检查 | 依据 |
 |---|------|------|
-| 1 | `task build` + `task package` 三平台均绿 | §2.2 |
+| 1 | Windows：`task build` + `task package` 绿，NSIS / MSI / 便携 zip 三产物齐全；macOS/Linux 打包绿 | §2.2 |
+| 1a | **安装目录必须含 3 个运行时 DLL**（`sherpa-onnx-c-api/cxx-api`、`onnxruntime`）与两份第三方 LICENSE | §1.1、§6.4 |
+| 1b | 安装器语言表含 `English` + `SimpChinese`（中文系统显示中文界面）；`.nsi` 带 UTF-8 BOM（否则 makensis 报 Bad text encoding） | §2.2 |
+| 1c | 装后可启动（进程存活）；卸载后 `INSTDIR` 清空且 `dataRoot` 仍在 | §6.4 |
+| 1d | 三个产物 `signtool verify /pa` 全部通过（**待实现**：签名接入 CI） | §5.3 |
 | 2 | 绑定为 `.ts` 且 `pnpm typecheck` 通过 | API.md §7 |
 | 3 | `--self-check` 三平台均通过 | §2.4 |
 | 4 | 单测/E2E 全绿 | §9 |

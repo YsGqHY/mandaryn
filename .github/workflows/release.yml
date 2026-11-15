@@ -1,0 +1,316 @@
+name: Release
+
+# 触发：推送版本 tag（v*）或手动触发。
+#   - tag 推送是**唯一**会创建 GitHub Release 的路径（避免误发）；
+#   - workflow_dispatch 用于首次验证与失败复跑（默认只构建，不发布，除非显式勾选 publish）。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: '创建（草稿）GitHub Release'
+        type: boolean
+        default: false
+
+# 最小权限 + 发布所需：contents: write 才能创建 Release
+permissions:
+  contents: write
+
+# 同一 tag 上重复触发时取消旧运行
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '24'
+  PNPM_VERSION: '11.5.0'
+  WAILS_VERSION: 'v3.1.0'
+  # 签名是否启用：只有配置了 PFX 凭据才执行签名步骤。
+  # 这样工作流在**没有证书**时也能完整跑通（产物未签名），
+  # 证书到位后只需在仓库 Secrets 里加两个值，无需改本文件。
+  #
+  # ⚠️ 2023-06-01 起 CA/B Forum 强制私钥硬件化（FIPS 140-2 L2+/CC EAL4+），
+  # 商业 CA 不再交付可导出的 .pfx。这里的 PFX 通道仅适用于：
+  #   - 自签名证书（内部测试）
+  #   - 少数仍允许导出私钥的旧证书
+  # 走云签名（Azure Artifact Signing / SSL.com eSigner / SignPath）时，
+  # 应替换"签名"两步为对应的 Action，而不是塞 PFX。详见 docs/DEPLOYMENT.md §5.3。
+  SIGN_ENABLED: ${{ secrets.WIN_SIGN_PFX_BASE64 != '' }}
+  # minisign 独立校验（可选）：配置了密钥才生成 SHA256SUMS.txt.minisig。
+  MINISIGN_ENABLED: ${{ secrets.MINISIGN_SECRET_KEY != '' }}
+
+jobs:
+  release:
+    name: 构建三产物并发布
+    runs-on: windows-latest
+    timeout-minutes: 90
+    # Environment：这是签名的第二道闸门。
+    # 仓库设置 → Environments → signing 里配置：
+    #   - Required reviewers（至少 1 人）：签名必须人工批准
+    #   - Deployment branches and tags → 只允许 v* tag
+    # 即使有人改了工作流，没有 Environment 批准也拿不到签名凭据。
+    environment: signing
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # ---- 版本一致性：tag 必须与 build/config.yml 的 info.version 相同 ----
+      # 否则会发出"文件名写 2.1.0、应用内显示 2.0.0"的错误产物，且用户无法判断。
+      - name: 校验 tag 与 config.yml 版本一致
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1)"
+          echo "config.yml info.version = $ver"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            echo "tag version = $tag"
+            if [ "$ver" != "$tag" ]; then
+              echo "::error::tag ($tag) 与 build/config.yml ($ver) 版本不一致"
+              exit 1
+            fi
+          fi
+          echo "VERSION=$ver" >> "$GITHUB_ENV"
+
+      # 必须早于 setup-go：CGO 依赖 msys2 提供的 gcc
+      - name: 安装 MSYS2 工具链（gcc / windres）
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: mingw-w64-ucrt-x86_64-gcc
+          path-type: inherit
+
+      - name: 安装 Go（版本取自 go.mod）
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: 安装 wails3 CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: 安装 Node 并缓存 pnpm store
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: 生成前端 bindings
+        run: wails3 task common:generate:bindings
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      # 构建 exe + 3 个运行时 DLL（copy:runtime:dlls 会拷到 bin/）
+      - name: 构建（exe + 运行时 DLL）
+        run: wails3 task build
+
+      # 这是本项目的核心回归断言：缺任何一个 DLL，安装出来的程序双击即报
+      # 「找不到 sherpa-onnx-c-api.dll」（导入表在 main 之前解析）。
+      - name: 断言运行时 DLL 就位
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in sherpa-onnx-c-api.dll sherpa-onnx-cxx-api.dll onnxruntime.dll; do
+            test -f "bin/$f" || { echo "::error::缺少 bin/$f"; exit 1; }
+          done
+          ls -lh bin/*.dll
+
+      # ---- 签名（可插拔后端；无配置时自动跳过）----
+      #
+      # 签名一律走 build/windows/sign.ps1，不在这里写死 signtool 参数 ——
+      # 后端（USB 令牌 / PFX / 将来的云签名）由 signing.config.psd1 决定，
+      # 换后端不需要改本工作流。契约见 sign.ps1 头部注释、DEPLOYMENT §5.3、
+      # 以及 .narrafork/自部署签名-USB令牌操作方案.md。
+      #
+      # 两种接法（二选一）：
+      #   A) 硬件令牌：GitHub 托管 runner 接不了 USB 令牌 → 改用自托管 runner，
+      #      把 runs-on 改成 [self-hosted, windows, signing]，并在
+      #      build/windows/signing.config.psd1 里填 thumbprint（该文件不入库）。
+      #   B) 可导出 PFX：仓库 Secret 配 WIN_SIGN_PFX_BASE64 + WIN_SIGN_PFX_PASSWORD，
+      #      下面这步会把它写成临时配置（密码只经环境变量传递）。
+      - name: 生成签名配置（PFX 通道）
+        if: env.SIGN_ENABLED == 'true'
+        shell: pwsh
+        env:
+          PFX_B64: ${{ secrets.WIN_SIGN_PFX_BASE64 }}
+          PFX_PASSWORD: ${{ secrets.WIN_SIGN_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:PFX_B64)) {
+            throw "SIGN_ENABLED 为真但没有 WIN_SIGN_PFX_BASE64。若用硬件令牌，请改自托管 runner 并在 signing.config.psd1 里配 thumbprint。"
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP 'sign.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:PFX_B64))
+          "MANDARYN_PFX_PASSWORD=$env:PFX_PASSWORD" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $cfgPath = Join-Path $env:RUNNER_TEMP 'signing.config.psd1'
+          # 用字符串数组而非 here-string：here-string 的内容行必须顶格，
+          # 在 YAML 的 run: | 块里会破坏缩进、导致工作流解析失败（本机实测）。
+          $cfgLines = @(
+            '@{'
+            "    backend            = 'pfx'"
+            "    pfxPath            = '$pfx'"
+            "    pfxPasswordEnvVar  = 'MANDARYN_PFX_PASSWORD'"
+            "    timestampUrl       = 'http://timestamp.digicert.com'"
+            "    timestampUrlBackup = 'http://timestamp.sectigo.com'"
+            "    description        = 'Mandaryn'"
+            '}'
+          )
+          $cfgLines | Out-File -FilePath $cfgPath -Encoding utf8
+          "MANDARYN_SIGNING_CONFIG=$cfgPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "签名配置已生成（PFX 后端）"
+
+      # 签名必须在打包**之前**：安装器会把 exe 嵌进包里，先打包后签 exe 等于没签。
+      - name: 签名主程序
+        if: env.SIGN_ENABLED == 'true'
+        shell: pwsh
+        run: |
+          build/windows/sign.ps1 -Target exe -InputPath bin/mandaryn.exe
+          if ($LASTEXITCODE -ne 0) { throw "签名主程序失败（退出码 $LASTEXITCODE）" }
+
+      - name: 收集未签名产物清单（诊断）
+        shell: bash
+        run: |
+          echo "签名状态：${{ env.SIGN_ENABLED == 'true' && '已启用' || '未启用（产物未签名）' }}"
+          ls -lh bin/mandaryn.exe
+
+      # ---- 打包三产物 ----
+      - name: 安装打包工具（NSIS + WiX）
+        run: choco install nsis wixtoolset --no-progress -y
+
+      - name: 打包 NSIS 安装程序
+        run: wails3 task package
+
+      - name: 打包 MSI（WiX）
+        run: wails3 task package FORMAT=msi
+
+      - name: 打包便携 zip
+        run: wails3 task package FORMAT=portable
+
+      # 打包之后再签安装器与 MSI：先签 exe（上一步）→ 打进安装器 → 再签安装器。
+      # MSI 也走同一个入口：sign.ps1 内部就用 signtool（wails3 内置签名器不支持 MSI）。
+      - name: 签名安装程序与 MSI
+        if: env.SIGN_ENABLED == 'true'
+        shell: pwsh
+        run: |
+          build/windows/sign.ps1 -Target installer -InputPath bin/mandaryn-amd64-installer.exe
+          if ($LASTEXITCODE -ne 0) { throw "签名安装程序失败（退出码 $LASTEXITCODE）" }
+          build/windows/sign.ps1 -Target msi -InputPath bin/mandaryn-amd64.msi
+          if ($LASTEXITCODE -ne 0) { throw "签名 MSI 失败（退出码 $LASTEXITCODE）" }
+
+      # 签名不是"尽力而为"：签完必须验，验不过就红。否则会发出"看起来签了、
+      # 实际证书链无效/时间戳缺失"的产物 —— 那比不签更糟（用户以为可信）。
+      - name: 校验签名（缺一个就失败）
+        if: env.SIGN_ENABLED == 'true'
+        shell: pwsh
+        run: |
+          $targets = @(
+            "bin\mandaryn.exe",
+            "bin\mandaryn-amd64-installer.exe",
+            "bin\mandaryn-amd64.msi"
+          )
+          foreach ($t in $targets) {
+            & signtool.exe verify /pa /all $t
+            if ($LASTEXITCODE -ne 0) { throw "签名校验失败：$t" }
+          }
+          Write-Host "三个产物签名校验通过"
+
+      - name: 校验产物齐全
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in "bin/mandaryn-amd64-installer.exe" "bin/mandaryn-amd64.msi" \
+                   "bin/mandaryn-${{ env.VERSION }}-windows-amd64-portable.zip"; do
+            test -f "$f" || { echo "::error::缺少产物 $f"; exit 1; }
+          done
+          ls -lh bin/*.exe bin/*.msi bin/*.zip
+
+      # 校验和：即使不签名，用户也能自行核对完整性。
+      # 这是"没有代码签名证书"时唯一真实可交付的完整性保障。
+      - name: 生成 SHA256SUMS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd bin
+          sha256sum "mandaryn-amd64-installer.exe" "mandaryn-amd64.msi" \
+                    "mandaryn-${{ env.VERSION }}-windows-amd64-portable.zip" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      # 独立于 CA 的第二层校验：证书回答"我是谁"，minisign 回答"这份文件出自本仓库且未被改"。
+      # 证书每年轮换（且换证会重置 SmartScreen 信誉），minisign 公钥则可以长期不变，
+      # 因此即使证书过期、历史版本的校验链也不断。
+      - name: 用 minisign 签校验和（可选，需 MINISIGN_SECRET_KEY）
+        if: env.MINISIGN_ENABLED == 'true'
+        shell: bash
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::$MINISIGN_SECRET_KEY"
+          printf '%s' "$MINISIGN_SECRET_KEY" > "$RUNNER_TEMP/minisign.key"
+          minisign -S -s "$RUNNER_TEMP/minisign.key" -m bin/SHA256SUMS.txt \
+                   -x bin/SHA256SUMS.txt.minisig
+          rm -f "$RUNNER_TEMP/minisign.key"
+          echo "已生成 SHA256SUMS.txt.minisig"
+
+      - name: 上传构建产物（供排查）
+        uses: actions/upload-artifact@v4
+        with:
+          name: mandaryn-release-${{ env.VERSION }}
+          retention-days: 14
+          path: |
+            bin/mandaryn-amd64-installer.exe
+            bin/mandaryn-amd64.msi
+            bin/mandaryn-${{ env.VERSION }}-windows-amd64-portable.zip
+            bin/SHA256SUMS.txt
+            bin/SHA256SUMS.txt.minisig
+
+      # ---- 发布：草稿态，由人工确认后 publish ----
+      - name: 创建草稿 Release
+        if: github.event_name == 'push' || inputs.publish
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: Mandaryn ${{ env.VERSION }}
+          tag_name: ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          body: |
+            ## 安装方式（Windows）
+
+            | 产物 | 适用场景 |
+            |------|----------|
+            | `mandaryn-*-installer.exe` | 普通用户：双击安装，自动创建桌面与开始菜单快捷方式 |
+            | `mandaryn-amd64.msi` | 企业部署（GPO / SCCM / Intune）。**与 NSIS 二选一**，不要同时安装 |
+            | `mandaryn-*-portable.zip` | 免安装：解压即用，数据写在解压目录的 `data\` 内 |
+
+            安装器与 MSI 二选一：两者各自注册卸载项，同时安装会出现两个「Mandaryn」。
+
+            ## 完整性校验
+
+            下载后请核对 `SHA256SUMS.txt`：
+
+            ```
+            sha256sum -c SHA256SUMS.txt
+            ```
+
+            ## 关于代码签名
+
+            ${{ env.SIGN_ENABLED == 'true' && '本版本已使用 Authenticode 证书签名。' || '本版本**未签名**：首次运行可能出现 SmartScreen「未识别的应用」提示。请先核对上面的 SHA256 再选择「仍要运行」。' }}
+
+            > 卸载不会删除你的数据（`%AppData%\Mandaryn` 或便携包内的 `data\`）。
+          files: |
+            bin/mandaryn-amd64-installer.exe
+            bin/mandaryn-amd64.msi
+            bin/mandaryn-${{ env.VERSION }}-windows-amd64-portable.zip
+            bin/SHA256SUMS.txt
+            bin/SHA256SUMS.txt.minisig

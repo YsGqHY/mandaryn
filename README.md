@@ -216,9 +216,20 @@ wails3 dev
 # 生产构建（当前平台；CGO_ENABLED=1）
 task build
 
-# 打包
+# 打包安装程序（Windows：NSIS，含 3 个运行时 DLL + 许可声明）
 task package
+# → bin/mandaryn-amd64-installer.exe
+# 装到 %ProgramFiles%\Oberon\Mandaryn（需提权）；加 INSTALL_SCOPE=user 则装到
+# %LOCALAPPDATA%\Programs\Mandaryn 且免 UAC
+#
+# 注意：NSIS 与 MSI 二选一安装（同时装会有两个「Mandaryn」卸载项）。
+# MSI（FORMAT=msi）与便携 zip（FORMAT=portable）见 docs/DEPLOYMENT.md §1。
 ```
+
+> **为什么不提供"单文件 exe"**：`mandaryn.exe` 的导入表直接引用
+> `sherpa-onnx-c-api.dll`（它再依赖 `onnxruntime.dll`），而 Windows 加载器在 `main()`
+> 之前就解析这些导入。因此这三个 DLL 必须与 exe 同目录，无法内嵌到单文件里运行时释放。
+> 详见 [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) §1.1。
 
 ### 数据与模型目录
 
@@ -353,7 +364,7 @@ mandaryn/
 | `wails3 doctor` | 检测开发环境依赖（含 C 工具链） |
 | `task dev` | = `wails3 dev` |
 | `task build` | 当前平台生产构建（`CGO_ENABLED=1`） |
-| `task package` | 当前平台打包（含安装包） |
+| `task package` | Windows：打 NSIS 安装程序 `bin/mandaryn-amd64-installer.exe`（含 3 个运行时 DLL 与许可声明）；`INSTALL_SCOPE=user` 免 UAC；`FORMAT=msi` 出 MSI、`FORMAT=portable` 出便携 zip |
 | `task build:nollm` | 精简产物 `bin/mandaryn-nollm[.exe]`（`-tags nollm`，仅在线引擎，体积敏感场景；**不是** CGO 兜底） |
 | `task run` | 跑已构建的二进制 |
 | `task <os>:build` | 指定平台构建（windows/darwin/linux） |

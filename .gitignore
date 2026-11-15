@@ -48,4 +48,10 @@ docs/screenshots/
 # bindings 生成器的临时目录（-clean 生成时短暂出现）
 frontend/.bindings-tmp-*
 
+# 签名配置：真实值（指纹/证书路径）不入库，只入库 signing.config.example.psd1
+build/windows/signing.config.psd1
+# 签名过程中可能落下的证书/中间产物
+*.pfx
+*.p12
+
 .narrafork
