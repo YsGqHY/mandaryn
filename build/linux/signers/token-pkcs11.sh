@@ -35,7 +35,11 @@ sign_with_token_pkcs11() {
     [ -n "${TIMESTAMP_URL:-}" ] || { printf 'token-pkcs11: 配置缺少 TIMESTAMP_URL（没有时间戳，证书到期后历史签名会失效）\n' >&2; return 1; }
 
     local ts="$TIMESTAMP_URL"
-    local out; out="$(mktemp "${TMPDIR:-/tmp}/mandaryn-signed.XXXXXX")"
+    # 用临时**目录**而不是 mktemp 建文件：osslsigncode 的 man page 明确写着
+    # "Output files are not overwritten."，而 mktemp 会把文件先建出来（哪怕 0 字节），
+    # 传给 -out 就会被判定为已存在而失败。目录 + 不存在的文件名才正确。
+    local tmpdir; tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/mandaryn-sign.XXXXXX")"
+    local out="$tmpdir/signed"
     local desc="${SIGN_DESCRIPTION:-Mandaryn}"
 
     # 证书/私钥用同一个 URI，靠 type= 区分

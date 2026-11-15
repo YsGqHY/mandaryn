@@ -51,10 +51,18 @@ if [ "${1:-}" = "sign" ]; then
   fi
 fi
 
-# sign 需要产出 -out 指定文件（sign.sh 之后会 mv 回原文件）
+# sign 需要产出 -out 指定文件（sign.sh 之后会 mv 回原文件）。
+# 同时记录"调用时该路径是否已存在"——真实的 osslsigncode 明确拒绝覆盖已存在
+# 的输出文件（man page: "Output files are not overwritten."），所以这里必须
+# 断言为 no：sign.sh 若用 mktemp 预建文件就会踩到，签名在真机上直接失败。
 prev=""
 for a in "$@"; do
   if [ "$prev" = "-out" ]; then
+    if [ -e "$a" ]; then
+      printf 'exists\n' >> "$STUB_LOG.outpre"
+    else
+      printf 'absent\n' >> "$STUB_LOG.outpre"
+    fi
     : > "$a"
   fi
   prev="$a"
@@ -62,7 +70,46 @@ done
 exit 0
 STUB
 chmod +x "$STUB_DIR/osslsigncode"
+
+# —— 假 pkcs11-tool：只认 env: 传 PIN，用来固化预检的正确用法 ——
+# 真实 pkcs11-tool 的 --pin 只支持 env:VARIABLE（Debian man page），
+# 不支持 file:。/ 写成 file: 时它会当成字面 PIN，登录失败 → 看起来像"证书不存在"。
+cat > "$STUB_DIR/pkcs11-tool" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$STUB_LOG.pkcs11"
+want=""
+prev=""
+for a in "$@"; do
+  [ "$prev" = "--pin" ] && want="$a"
+  prev="$a"
+done
+case "$want" in
+  env:*)
+    var="${want#env:}"
+    eval "pin=\"\${$var:-}\""
+    [ -z "$pin" ] && exit 2          # 变量没设好 = 登录失败
+    ;;
+  file:*) exit 3 ;;                   # 真实工具不支持 file:
+  "")     exit 2 ;;                   # 没传 PIN
+  *)      exit 2 ;;                   # 字面 PIN 不对
+esac
+# 登录成功后才会列出对象
+case "$*" in
+  *"--type cert"*)    echo "Certificate Object; type = X.509 cert" ;;
+  *"--type privkey"*) echo "Private Key Object; RSA" ;;
+esac
+exit 0
+STUB
+chmod +x "$STUB_DIR/pkcs11-tool"
 export PATH="$STUB_DIR:$PATH"
+
+# —— 假 jsign：记录 argv（jsign 就地签名，不需要建 out 文件）——
+cat > "$STUB_DIR/jsign" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$STUB_LOG.jsign"
+exit 0
+STUB
+chmod +x "$STUB_DIR/jsign"
 export STUB_LOG="$WORK/calls.log"
 
 # —— 假 PIN 与假待签名文件 ——
@@ -96,7 +143,7 @@ mkinput() {
   printf '%s' "$f"
 }
 
-reset_log() { : > "$STUB_LOG"; rm -f "$STUB_LOG.signcount"; }
+reset_log() { : > "$STUB_LOG"; rm -f "$STUB_LOG.signcount" "$STUB_LOG.outpre" "$STUB_LOG.pkcs11" "$STUB_LOG.jsign"; }
 last_call() { tail -1 "$STUB_LOG"; }
 call_count() { wc -l < "$STUB_LOG" | tr -d ' '; }
 
@@ -114,6 +161,7 @@ check "私钥 URI 带 type=private"        '[[ "$call" == *";type=private"* ]]'
 check "PIN 走 -readpass 文件而非 -pass" '[[ "$call" == *"-readpass $PIN"* && "$call" != *" -pass "* ]]'
 check "sha256 + RFC3161 时间戳"         '[[ "$call" == *"-h sha256"* && "$call" == *"-ts http://ts-primary.example"* ]]'
 check "**不带** -add-msi-dse（非 MSI）"  '[[ "$call" != *"-add-msi-dse"* ]]'
+check "-out 路径在调用时不存在（禁止 mktemp 预建）" '[ "$(tail -1 "$STUB_LOG.outpre")" = "absent" ]'
 check "就地签名（原文件仍在）"           '[ -f "$in" ]'
 
 # ─────────────────────────────────────────────────────────────
@@ -166,10 +214,68 @@ check "退出码非 0"                       '[ "$?" != "0" ]'
 check "没有调用 osslsigncode"             '[ "$(call_count)" = "0" ]'
 
 # ─────────────────────────────────────────────────────────────
-echo "7) --preflight 在配置齐全时不签名"
-cfg="$(mkcfg)"; reset_log
-"$SIGN" --preflight --config "$cfg" >/dev/null 2>&1
+echo "7) --preflight：不签名，且 PIN 走 env: 而非 file:"
+# 预检会检查 PKCS11_MODULE 是否为真实存在的文件，所以这里造一个占位库。
+printf 'not-a-real-pkcs11-module' > "$WORK/fake-pkcs11.so"
+cfg="$WORK/preflight.config"
+{
+  printf 'CONFIG_BACKEND="token-pkcs11"\n'
+  printf 'PKCS11_MODULE="%s"\n' "$WORK/fake-pkcs11.so"
+  printf 'PKCS11_URI="pkcs11:token=TestToken;object=Code%%20Signing"\n'
+  printf 'PIN_FILE="%s"\n' "$PIN"
+  printf 'TIMESTAMP_URL="http://127.0.0.1:1/ts"\n'
+} > "$cfg"
+reset_log
+out="$("$SIGN" --preflight --config "$cfg" 2>&1)"; pfr=$?
 check "没有调用 osslsigncode"             '[ "$(call_count)" = "0" ]'
+check "退出码 0（配置齐全时预检通过）"     '[ "$pfr" = "0" ]'
+check "识别到证书对象 ✓"                  '[[ "$out" == *"证书对象"*"✓"* ]]'
+check "识别到私钥对象 ✓"                  '[[ "$out" == *"私钥对象"*"✓"* ]]'
+check "PIN 用 --pin env:"                 'grep -q -- "--pin env:" "$STUB_LOG.pkcs11"'
+check "**没有**用 --pin file:"            '! grep -q -- "--pin file:" "$STUB_LOG.pkcs11"'
+
+# ─────────────────────────────────────────────────────────────
+echo "8) --preflight 在缺配置时退出 1"
+reset_log
+"$SIGN" --preflight --config "$WORK/nope.config" >/dev/null 2>&1
+check "退出码 1"                          '[ "$?" = "1" ]'
+check "没有调用 pkcs11-tool"              '[ ! -s "$STUB_LOG.pkcs11" ]'
+
+# ─────────────────────────────────────────────────────────────
+echo "9) 自检：把 env: 改回 file: 后预检必须失败（证明第 7 组断言非空）"
+# 没有这条，第 7 组可能因为"预检压根不检查证书"而永远通过，断言就成了空话。
+MUT="$WORK/mut"
+mkdir -p "$MUT"
+cp -r "$HERE/." "$MUT/"
+sed 's/--pin env:MANDARYN_PKCS11_PIN/--pin "file:$PIN_FILE"/' "$HERE/sign.sh" > "$MUT/sign.sh"
+check "变异副本已生成且与原文件不同" '! cmp -s "$HERE/sign.sh" "$MUT/sign.sh"'
+"$MUT/sign.sh" --preflight --config "$WORK/preflight.config" >/dev/null 2>&1
+check "改回 file: 后预检退出非 0"          '[ "$?" != "0" ]'
+
+# ─────────────────────────────────────────────────────────────
+echo "10) jsign 后端：参数拼装正确"
+# 配置里只给 jsign 相关变量 → sign.sh 应自动选 jsign 后端
+jcfg="$WORK/jsign.config"
+{
+  printf 'JSIGN_KEYSTORE="/etc/mandaryn/pkcs11.cfg"\n'
+  printf 'JSIGN_ALIAS="Code Signing"\n'
+  printf 'PIN_FILE="%s"\n' "$PIN"
+  printf 'TIMESTAMP_URL="http://ts.example"\n'
+  printf 'SIGN_DESCRIPTION="Mandaryn Selftest"\n'
+} > "$jcfg"
+in="$(mkinput f.exe)"; reset_log
+"$SIGN" --target exe --input "$in" --config "$jcfg" --skip-verify >/dev/null 2>&1
+jc="$(tail -1 "$STUB_LOG.jsign")"
+check "自动识别为 jsign 后端并被调用"      '[ -n "$jc" ]'
+check "带 --storetype PKCS11（默认）"      '[[ "$jc" == *"--storetype PKCS11"* ]]'
+check "带 --keystore / --alias"            '[[ "$jc" == *"--keystore /etc/mandaryn/pkcs11.cfg"* && "$jc" == *"--alias Code Signing"* ]]'
+check "PIN 走 --storepass file:（jsign 支持该前缀）" '[[ "$jc" == *"--storepass file:$PIN"* ]]'
+check "PIN 未以明文出现"                    '[[ "$jc" != *"12345678"* ]]'
+check "显式 --tsmode RFC3161"              '[[ "$jc" == *"--tsmode RFC3161"* ]]'
+check "带重试参数"                          '[[ "$jc" == *"--tsretries 5"* && "$jc" == *"--tsretrywait 15"* ]]'
+check "**带** --replace（对齐 osslsigncode 默认行为）" '[[ "$jc" == *"--replace"* ]]'
+check "带 --name 描述"                      '[[ "$jc" == *"--name Mandaryn Selftest"* ]]'
+check "没有调用 osslsigncode 签名"          '[ "$(call_count)" = "0" ]'
 
 # ─────────────────────────────────────────────────────────────
 printf '\n结果：%d 通过，%d 失败\n' "$PASS" "$FAIL"

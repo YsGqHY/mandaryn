@@ -46,6 +46,10 @@ sign_with_jsign() {
     if [ -n "${SIGN_DESCRIPTION:-}" ]; then
         args+=(--name "$SIGN_DESCRIPTION")
     fi
+    # jsign 默认 --replace=false，即重复签名会**叠加**嵌套签名；而 osslsigncode 的
+    # sign 默认是替换（`-nest` 才叠加）。统一成替换，否则同一产物被签两次时两个后端
+    # 结果不同，且 osslsigncode verify 只看主签名 → 叠加会被静默放过。
+    args+=(--replace)
     # jsign 是就地签名（没有 --output），MSI 也原生支持，不需要额外开关
 
     printf 'jsign: 签名 %s（storetype=%s, 时间戳 %s）\n' "$input" "${JSIGN_STORETYPE:-PKCS11}" "$TIMESTAMP_URL"

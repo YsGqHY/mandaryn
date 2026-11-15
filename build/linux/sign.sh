@@ -130,14 +130,23 @@ if [ "$PREFLIGHT" -eq 1 ]; then
     fi
 
     # 证书与私钥（这是最关键的一条：只有 cert 没有 privkey 时签不了）
+    # PIN 必须用 env: 前缀传给 pkcs11-tool —— 它只认 env:VARIABLE，
+    # **不支持** file:（会把 file:/path 当成字面 PIN，登录失败后看起来像"证书不存在"）。
+    # 用子 shell + export，PIN 不落到命令行（ps 不可见）。
     if command -v pkcs11-tool >/dev/null 2>&1 && [ -n "${PIN_FILE:-}" ] && [ -f "${PIN_FILE:-}" ]; then
-        if pkcs11-tool --module "${PKCS11_MODULE:-}" --pin "file:$PIN_FILE" -O --type cert 2>/dev/null | grep -q "Certificate Object"; then
+        if (
+            export MANDARYN_PKCS11_PIN="$(cat "$PIN_FILE")"
+            pkcs11-tool --module "${PKCS11_MODULE:-}" --pin env:MANDARYN_PKCS11_PIN -O --type cert
+        ) 2>/dev/null | grep -q "Certificate Object"; then
             say "证书对象" "✓ 找到"
         else
             say "证书对象" "✗ 未找到 → 用 pkcs11-tool -O --type cert 查看 label，确认 PKCS11_URI"
             rc=1
         fi
-        if pkcs11-tool --module "${PKCS11_MODULE:-}" --pin "file:$PIN_FILE" -O --type privkey 2>/dev/null | grep -q "Private Key Object"; then
+        if (
+            export MANDARYN_PKCS11_PIN="$(cat "$PIN_FILE")"
+            pkcs11-tool --module "${PKCS11_MODULE:-}" --pin env:MANDARYN_PKCS11_PIN -O --type privkey
+        ) 2>/dev/null | grep -q "Private Key Object"; then
             say "私钥对象" "✓ 在令牌内（私钥不出设备）"
         else
             say "私钥对象" "✗ 未找到 → 私钥不在卡里，需要重新导入"
