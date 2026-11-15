@@ -80,3 +80,16 @@ tasks:
     summary: Builds and runs the Docker image
     cmds:
       - task: common:run:docker
+
+  lint:workflows:
+    summary: Lint GitHub Actions 工作流（actionlint）
+    desc: |
+      检查 .github/workflows/ 的语法、表达式与 needs 引用。YAML 解析器不校验
+      Actions 表达式（`needs.x.result == 'skipped'` 之类），必须用 actionlint。
+
+      自托管 runner 的自定义标签在 .github/actionlint.yaml 里声明，
+      否则每条 runs-on 都会报「未知标签」的噪音。
+
+      安装：go install github.com/rhysd/actionlint/cmd/actionlint@latest
+    cmds:
+      - actionlint

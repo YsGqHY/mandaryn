@@ -1,0 +1,15 @@
+# actionlint 配置
+#
+# 用途：把本项目**自托管 runner 的自定义标签**声明出来，避免 actionlint 把
+# `signing` 报成未知标签（它只认识 GitHub 托管 runner 的内置标签）。
+# 不声明时每条 runs-on 都会有一条噪音告警，真正的问题容易被淹没。
+#
+# 运行：actionlint            （在仓库根目录）
+# 安装：go install github.com/rhysd/actionlint/cmd/actionlint@latest
+#
+# 标签含义见 .github/workflows/release.yml 顶部注释：
+#   self-hosted / linux  —— Ubuntu 签名机
+#   signing              —— 该机器持有代码签名令牌（USB 令牌插在这台机器上）
+self-hosted-runner:
+  labels:
+    - signing
