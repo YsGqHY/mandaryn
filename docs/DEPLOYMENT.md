@@ -486,10 +486,10 @@ rm -f "$DATA"/mandaryn.db-wal "$DATA"/mandaryn.db-shm
 |------|----------------|----------------|
 | 安装范围 | `INSTALL_SCOPE=machine`（默认，`%ProgramFiles%`，需提权）/ `user`（`%LOCALAPPDATA%\Programs`，免 UAC） | `perMachine`（+ 可选的 `perUser`） |
 | 快捷方式 | 开始菜单（现有）；桌面（现有脚本已写，若系统重定向桌面需兜底） | `ProgramMenuFolder` + `DesktopFolder` |
-| 覆盖安装 | 原地覆盖（先检测运行中的 `mandaryn.exe` 并提示关闭）**（待实现提示）** | `MajorUpgrade` 自动卸载旧版 |
+| 覆盖安装 | 原地覆盖；**装前检测运行中的 `mandaryn.exe`**（`nsExec`+`tasklist` 按映像名匹配，不用 `FindWindow` 以免漏判）。交互模式弹框要求关闭；**静默 `/S` 直接以退出码 2 失败**——否则锁定文件会让 `File` 失败而退出码仍为 0，装出一个空目录 | `MajorUpgrade` 自动卸载旧版 |
 | 降级 | 不拦截，但 Release 说明需提示 | **拒绝**（`DowngradeErrorMessage`） |
 | 卸载 | 删除 `INSTDIR`、快捷方式与 ARP 项；**不删 `dataRoot`**（库/录音/日志/模型） | 同左 |
-| 连数据一起删 | 独立勾选项，默认不选 **（待实现）** | 独立 dialog，默认不选 **（待实现）** |
+| 连数据一起删 | 卸载页独立勾选项，**默认不勾**（`nsDialogs` 自定义页）；静默卸载不进该页 → 保留数据 | 独立 dialog，默认不选 **（待实现）** |
 
 > **卸载绝不删 `%AppData%\Mandaryn`**：那里有用户录音与转写结果，误删不可恢复。
 > 「清理数据」必须是一次显式勾选 + 二次确认。
