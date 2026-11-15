@@ -93,9 +93,14 @@ task build:server     # 产物：bin/mandaryn-server
 task build:nollm      # 产物：bin/mandaryn-nollm[.exe]，与标准产物互不覆盖
 ```
 
-> **打包前置断言**：`create:nsis:installer` 会先检查 `bin/` 下是否已有
-> `sherpa-onnx-c-api.dll` / `sherpa-onnx-cxx-api.dll` / `onnxruntime.dll`，
-> 缺失则直接失败。原因是「能装但起不来」的安装包要等用户双击才暴露，代价太高（见 §1.1）。
+> **打包前置断言**：`create:nsis:installer` / `create:msi:package` 会先检查 `bin/` 下是否已有
+> `mandaryn.exe` 与 3 个运行时 DLL（`sherpa-onnx-c-api.dll` / `sherpa-onnx-cxx-api.dll` /
+> `onnxruntime.dll`），缺失则直接失败。原因是「能装但起不来」的安装包要等用户双击才暴露，代价太高（见 §1.1）。
+>
+> **构建依赖只在 `package` 上**：`create:*` 不再自带 `deps: build`，只要求 `bin/` 里已有 exe。
+> 本地 `task package` 行为不变（先 build 再打包）；但 CI 必须绕过 `package` 直接调
+> `windows:create:*`，否则 `go build -o bin/mandaryn.exe` 会把签名机取回的**已签名 exe
+> 覆盖成未签名版本**，安装器里装的就没有签名（§2.5）。
 
 **构建链顺序不可颠倒**：`go mod tidy` → `generate:bindings`（**必须带 `-ts`**）→ `tsc -b` → `vite build` → `go build`（依赖 `frontend/dist` 供 `//go:embed all:frontend/dist`）。
 
@@ -183,6 +188,9 @@ build → 签 exe → package / FORMAT=msi / FORMAT=portable → 签 installer +
 ```
 
 - **exe 必须在打包前签**：NSIS/MSI 会把 exe 嵌进包里，先打包后签 exe 时安装出来的仍是未签名程序。
+- **打包阶段不能再 rebuild**：`create:*` 任务已移除 `deps: build`，CI 打包作业直接调
+  `windows:create:*`。若改回走 `task package`，`go build -o bin/mandaryn.exe` 会把签名机
+  取回的已签名 exe 覆盖成未签名版本 —— 表面上流程全绿，装出来的程序却没有签名。
 - **SHA256SUMS 必须在所有签名之后生成**：签名改变文件字节（含时间戳），先算哈希必然对不上。
 - **便携 zip 不必单独签**：它装的是已签过的 exe，Authenticode 签的是 PE 文件本身。
 
