@@ -1,0 +1,44 @@
+# 签名配置模板（Ubuntu 签名服务器）—— 复制为 signing.config 后填写真实值。
+#
+#   cp build/linux/signing.config.example build/linux/signing.config
+#   chmod 600 build/linux/signing.config
+#
+# ⚠️ signing.config **不入库**（已在 .gitignore 里）。
+# ⚠️ PIN **不要**写在本文件里 —— 放在单独的文件（PIN_FILE），权限 600。
+#
+# 本文件是 shell 变量赋值文件（KEY=value，不带 export），由 sign.sh source。
+
+# —— 后端选择 ——
+# token-pkcs11（osslsigncode，首选）| jsign（令牌兼容性更好）
+CONFIG_BACKEND="token-pkcs11"
+
+# —— 令牌（token-pkcs11 用）——
+# 库路径：dpkg -L opensc | grep pkcs11    或    find / -name 'libeTPkcs11.so'
+PKCS11_MODULE="/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so"
+# 证书/私钥 URI：用 pkcs11-tool --module "$PKCS11_MODULE" -O --type cert 查 label
+# 注意 label 里的空格要写成 %20
+PKCS11_URI="pkcs11:token=MandarynCS;object=Code%20Signing"
+# OpenSSL 3 provider 路径（可选）。留空则走 engine 路线
+PKCS11_PROVIDER=""
+# engine 路径（可选，仅 engine 路线用）
+PKCS11_ENGINE="/usr/lib/x86_64-linux-gnu/engines-3/pkcs11.so"
+
+# —— jsign（jsign 后端用）——
+# SunPKCS11 配置文件路径，内容形如：
+#   name = MandarynCS
+#   library = /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so
+#   slot = 0
+JSIGN_KEYSTORE=""
+JSIGN_ALIAS="Code Signing"
+# 厂商专用 storetype（可选）：ETOKEN / OPENSC / YUBIKEY / PIV
+JSIGN_STORETYPE=""
+
+# —— PIN（两种后端共用，不要写明文 PIN 到这个文件）——
+PIN_FILE="/etc/mandaryn/token-pin"
+
+# —— 时间戳（必填）——
+TIMESTAMP_URL="http://timestamp.digicert.com"
+TIMESTAMP_URL_BACKUP="http://timestamp.sectigo.com"
+
+# —— 签名描述（可选，显示在文件属性里）——
+SIGN_DESCRIPTION="Mandaryn"
