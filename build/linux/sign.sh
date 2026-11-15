@@ -247,10 +247,16 @@ command -v osslsigncode >/dev/null 2>&1 || {
     printf 'sign.sh: 警告：未找到 osslsigncode，跳过验签。请自行执行：osslsigncode verify -in %s\n' "$INPUT_ABS" >&2
     exit 0
 }
-if ! osslsigncode verify -in "$INPUT_ABS" >/tmp/sign-verify.log 2>&1; then
+# 这里刻意做**完整**验签（含时间戳链），与 CI 发布前那步不同：签名机上装了
+# 完整 CA/TSA 证书，能给出最严格结论；CI 那步只证明"字节没丢签名"，所以用
+# -ignore-timestamp 避免因 TSA 链不在容器里而误判。
+VERIFY_LOG="$(mktemp "${TMPDIR:-/tmp}/mandaryn-verify.XXXXXX")"
+if ! osslsigncode verify -in "$INPUT_ABS" >"$VERIFY_LOG" 2>&1; then
     printf 'sign.sh: 验签失败：%s\n' "$INPUT_ABS" >&2
-    sed -n '1,20p' /tmp/sign-verify.log >&2
+    sed -n '1,20p' "$VERIFY_LOG" >&2
+    rm -f "$VERIFY_LOG"
     exit 1
 fi
+rm -f "$VERIFY_LOG"
 printf 'sign.sh: 已签名并通过验签：%s\n' "$INPUT_ABS"
 exit 0

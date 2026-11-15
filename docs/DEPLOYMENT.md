@@ -612,7 +612,7 @@ SLD 本地 P95 ≤ 1500ms / 在线 P95 ≤ 2500ms；回放同步误差 ≤ 80ms�
 | 1a | **安装目录必须含 3 个运行时 DLL**（`sherpa-onnx-c-api/cxx-api`、`onnxruntime`）与两份第三方 LICENSE | §1.1、§6.4 |
 | 1b | 安装器语言表含 `English` + `SimpChinese`（中文系统显示中文界面）；`.nsi` 带 UTF-8 BOM（否则 makensis 报 Bad text encoding） | §2.2 |
 | 1c | 装后可启动（进程存活）；卸载后 `INSTDIR` 清空且 `dataRoot` 仍在 | §6.4 |
-| 1d | 三个产物 `signtool verify /pa` 全部通过（**待实现**：签名接入 CI） | §5.3 |
+| 1d | 签名产物通过验签：NSIS 安装器与 MSI 由 `build/linux/sign.sh` 签名后用 `osslsigncode verify` 校验（**不是** `signtool`，Linux 签名机没有它）；便携 zip 不单独签名（内含已签名 exe，Authenticode 签的是 PE 文件本身） | §2.5 |
 | 2 | 绑定为 `.ts` 且 `pnpm typecheck` 通过 | API.md §7 |
 | 3 | `--self-check` 三平台均通过 | §2.4 |
 | 4 | 单测/E2E 全绿 | §9 |

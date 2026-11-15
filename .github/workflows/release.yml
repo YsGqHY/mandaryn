@@ -342,20 +342,37 @@ jobs:
         uses: actions/download-artifact@v4
         with: { name: artifacts-unsigned, path: bin }
 
-      # 签了名就要证明"确实带签名"：sign.sh 的 verify 是在签名机上做的，
-      # 这里对**最终待发布文件**再独立验一次，防止产物在中转/上传中丢失签名。
+      # 签了名就要证明"确实带签名"：sign.sh 的完整验签是在签名机上做的，
+      # 这里对**最终待发布文件**再独立验一次，防的是产物在上传/下载中转过程中丢签名。
+      #
+      # 用 -ignore-timestamp，理由不是放松标准，而是这条闸门的目的：证明「文件确实被
+      # 我们的证书签过且字节未变」。而时间戳验签会连带要求 TSA 证书链可被信任
+      # （osslsigncode 的 DIAGNOSTICS 明说缺 TSA 根证书会导致验签失败），那与本闸门
+      # 无关，并且会把签名完全正确的产物误判为失败 → 卡住发版。
+      # 时间戳本身单独断言存在，避免"没打时间戳"这种情况被悄悄放过。
       - name: 校验产物确实带 Authenticode 签名
         if: needs.sign-installer.result == 'success'
         run: |
           set -euo pipefail
           sudo apt-get update -qq && sudo apt-get install -y -qq osslsigncode
+          rc=0
           for f in bin/mandaryn-amd64-installer.exe bin/mandaryn-amd64.msi; do
             echo "── verify $f"
-            if ! osslsigncode verify -in "$f"; then
-              echo "::error::$f 没有有效 Authenticode 签名（或证书链不可用）"
-              exit 1
+            log="$RUNNER_TEMP/verify-$(basename "$f").log"
+            if ! osslsigncode verify -ignore-timestamp -in "$f" > "$log" 2>&1; then
+              echo "::error::$f 没有有效 Authenticode 签名（或签名者证书链不可用）"
+              sed -n '1,40p' "$log"
+              rc=1
+              continue
             fi
+            grep -qi "timestamp" "$log" || {
+              echo "::error::$f 缺少时间戳：证书到期后该签名会失效，无法长期分发"
+              rc=1
+              continue
+            }
+            echo "   OK（签名有效，含时间戳）"
           done
+          exit "$rc"
 
       # 校验和必须在**所有签名之后**生成：签名改变文件字节（含时间戳），先算必然对不上
       - name: 生成 SHA256SUMS

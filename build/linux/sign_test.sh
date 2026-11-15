@@ -278,5 +278,36 @@ check "带 --name 描述"                      '[[ "$jc" == *"--name Mandaryn Se
 check "没有调用 osslsigncode 签名"          '[ "$(call_count)" = "0" ]'
 
 # ─────────────────────────────────────────────────────────────
+echo "11) 验签门禁：签名成功但 verify 失败必须退出 1"
+# 前面所有用例都用 --skip-verify，验签分支此前零覆盖。这里放开它。
+cfg="$(mkcfg)"; in="$(mkinput g.exe)"; reset_log
+"$SIGN" --target exe --input "$in" --config "$cfg" >/dev/null 2>&1
+check "verify 成功时退出 0"                '[ "$?" = "0" ]'
+check "确实跑了 verify"                    '[[ "$(last_call)" == verify* ]]'
+check "verify 带 -in"                      '[[ "$(last_call)" == *"-in"* ]]'
+
+# 让 verify 子命令失败，但 sign 仍需正常产出 -out 文件（否则 sign.sh 在 mv 那步就退出，
+# 根本走不到验签 —— 第一版测试正是踩了这个坑）。
+cat > "$WORK/verifyfail.sh" <<'STUB'
+#!/usr/bin/env bash
+if [ "${1:-}" = verify ]; then
+  echo "FAKE: signature invalid" >&2
+  exit 1
+fi
+prev=""
+for a in "$@"; do
+  [ "$prev" = "-out" ] && : > "$a"
+  prev="$a"
+done
+exit 0
+STUB
+chmod +x "$WORK/verifyfail.sh"
+FAILDIR="$WORK/failbin"; mkdir -p "$FAILDIR"; cp "$WORK/verifyfail.sh" "$FAILDIR/osslsigncode"
+reset_log
+PATH="$FAILDIR:$PATH" "$SIGN" --target exe --input "$(mkinput h.exe)" --config "$cfg" 2>"$WORK/err.txt"
+check "verify 失败时退出 1（不能"看起来签了"）" '[ "$?" = "1" ]'
+check "失败原因打印到 stderr"               'grep -q "验签失败" "$WORK/err.txt"'
+
+# ─────────────────────────────────────────────────────────────
 printf '\n结果：%d 通过，%d 失败\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
