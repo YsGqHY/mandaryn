@@ -49,27 +49,34 @@ const (
 
 // open 实现 Open（kind 已由 ParseSourceID 校验）。
 func open(kind, value string) (Channel, error) {
+	var opener func() (*loopbackStream, error)
+
 	switch kind {
 	case contract.SourceKindApplication:
-		// 诚实拒绝：不静默退化成「抓全部声音」，否则用户以为分路成功、
-		// 事后才发现会话里录进了别的应用（隐私事故）。
-		return nil, sourceUnavailable(fmt.Sprintf(
-			"按应用分路捕获尚未实现：Windows 需要 Build %d 及以上（当前 %s），且需 AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK；请选择设备源（会包含全部应用声音）",
-			minProcessLoopbackBuild, windowsBuildLabel()))
+		// 进程回环：先按 exe 解析进程树根，真正的采集在 opener 里做
+		// （要等采集线程钉住并初始化 MTA 之后才能激活）。
+		opener = func() (*loopbackStream, error) {
+			procs, _, err := snapshotProcesses()
+			if err != nil {
+				return nil, apierr.New(apierr.CodeCaptureUnavailable).
+					WithDetail("枚举进程快照失败：%v", err).WithCause(err)
+			}
+			roots, _ := findPIDsByExe(procs, value)
+			return openProcessLoopback(roots, value)
+		}
 	case contract.SourceKindDevice:
-		// 继续
+		// 先确认设备仍在线，避免把「ID 写错」误报成「设备故障」。
+		exists, err := deviceExists(value)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			return nil, sourceNotFound(fmt.Sprintf("未检测到该输出设备（可能已拔出或被禁用）：%s", value))
+		}
+		opener = func() (*loopbackStream, error) { return openLoopback(value) }
 	default:
 		return nil, apierr.New(apierr.CodeInvalidArgument).
 			WithDetail("未知的源类型：%s", kind)
-	}
-
-	// 先确认设备仍在线，避免把「ID 写错」误报成「设备故障」。
-	exists, err := deviceExists(value)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, sourceNotFound(fmt.Sprintf("未检测到该输出设备（可能已拔出或被禁用）：%s", value))
 	}
 
 	c := &loopbackChannel{
@@ -80,7 +87,7 @@ func open(kind, value string) (Channel, error) {
 	}
 
 	ready := make(chan error, 1)
-	go c.run(value, ready)
+	go c.run(opener, kind == contract.SourceKindApplication, ready)
 	if err := <-ready; err != nil {
 		// 启动失败时 goroutine 已自行退出；这里等它收尾，避免泄漏线程。
 		<-c.done
@@ -131,7 +138,10 @@ func (c *loopbackChannel) Close() error {
 }
 
 // run 是采集线程主体。
-func (c *loopbackChannel) run(deviceID string, ready chan<- error) {
+//
+// mta 决定 COM 套间模型：设备回环用 STA（与 go-wca 的 IMMDevice 路径一致），
+// 进程回环**必须** MTA（ActivateAudioInterfaceAsync 的硬性要求）。
+func (c *loopbackChannel) run(opener func() (*loopbackStream, error), mta bool, ready chan<- error) {
 	// 钉住 OS 线程：COM 对象有线程亲和性，goroutine 迁移线程会导致
 	// RPC_E_WRONG_THREAD 甚至进程崩溃（本包最危险的坑）。
 	runtime.LockOSThread()
@@ -140,17 +150,26 @@ func (c *loopbackChannel) run(deviceID string, ready chan<- error) {
 	// 兜底：任何退出路径都要让阻塞中的 ReadPCM 收到 EOF。
 	defer c.queue.closeWith(nil)
 
-	owned, err := coInitializeSTA()
+	var (
+		owned bool
+		err   error
+	)
+	if mta {
+		owned, err = coInitializeMTA()
+	} else {
+		owned, err = coInitializeSTA()
+	}
 	if err != nil {
 		c.fail(err)
 		ready <- err
 		return
 	}
+
 	if owned {
 		defer ole.CoUninitialize()
 	}
 
-	lb, err := openLoopback(deviceID)
+	lb, err := opener()
 	if err != nil {
 		c.fail(err)
 		ready <- err

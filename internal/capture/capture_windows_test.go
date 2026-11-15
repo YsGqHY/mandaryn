@@ -16,10 +16,14 @@ import (
 	"vip.oberon.mandaryn/internal/contract"
 )
 
-// TestCapabilities 覆盖验收项 (a)：本机 Build 判定与 Reason 文案。
+// TestCapabilities 覆盖验收项 (a)：能力判定与 Reason 文案。
 //
-// 本机实测为 Build 19045（< 20348），因此进程级捕获必须报 false，
-// 且 Reason 必须含实际版本号——前端要把这句话直接展示给用户。
+// 口径已变更（S1-07 收尾）：进程级捕获的判定**只认实测探测结果**，不再由
+// Build 号推断。依据是本机 Build 19045 实测可用 —— 文档标注的 20348 是
+// 「头文件随 SDK 发布」的版本，不等于运行时支持。
+//
+// 因此这里断言的是**一致性**：能力为 true 时 Reason 必须为空（支持就无需解释），
+// 为 false 时必须给出含版本号的解释文案。
 func TestCapabilities(t *testing.T) {
 	caps := Capabilities()
 
@@ -31,27 +35,37 @@ func TestCapabilities(t *testing.T) {
 		t.Error("设备回环在 Windows 上应为 true")
 	}
 
-	build, err := currentWindowsBuild()
-	if err != nil {
-		t.Fatalf("读取 Windows Build 失败：%v", err)
+	build, buildErr := currentWindowsBuild()
+	if buildErr != nil {
+		t.Logf("读取 Windows Build 失败（只影响 Reason 文案）：%v", buildErr)
 	}
-	t.Logf("本机 Windows Build = %d（进程级捕获最低要求 %d）", build, minProcessLoopbackBuild)
+	t.Logf("本机 Windows Build = %d（文档标注门槛 %d，仅供参考）", build, minProcessLoopbackBuild)
 
-	if build < minProcessLoopbackBuild {
-		if caps.ProcessLoopback {
-			t.Fatalf("Build %d 低于 %d，不应声称支持进程级捕获", build, minProcessLoopbackBuild)
+	// 能力必须与实测探测一致，且与「代码是否实现」一致（FR-02-4）。
+	probed, note := processLoopbackAvailable()
+	want := probed && processLoopbackImplemented
+	if caps.ProcessLoopback != want {
+		t.Fatalf("ProcessLoopback=%v，但实测探测=%v 且实现状态=%v",
+			caps.ProcessLoopback, probed, processLoopbackImplemented)
+	}
+
+	if caps.ProcessLoopback {
+		// 支持就不需要解释。
+		if caps.Reason != "" {
+			t.Errorf("声称支持进程级捕获时 Reason 应为空，实际：%q", caps.Reason)
 		}
-		if caps.Reason == "" {
-			t.Fatal("不支持进程级捕获时 Reason 不能为空")
-		}
-		if !strings.Contains(caps.Reason, "20348") {
-			t.Errorf("Reason 应包含最低系统版本号，实际：%q", caps.Reason)
-		}
-	} else if !caps.ProcessLoopback {
-		// 系统够新但代码未实现时，也必须给出原因（本版本即属于这种情况）。
+	} else {
 		if caps.Reason == "" {
 			t.Fatal("声称不支持进程级捕获时 Reason 不能为空")
 		}
+		switch {
+		case !probed && !strings.Contains(caps.Reason, "实测"):
+			// 系统层面不支持时，文案必须点明是「实测」结论，而不是拿版本号臆断。
+			t.Errorf("探测失败时 Reason 应说明是实测结论，实际：%q", caps.Reason)
+		case probed && !strings.Contains(caps.Reason, "尚未实现"):
+			t.Errorf("代码未实现时 Reason 应说明是版本缺口，实际：%q", caps.Reason)
+		}
+		t.Logf("探测诊断：%s", note)
 	}
 	t.Logf("Capabilities = %+v", caps)
 }
@@ -196,23 +210,30 @@ func TestOpenUnknownDevice(t *testing.T) {
 	}
 }
 
-// TestOpenApplicationUnavailable 验证应用源 Open 会诚实拒绝，而不是静默抓全部声音。
+// TestOpenApplicationUnavailable 验证应用源 Open 会**诚实失败**，绝不静默抓全部声音。
+//
+// 语义已变更（S1-07 收尾）：进程级捕获已实现，因此「应用没在跑」应报
+// ERR_SOURCE_NOT_FOUND；只有在系统实测不支持该能力时才报 ERR_CAPTURE_UNAVAILABLE。
+// 两者都是「失败」，关键约束是同一件事：**不得**退化成一个能打开的设备回环。
 func TestOpenApplicationUnavailable(t *testing.T) {
 	ch, err := Open("app:kook.exe")
 	if err == nil {
 		_ = ch.Close()
-		t.Fatal("应用源 Open 应返回错误（进程级捕获未实现）")
+		t.Fatal("应用源 Open 应返回错误（该应用没有在运行），绝不能静默退化")
 	}
-	if !apierr.HasCode(err, apierr.CodeCaptureUnavailable) {
-		t.Fatalf("期望 %s，实际 %v", apierr.CodeCaptureUnavailable, err)
+	if !apierr.HasCode(err, apierr.CodeSourceNotFound) &&
+		!apierr.HasCode(err, apierr.CodeCaptureUnavailable) {
+		t.Fatalf("期望 %s 或 %s，实际 %v",
+			apierr.CodeSourceNotFound, apierr.CodeCaptureUnavailable, err)
 	}
 	var apiErr *apierr.Err
 	if !errors.As(err, &apiErr) {
 		t.Fatalf("期望 *apierr.Err，实际 %T", err)
 	}
-	if !strings.Contains(apiErr.Detail, "20348") {
-		t.Errorf("拒绝原因应包含最低系统版本，实际：%q", apiErr.Detail)
+	if apiErr.Detail == "" {
+		t.Error("拒绝时必须给出可诊断的 detail")
 	}
+	t.Logf("app:kook.exe → %s: %s", apiErr.Code, apiErr.Detail)
 	t.Logf("应用源 Open → %v", err)
 }
 
