@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  自定义字符串（简体中文）。
+
+  只放我们自己定义的文案；WixUI 内置文案（!(loc.WixUIBack) 等）由
+  WixToolset.UI.wixext 的 zh-cn 资源提供，构建时用 -culture zh-cn 引入。
+
+  WiX v6 要求文案写在 Value 属性里，元素内文本已废弃（WIX0400）。
+-->
+<WixLocalization Culture="zh-cn" Codepage="936" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+
+  <String Id="UninstOptTitle" Value="卸载选项" />
+  <String Id="UninstOptDescription" Value="选择是否同时删除你的录音与设置" />
+  <String Id="UninstOptCheckBox" Value="同时删除我的录音与设置（不可恢复）" />
+  <String Id="UninstOptHint" Value="不勾选时将保留 %AppData%\Mandaryn 下的录音、转写结果与设置，重新安装后可以继续使用。" />
+
+</WixLocalization>

@@ -263,8 +263,18 @@ tasks:
             exit 1
           fi
           echo "使用 WiX：$WIX ($("$WIX" --version 2>/dev/null | head -1))"
+          # 许可 RTF 由 LICENSE 生成（单处来源，避免两份文本漂移）
+          bash "{{.ROOT_DIR}}/build/windows/msi/make-license-rtf.sh"
+          # UI / Util 扩展**必须锁版本**：不指定版本会拉到 7.x，与 WiX v6 不兼容
+          # （报 WIX6101: Could not find expected package root folder wixext6）。
+          "$WIX" extension add WixToolset.UI.wixext/6.0.2   >/dev/null 2>&1 || true
+          "$WIX" extension add WixToolset.Util.wixext/6.0.2 >/dev/null 2>&1 || true
           "$WIX" build build/windows/msi/product.wxs \
             -arch x64 \
+            -ext WixToolset.UI.wixext \
+            -ext WixToolset.Util.wixext \
+            -culture zh-cn \
+            -loc build/windows/msi/zh-cn.wxl \
             -d Version="{{.VERSION}}" \
             -d BinDir="{{.ROOT_DIR}}/{{.BIN_DIR}}" \
             -d RootDir="{{.ROOT_DIR}}" \

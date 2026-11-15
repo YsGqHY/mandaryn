@@ -8,11 +8,15 @@
   - **MajorUpgrade**：新版本自动卸载旧版再装，避免残留文件；降级被明确拒绝。
   - 三个 CGO 运行时 DLL 与 exe 同目录：`mandaryn.exe` 的导入表直接引用
     sherpa-onnx-c-api.dll，它再依赖 onnxruntime.dll（详见 docs/DEPLOYMENT.md §1.1）。
-  - 卸载**不删** `%AppData%\Mandaryn`（用户录音与转写结果在那里），
-    因此这里不定义任何针对该目录的 RemoveFile/RemoveFolder。
+  - 卸载**默认不删** `%AppData%\Mandaryn`（用户录音与转写结果在那里）。
+    只有用户在卸载界面勾选「同时删除我的录音与设置」才删除 —— 用 MSI 的公开属性
+    `REMOVEDATA` 承载该选择，`util:RemoveFolderEx` 在 uninstall 时按属性执行。
+    不定义任何针对该目录的 RemoveFile/RemoveFolder，避免"顺手删掉用户数据"。
   - 快捷方式挂在主 exe 的 File 元素上：卸载时随组件一起移除。
 -->
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
   <Package
       Name="Mandaryn"
@@ -21,15 +25,26 @@
       UpgradeCode="8f3d6c1e-4b2a-4f77-9a10-6c5e2b8d4a71"
       Scope="perMachine"
       Compressed="yes"
+      Language="2052"
       InstallerVersion="500">
 
     <!-- 新版本覆盖安装：自动移除旧版；禁止降级 -->
     <MajorUpgrade
         DowngradeErrorMessage="已安装更高版本的 Mandaryn，请先卸载后再安装此版本。" />
 
-    <!-- 每用户安装的数据目录**不**归 MSI 管；这里显式声明不触碰 -->
-    <Property Id="ARPNOMODIFY" Value="1" />
+    <!-- 每用户安装的数据目录**不**归 MSI 管；这里显式声明不触碰。
+         注意：ARPNOMODIFY 由 WixUI_InstallDir 内置提供，不能在此重复定义
+         （会报 WIX0091 Duplicate Property）。 -->
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+
+    <!--
+      卸载时是否删除用户数据。默认 0（不删）。
+      可由两种途径置 1：卸载界面上的勾选框，或命令行
+      msiexec /x mandaryn-amd64.msi REMOVEDATA=1（企业静默卸载用）。
+      公开属性（全大写）才能从命令行传入。
+    -->
+    <Property Id="REMOVEDATA" Value="0" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />
 
     <!--
       必须显式声明媒体模板：WiX v4+ 不再默认嵌入 cab。
@@ -99,11 +114,118 @@
       <Directory Id="ProgramMenuDir" Name="Mandaryn" />
     </StandardDirectory>
 
+    <!--
+      用户数据目录（%AppData%\Mandaryn）。
+      这里**只**声明目录结构，不挂任何文件 —— 数据由应用自己创建和管理。
+      目的仅在于让 RemoveFolderEx 有一个可引用的目录 Id；默认卸载不会碰它。
+
+      为什么用 RemoveFolderEx 而非 RemoveFolder：后者只能删除"安装时由 MSI 创建
+      且为空"的目录，删不掉用户数据里递归的子目录与文件（logs/、models/、db）。
+
+      注意这是**用户级** Roaming AppData：perMachine 安装下每台机器可能有多个用户
+      各有自己的数据，卸载只会删除**执行卸载的那个用户上下文**下的目录（NSIS 包
+      同样如此）。遍历所有用户配置属于越权删除，这里不做。
+    -->
+    <StandardDirectory Id="AppDataFolder">
+      <Directory Id="USERDATADIR" Name="Mandaryn" />
+    </StandardDirectory>
+
     <Feature Id="Main" Title="Mandaryn" Level="1" AllowAbsent="no">
       <ComponentRef Id="MainExecutable" />
       <ComponentRef Id="RuntimeDlls" />
       <ComponentRef Id="Notices" />
+      <ComponentRef Id="RemoveUserData" />
     </Feature>
+
+    <!--
+      删除用户数据的组件。本身不装任何文件（注册表值充当 keypath），
+      真正的删除由 util:RemoveFolderEx 在 uninstall 时执行。
+      RemoveFolderEx 的 Property 指向运行时求值的目录（USERDATADIR 由上面的
+      SetDirectory 展开为 [AppDataFolder]Mandaryn）—— 必须用 RemoveFolderEx
+      而不是 RemoveFolder：后者只能删安装时静态声明的空目录，删不掉用户数据里
+      递归的子目录与文件。
+    -->
+    <Component Id="RemoveUserData" Directory="USERDATADIR" Guid="6C1D2B54-3F8A-4E7C-9B26-5D3A7E4F1C88">
+      <RegistryValue Root="HKCU"
+                     Key="Software\Oberon\Mandaryn"
+                     Name="RemoveUserData"
+                     Type="integer"
+                     Value="[REMOVEDATA]"
+                     KeyPath="yes" />
+      <!--
+        Condition 是关键：没有它 RemoveFolderEx 会**无条件**删除整棵目录树，
+        勾不勾选都会把用户数据删掉（默认即删，属于危险行为）。
+        REMOVEDATA 为 0 或未定义时跳过删除（Condition 为假 = 不删）。
+      -->
+      <util:RemoveFolderEx Id="RemoveUserDataFolder" On="uninstall"
+                           Property="USERDATADIR"
+                           Condition="REMOVEDATA=&quot;1&quot;" />    </Component>
+
+    <!--
+      安装界面：WixUI_InstallDir（欢迎 → 许可 → 目录 → 进度 → 完成）。
+      加 UI 是因为产品承诺「两种安装方式行为一致」——MSI 之前是无界面的纯静默包，
+      连"连数据一起删"都没有入口。
+      EULA 用仓库里的 LICENSE 转成的 RTF（纯文本不能直接喂给 MSI 的许可页）。
+    -->
+    <ui:WixUI Id="WixUI_InstallDir" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.BuildDir)\windows\msi\LICENSE.rtf" />
+
+    <!--
+      自定义「卸载选项」页。
+
+      为什么必须自定义：WixUI_InstallDir 提供的卸载路径是
+      MaintenanceWelcomeDlg → MaintenanceTypeDlg（修改/修复/删除）→ VerifyReadyDlg，
+      **没有任何页面**可以承载"连数据一起删"的勾选框。标准 UI 里的
+      WIXUI_EXITDIALOGOPTIONALCHECKBOX 只在**安装完成页**出现
+      （ShowCondition 含 NOT Installed），卸载时根本不显示 —— 直接用它会得到
+      一个永远看不到的勾选项。
+
+      接线：把 MaintenanceTypeDlg 的「删除」按钮重定向到本页，本页 Next 再进
+      VerifyReadyDlg。Back 回到 MaintenanceTypeDlg，保证用户能反悔。
+      勾选框直接绑定公开属性 REMOVEDATA（CheckBoxValue=1），默认不勾。
+
+      **Order 必须是较大值（这里 99），不能是 1**：WixUI 自带的 RemoveButton 本身
+      已有一条 `NewDialog → VerifyReadyDlg`。MSI 会把同一控件上的多条 Publish 按
+      Order 升序**全部执行**，后执行者生效。写 Order="1" 时我们的跳转先执行、随即被
+      自带的 VerifyReadyDlg 覆盖 —— 编译通过、decompile 里也能看到该页，但用户永远
+      看不到它（已实测 decompile 验证：Order=1 时 VerifyReadyDlg 在后，Order=99 时
+      我们在后）。
+    -->
+    <UI>
+      <Dialog Id="UninstallOptionsDlg" Width="370" Height="270" Title="!(loc.UninstOptTitle)">
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15"
+                 Transparent="yes" NoPrefix="yes"
+                 Text="{\WixUI_Font_Title}!(loc.UninstOptTitle)" />
+        <Control Id="BannerBitmap" Type="Bitmap" X="0" Y="0" Width="370" Height="44"
+                 TabSkip="no" Text="WixUI_Bmp_Banner" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15"
+                 Transparent="yes" NoPrefix="yes"
+                 Text="!(loc.UninstOptDescription)" />
+        <Control Id="BottomLine" Type="Line" X="0" Y="234" Width="370" Height="0" />
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17"
+                 Text="!(loc.WixUIBack)" />
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17"
+                 Default="yes" Text="!(loc.WixUINext)" />
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17"
+                 Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+        <Control Id="RemoveDataCheck" Type="CheckBox" X="20" Y="140" Width="330" Height="18"
+                 Text="!(loc.UninstOptCheckBox)"
+                 Property="REMOVEDATA" CheckBoxValue="1" />
+        <Control Id="KeepDataHint" Type="Text" X="20" Y="165" Width="330" Height="30"
+                 Transparent="yes" NoPrefix="yes"
+                 Text="!(loc.UninstOptHint)" />
+      </Dialog>
+
+      <!-- 「删除」按钮先问是否连数据一起删（Order=99 详见上方说明） -->
+      <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton"
+               Event="NewDialog" Value="UninstallOptionsDlg" Order="99" />
+      <Publish Dialog="UninstallOptionsDlg" Control="Back"
+               Event="NewDialog" Value="MaintenanceTypeDlg" Order="1" />
+      <Publish Dialog="UninstallOptionsDlg" Control="Next"
+               Event="NewDialog" Value="VerifyReadyDlg" Order="1" />
+    </UI>
 
   </Package>
 </Wix>

@@ -55,4 +55,11 @@ build/linux/signing.config
 *.pfx
 *.p12
 
+# WiX 扩展缓存（`wix extension add` 会创建，含下载的 wixext 包）
+.wix/
+
+# MSI 许可页的 RTF 由 build/windows/msi/make-license-rtf.sh 从 LICENSE 生成，
+# 但**要入库**：CI 与本地构建都需要它存在，且它是 LICENSE 的派生物、内容稳定。
+# （因此这里不忽略 build/windows/msi/LICENSE.rtf）
+
 .narrafork
