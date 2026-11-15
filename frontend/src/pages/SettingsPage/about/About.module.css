@@ -1,0 +1,96 @@
+/* 「关于与更新」子页面样式。颜色一律 --fd-*（不出现十六进制字面量）。 */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--fd-divider);
+  border-radius: 8px;
+  background-color: var(--fd-bg-elevated);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cardIcon {
+  color: var(--fd-text-muted);
+}
+
+.cardTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--fd-text-primary);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.rowTexts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.label {
+  font-size: 12px;
+  color: var(--fd-text-muted);
+}
+
+.value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--fd-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* —— 检查结果 —— */
+.result {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--fd-divider);
+  background-color: var(--fd-bg-content);
+  color: var(--fd-text-secondary);
+}
+
+.result[data-tone='ok'] {
+  border-color: var(--fd-success);
+  color: var(--fd-success);
+}
+
+.result[data-tone='accent'] {
+  border-color: var(--fd-accent);
+  color: var(--fd-accent);
+}
+
+.result[data-tone='warn'] {
+  border-color: var(--fd-warning);
+  color: var(--fd-warning);
+}
+
+.resultBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.resultText {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--fd-text-primary);
+  word-break: break-word;
+}

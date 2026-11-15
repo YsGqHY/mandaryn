@@ -42,6 +42,10 @@ export const settingsPageZhCN: Messages = {
         label: '快捷键',
         description: '系统级与应用内快捷键绑定',
       },
+      about: {
+        label: '关于与更新',
+        description: '版本信息与检查新版本',
+      },
     },
     themes: {
       system: { label: '跟随系统', description: '随操作系统的明暗模式自动切换' },

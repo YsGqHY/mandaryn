@@ -9,6 +9,7 @@ import { Database } from './database';
 import { Performance } from './performance';
 import { Privacy } from './privacy';
 import { Hotkeys } from './hotkeys';
+import { About } from './about';
 import { Audio } from './audio';
 
 // 设置页（两列）：
@@ -68,6 +69,7 @@ export const SettingsPage = () => {
         {vm.activeItem.id === 'audio' && <Audio />}
         {vm.activeItem.id === 'privacy' && <Privacy />}
         {vm.activeItem.id === 'hotkeys' && <Hotkeys />}
+        {vm.activeItem.id === 'about' && <About />}
       </div>
     </div>
   );

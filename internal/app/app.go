@@ -39,6 +39,7 @@ import (
 	"vip.oberon.mandaryn/internal/services/storagesvc"
 	"vip.oberon.mandaryn/internal/services/subprocess"
 	"vip.oberon.mandaryn/internal/services/transcriptsvc"
+	"vip.oberon.mandaryn/internal/services/updatesvc"
 	"vip.oberon.mandaryn/internal/speaker/sherpa"
 	"vip.oberon.mandaryn/internal/storage"
 	"vip.oberon.mandaryn/internal/transcribe"
@@ -289,7 +290,9 @@ func Run(assets embed.FS, trayIcon []byte) error {
 	privSvc, err := privacysvc.New(privacysvc.Deps{
 		Holder: holder,
 		// 诊断包只带元数据：版本 + 模块清单；音频 / 正文 / 声纹 / 凭据一概不进。
-		Version: "0.1",
+		// 版本取自同一注入点（build/config.yml），不再硬编码 —— 之前写死 "0.1"
+		// 会让诊断包里的版本与实际产物对不上，排查时误导。
+		Version: Version,
 		Modules: func() []string {
 			return []string{
 				"capture", "recording", "transcribe", "sessions", "asr", "models",
@@ -435,6 +438,16 @@ func Run(assets embed.FS, trayIcon []byte) error {
 		return fmt.Errorf("wire enginesvc: %w", err)
 	}
 
+	// —— 检查更新 ——
+	// 版本号来自编译期注入（internal/app/version.go）；出站留痕复用同一个 recorder。
+	updateSvc, err := updatesvc.New(updatesvc.Deps{
+		Version:  Version,
+		Recorder: outRecorder,
+	})
+	if err != nil {
+		return fmt.Errorf("wire updatesvc: %w", err)
+	}
+
 	// —— Wave C：转写任务与会话库 ——
 	transSvc, err := transcriptsvc.New(transcriptsvc.Deps{
 		Holder:   holder,
@@ -541,6 +554,9 @@ func Run(assets embed.FS, trayIcon []byte) error {
 			application.NewServiceWithOptions(sessionSvc, serviceOptions("sessionsvc")),
 			application.NewServiceWithOptions(speakerSvc, serviceOptions("speakersvc")),
 			application.NewServiceWithOptions(privSvc, serviceOptions("privacysvc")),
+			// 检查更新：只回答"有没有新版本"，不做静默自更新（DEPLOYMENT §6.5）。
+			// 出站走 httpx + outbound 留痕 + 离线闸门。
+			application.NewServiceWithOptions(updateSvc, serviceOptions("updatesvc")),
 			application.NewServiceWithOptions(hkShell, serviceOptions("hotkeysvc")),
 			application.NewService(subSvc),
 			application.NewService(childWinSvc),

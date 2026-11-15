@@ -214,4 +214,6 @@ export {
   LiveTranscriptService,
   type LiveAvailability,
 } from './transcript/LiveTranscriptService';
+// 检查更新：只回答"有没有新版本"，不做静默自更新（DEPLOYMENT §6.5）。
+export { UpdatesService, type UpdateInfo } from './updates/UpdatesService';
 

@@ -65,6 +65,11 @@ export const useSettingsPage = (): UseSettingsPageResult => {
         labelKey: 'settings.list.hotkeys.label',
         descriptionKey: 'settings.list.hotkeys.description',
       },
+      {
+        id: 'about',
+        labelKey: 'settings.list.about.label',
+        descriptionKey: 'settings.list.about.description',
+      },
     ],
     [],
   );

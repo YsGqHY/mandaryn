@@ -69,4 +69,7 @@ type OutboundEntry struct {
 const (
 	OutboundModelDownload = "model-download"
 	OutboundOnlineASR     = "online-asr"
+	// OutboundUpdateCheck 「检查更新」查版本清单。它同样受离线闸门约束并落 outbound_log ——
+	// 用户有权知道应用何时联过网（FR-08）。
+	OutboundUpdateCheck = "update-check"
 )

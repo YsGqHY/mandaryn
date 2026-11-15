@@ -39,6 +39,10 @@ export const settingsPageEnUS: Messages = {
         label: 'Keyboard shortcuts',
         description: 'System-wide and in-app shortcut bindings',
       },
+      about: {
+        label: 'About & updates',
+        description: 'Version info and update checks',
+      },
     },
     themes: {
       system: { label: 'Follow system', description: 'Tracks the OS light / dark preference' },
