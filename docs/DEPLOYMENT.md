@@ -495,6 +495,16 @@ rm -f "$DATA"/mandaryn.db-wal "$DATA"/mandaryn.db-shm
 | 卸载 | 删除 `INSTDIR`、快捷方式与 ARP 项；**不删 `dataRoot`**（库/录音/日志/模型） | 同左 |
 | 连数据一起删 | 卸载页独立勾选项，**默认不勾**（`nsDialogs` 自定义页）；静默卸载不进该页 → 保留数据 | 卸载页独立勾选框（`UninstallOptionsDlg`，默认不勾），绑公开属性 `REMOVEDATA`；也可 `msiexec /x app.msi REMOVEDATA=1` 静默指定 |
 
+> **MSI 验证状态（如实记录）**：结构层已验（`wix msi decompile`：22 个对话框、`UninstallOptionsDlg`、
+> 勾选框绑 `REMOVEDATA`、`RemoveFolderEx InstallMode=2`、`Condition=REMOVEDATA="1"`）；
+> `msiexec /a`（管理安装解包）实测**成功**，exe + 3 DLL + 4 个许可文件齐全。
+> **未验**：UI 实际观感、点「删除」是否真的先进入卸载选项页、勾选后数据是否真被删除 ——
+> 这三项需要管理员权限交互运行，尚未执行。
+>
+> 排查提示：`msiexec /i` 在**非提权 shell** 下会返回 Error 1925（权限不足）；
+> 从 Git Bash 直接调 `msiexec` 还可能因参数被 MSYS 改写而报「指定的登录会话不存在」（83）。
+> 前者需以管理员身份运行，后者应改用 `.bat` 或 `cmd /c` 包裹。
+
 > **卸载绝不删 `%AppData%\Mandaryn`**：那里有用户录音与转写结果，误删不可恢复。
 > 「清理数据」必须是一次显式勾选 + 二次确认。
 
