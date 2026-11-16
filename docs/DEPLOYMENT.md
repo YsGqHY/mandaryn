@@ -504,6 +504,11 @@ rm -f "$DATA"/mandaryn.db-wal "$DATA"/mandaryn.db-shm
 > 排查提示：`msiexec /i` 在**非提权 shell** 下会返回 Error 1925（权限不足）；
 > 从 Git Bash 直接调 `msiexec` 还可能因参数被 MSYS 改写而报「指定的登录会话不存在」（83）。
 > 前者需以管理员身份运行，后者应改用 `.bat` 或 `cmd /c` 包裹。
+>
+> **静默路径可自动验证**：`build/windows/test-msi-uninstall.ps1`（管理员 PowerShell 运行）
+> 会跑完安装 → 造哨兵 → 卸载（`REMOVEDATA` 未设，断言数据保留）→ 重装 →
+> 卸载（`REMOVEDATA=1`，断言数据被删），并在开始前把真实 `%AppData%\Mandaryn`
+> 备份成 zip、结束后恢复。UI 观感与「点删除是否先进卸载选项页」仍需人眼看一次。
 
 > **卸载绝不删 `%AppData%\Mandaryn`**：那里有用户录音与转写结果，误删不可恢复。
 > 「清理数据」必须是一次显式勾选 + 二次确认。
