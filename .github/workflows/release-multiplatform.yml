@@ -156,20 +156,34 @@ jobs:
       - name: 构建并打包（AppImage / deb / rpm）
         run: wails3 task linux:package ARCH=${{ matrix.arch }}
 
-      # 断言用 glob 而不是写死文件名：AppImage 与 nfpm 的实际输出名由 CLI 决定，
-      # 尚未在真机确认。这里只要求「每类至少一个」，并把真实名字打印进日志，
-      # 首次运行后据此把断言收紧成精确文件名。
-      - name: 断言产物齐全（glob，文件名待实测确认）
+      # 首次运行已确认真实文件名（2026-11-17，run 44027304467）：
+      #   amd64: mandaryn-x86_64.AppImage / mandaryn.deb / mandaryn.rpm
+      #   arm64: mandaryn-aarch64.AppImage / mandaryn.deb / mandaryn.rpm
+      #
+      # 关键：deb 与 rpm 在两个架构下**同名**。而 publish 会 merge-multiple 把两个
+      # artifact 合进同一个 dist/，同名文件必然互相覆盖 —— 结果是只有一个架构的包
+      # 活下来，SHA256SUMS 却看起来「正常」。所以在构建阶段就按
+      # mandaryn-<ver>-linux-<arch>.<ext> 重命名，既消除覆盖，也统一命名。
+      - name: 统一产物命名并断言（消除跨架构同名覆盖）
         shell: bash
         run: |
           set -euo pipefail
-          ls -lh bin/ || true
-          for pat in 'bin/*.AppImage' 'bin/*.deb' 'bin/*.rpm'; do
-            # shellcheck disable=SC2086
-            compgen -G "$pat" > /dev/null || { echo "::error::缺少产物：$pat"; exit 1; }
+          ver="${{ needs.preflight.outputs.version }}"
+          arch="${{ matrix.arch }}"
+          cd bin
+          case "$arch" in
+            amd64) appimg="mandaryn-x86_64.AppImage";;
+            arm64) appimg="mandaryn-aarch64.AppImage";;
+            *) echo "::error::未知架构 $arch"; exit 1;;
+          esac
+          for f in "$appimg" mandaryn.deb mandaryn.rpm; do
+            [ -f "$f" ] || { echo "::error::缺少产物 bin/$f"; ls -lh .; exit 1; }
           done
-          echo "—— 实际产物文件名（首次运行请记录，用于收紧断言与 Release 说明）——"
-          ls -1 bin/*.AppImage bin/*.deb bin/*.rpm
+          mv -f "$appimg"        "mandaryn-${ver}-linux-${arch}.AppImage"
+          mv -f mandaryn.deb     "mandaryn-${ver}-linux-${arch}.deb"
+          mv -f mandaryn.rpm     "mandaryn-${ver}-linux-${arch}.rpm"
+          echo "—— 重命名后的最终产物 ——"
+          ls -1 "mandaryn-${ver}-linux-${arch}."*
 
       # 静态校验：确认架构正确，并实测「sherpa-onnx 是否静态链接」这个待确认项。
       # 若 NEEDED 里出现 sherpa/onnx，说明必须随包分发 .so，当前打包方式会缺库。
@@ -200,9 +214,9 @@ jobs:
           retention-days: ${{ inputs.retention_days }}
           if-no-files-found: error
           path: |
-            bin/*.AppImage
-            bin/*.deb
-            bin/*.rpm
+            bin/mandaryn-${{ needs.preflight.outputs.version }}-linux-${{ matrix.arch }}.AppImage
+            bin/mandaryn-${{ needs.preflight.outputs.version }}-linux-${{ matrix.arch }}.deb
+            bin/mandaryn-${{ needs.preflight.outputs.version }}-linux-${{ matrix.arch }}.rpm
 
   # ── 2b) macOS 构建（universal dmg，未签名）──────────────────────────────────
   #
@@ -389,8 +403,15 @@ jobs:
 
             ### Linux
 
-            产物为 AppImage / deb / rpm（amd64 与 arm64 各一套）。
-            包名以实际文件名中的架构字段为准。
+            每个架构各三个产物（amd64 / arm64 各一套，共 6 个）：
+
+            | 格式 | 文件名 |
+            |------|--------|
+            | AppImage | `mandaryn-${{ needs.preflight.outputs.version }}-linux-<arch>.AppImage` |
+            | deb | `mandaryn-${{ needs.preflight.outputs.version }}-linux-<arch>.deb` |
+            | rpm | `mandaryn-${{ needs.preflight.outputs.version }}-linux-<arch>.rpm` |
+
+            `<arch>` 为 `amd64` 或 `arm64`。
             deb/rpm 依赖 GTK4 与 WebKitGTK 6.0（Ubuntu 24.04+ / Debian 13+ / Fedora 等较新发行版）。
 
             AppImage 使用方式：
