@@ -409,10 +409,37 @@ jobs:
           done
           ls -lh bin/*.dll
 
-      # NSIS（makensis）与 WiX v4+（wix.exe）都从这里来。
-      # WiX 扩展版本由 create:msi:package 内部锁到 6.0.2，别在这里写死。
-      - name: 安装打包工具（NSIS + WiX）
-        run: choco install nsis wixtoolset --no-progress -y
+      # 两个打包工具，两类坑（都是 2026-11-17 实测踩到的）：
+      #
+      # ① NSIS：choco 把它装到 "C:\Program Files (x86)\NSIS"，但**同一 job 内后续步骤
+      #    读不到这次 PATH 变更** —— runner 进程的环境在 job 开始时已快照，choco 改的是
+      #    机器级 PATH。症状是 `"makensis": executable file not found in $PATH`（exit 127）。
+      #    必须显式写进 $GITHUB_PATH，那只对后续步骤生效。
+      #
+      # ② WiX：镜像预装了 wixtoolset v3.14，choco 判定「already installed」直接跳过。
+      #    而 create:msi:package 用的是 WiX v4+ 的 `wix.exe build`（v3 只有 candle/light），
+      #    所以拿 choco 那个 v3 是错的。改用 dotnet tool 装 wix（v6），它落在
+      #    %USERPROFILE%\.dotnet\tools\wix.exe，同一套 $GITHUB_PATH 机制即可命中
+      #    任务里的 `command -v wix` 探测；扩展版本仍由任务内部锁到 6.0.2，这里不写死。
+      - name: 安装打包工具（NSIS + WiX v6）
+        shell: pwsh
+        run: |
+          choco install nsis --no-progress -y
+          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+          dotnet tool install --global wix --version 6.*
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      # 断言工具真的可用：PATH 这类问题要在打包前暴露，而不是等到 makensis / wix
+      # 各自报一句不指向根因的错误。
+      - name: 断言打包工具可用
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v makensis || { echo "::error::makensis 不在 PATH"; exit 1; }
+          makensis -VERSION
+          command -v wix || { echo "::error::wix 不在 PATH"; exit 1; }
+          wix --version
 
       # 直调 create:*（不用 windows:package）：package 带 build 依赖会重跑 go build，
       # 本 job 虽未签名、重建也无害，但 exe 已经构建好，多跑一次只是白等几分钟。
