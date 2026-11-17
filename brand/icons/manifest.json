@@ -1,0 +1,286 @@
+{
+  "$comment": "Mandaryn 图标清单与提示词包。master 为待生成的高分辨率母版文件名；sizes 为需派生出的 PNG 尺寸；ico 为 Windows 多尺寸 .ico 来源。品牌色直接取自 frontend/src/styles/themes/presets/{light,dark}.ts。",
+  "brand": {
+    "light": {
+      "accent": "#2563eb",
+      "accentHover": "#1d4ed8",
+      "bgBase": "#ffffff",
+      "bgSidebar": "#f6f7fa",
+      "bgElevated": "#eef1f6",
+      "textPrimary": "#0b1220",
+      "textMuted": "#8a93a4",
+      "danger": "#dc2626",
+      "success": "#16a34a",
+      "warning": "#d97706"
+    },
+    "dark": {
+      "accent": "#60a5fa",
+      "accentHover": "#93c5fd",
+      "bgBase": "#0b0d10",
+      "bgSidebar": "#15181d",
+      "bgContent": "#1c1f24",
+      "bgSurface": "#22262d",
+      "bgElevated": "#2a2f37",
+      "textPrimary": "#f8fafc",
+      "textMuted": "#64748b",
+      "danger": "#f87171",
+      "success": "#4ade80",
+      "warning": "#fbbf24"
+    }
+  },
+  "style": {
+    "grid": "24x24 单元网格，安全区 2px",
+    "stroke": "统一 2 单位线宽，与 @tabler/icons-react outline 基线一致（24 网格）；圆头圆角 join/cap",
+    "sunburst": "8 条 45° 等分放射射线，作为结构元素而非装饰",
+    "cornerRadius": "端点与转角全圆角，无方角",
+    "depth": "纯扁平，无阴影 / 渐变 / 立体 / 高光",
+    "background": "透明底；应用图标例外，用深色 squircle 底板"
+  },
+  "uiBoundary": {
+    "note": "本清单中的全部图标均为品牌母版 / 设计参考，不用于 UI 渲染；界面与导航一律使用 @tabler/icons-react 的现成图标。",
+    "rule": "UI 图标只能使用 @tabler/icons-react，禁止内联 SVG（见 frontend/CLAUDE.md）。",
+    "customMasters": "frontend/src/assets/icons/tabler/*.svg 是按 Tabler outline 参数（24×24 / stroke 2 / round cap,join / currentColor）手绘的品牌母版，仅作品牌物料与视觉语言参考，不得接入导航或任何 UI 组件。",
+    "tablerMapping": {
+      "mic": "IconMicrophone",
+      "bars": "IconChartBar",
+      "cube": "IconCube",
+      "window": "IconBrowser",
+      "wave": "IconWaveSine",
+      "shield": "IconShieldLock",
+      "gauge": "IconGauge",
+      "pause": "IconPlayerPause",
+      "export": "IconUpload"
+    }
+  },
+  "sizes": {
+    "16": "favicon 小尺寸、列表内联图标",
+    "24": "应用内导航（与 Tabler 同名图标同尺寸位）",
+    "32": "侧边栏、标签页",
+    "48": "设置卡片标题",
+    "64": "空状态、模块卡片",
+    "128": "关于页、文档插图",
+    "256": "应用图标、安装包、启动页"
+  },
+  "icons": [
+    {
+      "name": "brand-logo",
+      "group": "brand",
+      "meaning": "主品牌标识：放射环 + 声波",
+      "scene": "关于页、文档、仓库 README、演示文稿",
+      "variants": ["light", "dark"],
+      "master": "master-brand-logo",
+      "sizes": [16, 32, 48, 64, 128, 256],
+      "geometry": "圆环 + 环外 8 条 45° 等分射线 + 环内 5 段横向声波（短-高-短-高-短，居中对齐）"
+    },
+    {
+      "name": "brand-appicon",
+      "group": "brand",
+      "meaning": "应用图标：深色 squircle 底板 + 同构 logo",
+      "scene": "exe、安装包、favicon、任务栏、启动页",
+      "variants": ["light", "dark"],
+      "master": "master-brand-appicon",
+      "sizes": [16, 32, 48, 64, 128, 256],
+      "ico": true,
+      "geometry": "圆角方形（squircle）底板，内部 logo 按安全区缩放，底板留白 ≥12%"
+    },
+    {
+      "name": "nav-record",
+      "group": "nav",
+      "meaning": "录制页：麦克风 + 放射底座",
+      "scene": "主导航「录制」",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [24, 32, 64]
+    },
+    {
+      "name": "nav-library",
+      "group": "nav",
+      "meaning": "会话库：层叠条目 + 放射底座",
+      "scene": "主导航「会话库」",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [24, 32, 64]
+    },
+    {
+      "name": "nav-models",
+      "group": "nav",
+      "meaning": "模型页：立方体包 + 放射底座",
+      "scene": "主导航「模型」",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [24, 32, 64]
+    },
+    {
+      "name": "nav-settings",
+      "group": "nav",
+      "meaning": "设置页：滑杆 + 放射底座",
+      "scene": "主导航「设置」",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [24, 32, 64]
+    },
+    {
+      "name": "mod-capture",
+      "group": "module",
+      "meaning": "按应用分路捕获：应用窗格 + 独立声波",
+      "scene": "录制页能力区、诊断面板",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [24, 32, 64]
+    },
+    {
+      "name": "mod-asr",
+      "group": "module",
+      "meaning": "语音识别：声波 → 文本行",
+      "scene": "引擎区、转写状态说明",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [24, 32, 64]
+    },
+    {
+      "name": "mod-diarize",
+      "group": "module",
+      "meaning": "说话人分离：双人轮廓 + 声纹弧",
+      "scene": "角色侧栏、声纹说明",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [24, 32, 64]
+    },
+    {
+      "name": "mod-engine",
+      "group": "module",
+      "meaning": "引擎来源/降级：本地↔在线双路径",
+      "scene": "模型来源切换、降级提示",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [24, 32, 64]
+    },
+    {
+      "name": "mod-privacy",
+      "group": "module",
+      "meaning": "隐私边界：盾牌 + 截断射线（表示不出站）",
+      "scene": "隐私设置、诊断包",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [24, 32, 64]
+    },
+    {
+      "name": "mod-hotkeys",
+      "group": "module",
+      "meaning": "快捷键：键帽 + 放射刻线",
+      "scene": "快捷键设置",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [24, 32, 64]
+    },
+    {
+      "name": "mod-paths",
+      "group": "module",
+      "meaning": "路径与存储：分叉目录 + 来源标记",
+      "scene": "数据存储、模型目录迁移",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [24, 32, 64]
+    },
+    {
+      "name": "mod-perf",
+      "group": "module",
+      "meaning": "性能预算：表盘 + 放射刻度",
+      "scene": "性能预算分区",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [24, 32, 64]
+    },
+    {
+      "name": "st-idle",
+      "group": "status",
+      "meaning": "空闲：空心环",
+      "scene": "录制状态徽标（ST-01）",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [16, 24, 32],
+      "tone": "muted"
+    },
+    {
+      "name": "st-recording",
+      "group": "status",
+      "meaning": "录制中：实心点 + 短放射线",
+      "scene": "录制状态徽标（ST-03）",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [16, 24, 32],
+      "tone": "danger"
+    },
+    {
+      "name": "st-transcribing",
+      "group": "status",
+      "meaning": "转写中：旋转弧 + 三条文本线",
+      "scene": "会话库转写状态",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [16, 24, 32],
+      "tone": "accent"
+    },
+    {
+      "name": "st-degraded",
+      "group": "status",
+      "meaning": "降级：断开的放射线 + 感叹",
+      "scene": "降级 / 限流 / 暂停标记",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [16, 24, 32],
+      "tone": "warning"
+    },
+    {
+      "name": "st-error",
+      "group": "status",
+      "meaning": "失败/中断：叉形 + 残环",
+      "scene": "转写失败、崩溃恢复",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [16, 24, 32],
+      "tone": "danger"
+    },
+    {
+      "name": "act-record-start",
+      "group": "action",
+      "meaning": "开始录制：实心圆点",
+      "scene": "录制控制主按钮",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [16, 24, 32]
+    },
+    {
+      "name": "act-pause",
+      "group": "action",
+      "meaning": "暂停：双竖条",
+      "scene": "录制/回放控制",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [16, 24, 32]
+    },
+    {
+      "name": "act-stop",
+      "group": "action",
+      "meaning": "停止：实心方（圆角）",
+      "scene": "录制控制",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [16, 24, 32]
+    },
+    {
+      "name": "act-export",
+      "group": "action",
+      "meaning": "导出：托盘 + 向外箭头",
+      "scene": "会话导出、诊断包另存",
+      "variants": ["light", "dark"],
+      "master": "master-sheet",
+      "sizes": [16, 24, 32]
+    }
+  ],
+  "sheet": {
+    "master": "master-sheet",
+    "grid": "4x4，每格 256px，格间留白 32px，母版 1024x1024 分两批",
+    "note": "总览母版只用于建立/审阅视觉语言与风格一致性，不作为最终切图来源；单图标应从各自的 1024 母版派生，避免被总览的缩放糊化。"
+  }
+}

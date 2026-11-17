@@ -17,11 +17,20 @@
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
 		<key>CFBundleShortVersionString</key>
-		<string>2.0.0</string>
+		<string>2.1.0</string>
 		<key>CFBundleVersion</key>
-		<string>2.0.0</string>
+		<string>2.1.0</string>
 		<key>LSMinimumSystemVersion</key>
 		<string>12.0.0</string>
+		<!-- 权限说明：这两个键是运行时能否取到音频的前提。
+		     缺失 NSMicrophoneUsageDescription 时，macOS 会在进程首次访问麦克风时直接终止应用
+		     （不是返回错误，是 kill），且不会有任何提示可点。
+		     NSAudioCaptureUsageDescription 仅较新版本 macOS 读取（系统音频捕获），
+		     旧系统忽略未知键，无副作用。 -->
+		<key>NSAudioCaptureUsageDescription</key>
+		<string>Mandaryn 需要访问系统音频，以按应用捕获正在播放的声音并转写为文字。音频只保存在本机，默认不上传。</string>
+		<key>NSMicrophoneUsageDescription</key>
+		<string>Mandaryn 需要访问麦克风，以捕获音频并转写为文字。音频只保存在本机，默认不上传。</string>
 		<key>NSHighResolutionCapable</key>
 		<string>true</string>
 		<key>NSHumanReadableCopyright</key>

@@ -212,6 +212,56 @@ tasks:
     cmds:
       - 'echo "Skipping codesign (not available on {{OS}}). Sign the .app on macOS before distribution."'
 
+  codesign:bundle:
+    summary: 用 entitlements 签 .app（无 Developer ID 时退化为 ad-hoc）
+    desc: |
+      本项目当前没有付费 Apple Developer ID，默认 CODESIGN_IDENTITY="-"（ad-hoc 签名）。
+      ad-hoc 签名**不能**加 --timestamp / --options runtime（时间戳服务不签 ad-hoc），
+      所以这两项只在显式传入真实身份时才追加。
+
+      将来拿到 Developer ID 后调用方式不用改结构，只需：
+        wails3 task darwin:codesign:bundle CODESIGN_IDENTITY="Developer ID Application: ... (TEAMID)"
+    internal: true
+    cmds:
+      - test -f "{{.ENTITLEMENTS}}" || { echo "缺少 entitlements 文件：{{.ENTITLEMENTS}}" >&2; exit 1; }
+      - xattr -cr "{{.BIN_DIR}}/{{.APP_NAME}}.app"
+      - >-
+        codesign --force --deep
+        {{if ne .CODESIGN_IDENTITY "-"}}--timestamp --options runtime{{end}}
+        --entitlements "{{.ENTITLEMENTS}}"
+        --sign "{{.CODESIGN_IDENTITY}}"
+        "{{.BIN_DIR}}/{{.APP_NAME}}.app"
+      - codesign --verify --deep --strict --verbose=2 "{{.BIN_DIR}}/{{.APP_NAME}}.app"
+    vars:
+      ENTITLEMENTS: '{{.ENTITLEMENTS | default "build/darwin/entitlements.plist"}}'
+      CODESIGN_IDENTITY: '{{.CODESIGN_IDENTITY | default "-"}}'
+
+  package:dmg:universal:
+    summary: 产出 universal .app 并打成 dmg（不复用 package:dmg，避免被重建为单架构）
+    desc: |
+      为什么不能用 `darwin:package:dmg`：它的 deps 是 `package` → `build`，
+      会重新编译一份单架构二进制并覆盖 universal 产物（与 Windows 那边
+      「package 把已签名 exe 覆盖成未签名」是同一类陷阱）。
+
+      本任务显式按 universal 链路走，且 create:dmg 自身无 deps，不会触发重建：
+        build:universal → package:universal → codesign:bundle → create:dmg → 重命名为统一产物名
+    cmds:
+      - task: package:universal
+      - task: codesign:bundle
+      - task: create:dmg
+      # wails3 tool package --format dmg 的输出名由 CLI 决定，这里统一改成发布用命名：
+      # mandaryn-<version>-macos-universal.dmg
+      - cmd: |
+          set -euo pipefail
+          ver="$(sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1)"
+          [ -n "$ver" ] || { echo "无法从 build/config.yml 读取 info.version" >&2; exit 1; }
+          src="$(ls -1t {{.BIN_DIR}}/*.dmg 2>/dev/null | head -1)"
+          [ -n "$src" ] || { echo "未找到 dmg 产物" >&2; exit 1; }
+          dst="{{.BIN_DIR}}/{{.APP_NAME}}-${ver}-macos-universal.dmg"
+          mv -f "$src" "$dst"
+          echo "dmg 已生成：$dst"
+    platforms: [darwin]
+
   run:
     cmds:
       - wails3 tool prepare-macos-output --dir "{{.BIN_DIR}}"

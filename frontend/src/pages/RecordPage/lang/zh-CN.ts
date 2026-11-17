@@ -97,7 +97,10 @@ export const recordPageZhCN: Messages = {
       unavailableBanner: '当前选择的源「{{name}}」已不可用，请重新选择。',
       unknownUnavailable: '上次选择的源已不可用，请重新选择。',
       loadFailed: '读取音频源失败。',
-      warnExclusive: '该源可能被独占模式占用，录制时听不到声音。',
+      warn: {
+        'exclusive-mode': '该源可能被独占模式占用，录制时听不到声音。',
+        'process-loopback-unavailable': '本机不支持按应用分路捕获，该源无法录制；请改用设备源（会包含全部应用声音）。',
+      },
       lockedHint: '录制进行中不能切换音频源。',
       lockedTooltip: '录制进行中，音频源已绑定到当前会话；如需更换请先停止录制。',
     },

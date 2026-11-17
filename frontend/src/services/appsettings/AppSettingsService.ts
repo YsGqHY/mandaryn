@@ -25,6 +25,32 @@ export interface AppSettingsSnapshot {
   liveTranscribe: boolean;
 }
 
+// ProxyType 是代理类型（与后端 contract.ProxyConfig.type 同一取值集）。
+export type ProxyType = 'none' | 'http' | 'https' | 'socks5';
+
+// ProxyConfigDTO 是代理表单的读写形状（与后端 contract.ProxyConfig 对齐）。
+export interface ProxyConfigDTO {
+  type: string;
+  host: string;
+  port: number;
+  username: string;
+  // password 读出时是**掩码**；写入时掩码或空串表示「保持原值」。
+  password: string;
+  useForDownload: boolean;
+  useForOnline: boolean;
+  noProxy: string;
+}
+
+// ProxyTestResult 是代理连通性测试结果（API-9.4 / contract.TestResult）。
+export interface ProxyTestResult {
+  ok: boolean;
+  latencyMs: number;
+  // category 稳定取值：auth | rate-limit | tls | timeout | network | proxy | unknown。
+  category: string;
+  // note 后端给的**已脱敏**说明（不含密码与完整 URL）。
+  note: string;
+}
+
 export const AppSettingsService = {
   async get(): Promise<AppSettingsSnapshot> {
     const snap = await Binding.Get();
@@ -94,5 +120,86 @@ export const AppSettingsService = {
     return Events.On('appsettings:changed', (event) => {
       callback(event.data as AppSettingsField);
     });
+  },
+
+  // —— 代理（API-9.3 / API-9.4 / FR-05-5）——
+
+  // 读取代理配置（密码为掩码，**不是**明文）。
+  async getProxy(): Promise<ProxyConfigDTO> {
+    try {
+      const snap = await Binding.Get();
+      const p = (snap as unknown as { proxy?: Partial<ProxyConfigDTO> }).proxy;
+      return {
+        type: p?.type ?? 'none',
+        host: p?.host ?? '',
+        port: p?.port ?? 0,
+        username: p?.username ?? '',
+        password: p?.password ?? '',
+        useForDownload: p?.useForDownload ?? true,
+        useForOnline: p?.useForOnline ?? true,
+        noProxy: p?.noProxy ?? '',
+      };
+    } catch (err) {
+      throw toAppError(err);
+    }
+  },
+
+  // 保存代理配置（API-9.3）。
+  //
+  // 密码语义：传掩码（如 `ab***yz`）或空串表示「保持库中已存的那份」——
+  // 因此界面回显掩码、用户不动它就能安全地只改其它字段。
+  async setProxy(p: ProxyConfigDTO): Promise<void> {
+    try {
+      await Binding.SetProxy(p as never);
+    } catch (err) {
+      throw toAppError(err);
+    }
+  },
+
+  // 清空代理配置（等价于保存 type=none，后端会连带清空主机与凭据）。
+  async clearProxy(): Promise<void> {
+    await AppSettingsService.setProxy({
+      type: 'none',
+      host: '',
+      port: 0,
+      username: '',
+      password: '',
+      useForDownload: true,
+      useForOnline: true,
+      noProxy: '',
+    });
+  },
+
+  // 读取「代理是否被环境变量接管」的状态（FR-05-5）。
+  //
+  // 返回接管变量名（如 MANDARYN_HTTP_PROXY）；未接管返回空串。
+  // 变量名由后端给（不前端硬编码）：改名时提示才不会变成谎话。
+  async getProxyEnvOverride(): Promise<string> {
+    try {
+      const snap = await Binding.Get();
+      return (snap as unknown as { proxyEnvVar?: string }).proxyEnvVar ?? '';
+    } catch (err) {
+      throw toAppError(err);
+    }
+  },
+
+  // 测试代理连通（API-9.4）。**不落库**；只测「能否经该代理拿到目标响应」。
+  //
+  // 返回的 TestResult.Category 是稳定取值（auth / rate-limit / tls / timeout /
+  // network / proxy / unknown），文案由 View 按 i18n 渲染，VM 不拼人类可见字符串。
+  async testProxy(p: ProxyConfigDTO): Promise<ProxyTestResult> {
+    try {
+      const result = await Binding.TestProxy(p as never);
+      return {
+        ok: result?.ok ?? false,
+        latencyMs: result?.latencyMs ?? 0,
+        category: result?.category ?? '',
+        note: result?.note ?? '',
+      };
+    } catch (err) {
+      // 配置本身非法（未知 scheme / 缺主机）时后端返回 error，这里统一成 AppError，
+      // 由 View 显示在表单下方（与「测不通」区分：那是配置错，不是网络问题）。
+      throw toAppError(err);
+    }
   },
 } as const;

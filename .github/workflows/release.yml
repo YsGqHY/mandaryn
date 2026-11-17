@@ -140,6 +140,196 @@ jobs:
             bin/sherpa-onnx-cxx-api.dll
             bin/onnxruntime.dll
 
+  # ── 1b) 构建（Linux）────────────────────────────────────────────────────────
+  #
+  # 为什么必须用 Linux runner 原生构建：CGO（sherpa-onnx + GTK）使然，
+  # 本机与 Windows runner 都无法交叉编译（ADR-01）。
+  #
+  # 与 ci.yml 里 `linux-compile` 的区别：那个 job 只是 CGO_ENABLED=0 + purego 的
+  # 编译门禁，不产出任何可分发的包；这里才真正出 AppImage / deb / rpm。
+  build-linux:
+    name: 构建（Linux）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 版本号各 job 自行从 config.yml 读，避免为一个字符串把 Linux/macOS
+      # 串行挂到 Windows 的 build 后面等。
+      - name: 读取版本号
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1)"
+          [ -n "$ver" ] || { echo "::error::无法读取 info.version"; exit 1; }
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      # Wails v3.1 的 Linux 默认栈是 GTK4 + WebKitGTK 6.0（GTK3 旧栈已在 v3.1 移除）。
+      # 这里必须装 -dev 包：go build 阶段的 cgo 要 pkg-config 找到头文件。
+      - name: 安装 GTK4 / WebKitGTK 6.0 开发依赖
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            libgtk-4-dev libwebkitgtk-6.0-dev pkg-config build-essential
+
+      - name: 安装 Go（版本取自 go.mod）
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: 安装 wails3 CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: 安装 Node 并缓存 pnpm store
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: 生成前端 bindings
+        run: wails3 task common:generate:bindings
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      # linux:package = build + create:appimage/deb/rpm/aur。
+      # AUR 产物（*.pkg.tar.*）我们不发，靠下面的上传 glob 排除。
+      - name: 构建并打包（AppImage / deb / rpm）
+        run: wails3 task linux:package
+
+      # 断言语义：**不硬编码文件名**。AppImage 与 nfpm 的实际输出名由 CLI 决定，
+      # 离线无法核实，所以这里用 glob 断言「每类至少一个」，并把 bin/ 全量打印出来，
+      # 供首次运行时确认真实文件名（确认后再决定是否收紧成精确断言）。
+      - name: 断言产物齐全（glob，输出名待实测确认）
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -lh bin/ || true
+          for pat in 'bin/*.AppImage' 'bin/*.deb' 'bin/*.rpm'; do
+            # shellcheck disable=SC2086
+            compgen -G "$pat" > /dev/null || { echo "::error::缺少产物：$pat"; exit 1; }
+          done
+          echo "—— 实际产物文件名（首次运行请记录）——"
+          ls -1 bin/*.AppImage bin/*.deb bin/*.rpm
+
+      - name: 上传 Linux 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-linux
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            bin/*.AppImage
+            bin/*.deb
+            bin/*.rpm
+
+  # ── 1c) 构建（macOS，未签名 dmg）────────────────────────────────────────────
+  #
+  # 本项目**没有付费 Apple Developer ID**，因此没有 Developer ID 证书、也不做公证。
+  # dmg 内的 .app 走 ad-hoc 签名（codesign -s -），Gatekeeper 会拦截，
+  # 用户需手动「右键 → 打开」。Release 说明里必须写清这一步。
+  #
+  # 用 macos-14（Apple Silicon）：universal 构建需要 lipo 合并 amd64 + arm64，
+  # Apple Silicon runner 的 macOS SDK 可同时产两个切片。
+  build-macos:
+    name: 构建（macOS universal dmg，未签名）
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 读取版本号
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1)"
+          [ -n "$ver" ] || { echo "::error::无法读取 info.version"; exit 1; }
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      # 断言 Info.plist 的版本与 config.yml 一致。
+      # Info.plist 里的版本是硬编码的（与 nfpm.yaml 同类），drift 会导致
+      # 「dmg 文件名 2.1.0、应用内 CFBundleShortVersionString 2.0.0」。
+      - name: 断言 Info.plist 版本与 config.yml 一致
+        shell: bash
+        run: |
+          set -euo pipefail
+          plist_ver="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/darwin/Info.plist)"
+          cfg_ver="${{ steps.ver.outputs.version }}"
+          echo "Info.plist=$plist_ver config.yml=$cfg_ver"
+          [ "$plist_ver" = "$cfg_ver" ] || {
+            echo "::error::build/darwin/Info.plist 的 CFBundleShortVersionString ($plist_ver) 与 config.yml ($cfg_ver) 不一致"
+            exit 1
+          }
+
+      - name: 安装 Go（版本取自 go.mod）
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: 安装 wails3 CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: 安装 Node 并缓存 pnpm store
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: 生成前端 bindings
+        run: wails3 task common:generate:bindings
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      # 该任务内部顺序：build:universal → package:universal → codesign:bundle
+      # → create:dmg → 重命名为 mandaryn-<ver>-macos-universal.dmg。
+      # 刻意不用 darwin:package:dmg（它的 deps 会把 universal 覆盖成单架构）。
+      - name: 构建 universal 应用并打包 dmg
+        run: wails3 task darwin:package:dmg:universal
+
+      - name: 断言 dmg 与签名状态
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg="bin/mandaryn-${{ steps.ver.outputs.version }}-macos-universal.dmg"
+          test -f "$dmg" || { echo "::error::缺少产物 $dmg"; ls -lh bin/ || true; exit 1; }
+          ls -lh "$dmg"
+          # 说明 ad-hoc 签名的实际结果（不是 Developer ID，Gatekeeper 仍会拦）
+          codesign -dv --verbose=2 bin/mandaryn.app 2>&1 | sed -n '1,12p' || true
+          echo "::warning::本产物未使用 Developer ID 签名、未公证：用户需「右键 → 打开」放行"
+          # lipo 校验：确认确实是 universal（两个架构都在）
+          lipo -archs bin/mandaryn.app/Contents/MacOS/mandaryn || true
+
+      - name: 上传 macOS 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-macos
+          retention-days: 7
+          if-no-files-found: error
+          path: bin/mandaryn-*-macos-universal.dmg
+
   # ── 2) 签 exe（Ubuntu 签名机；必须先于打包）────────────────────────────────
   sign-exe:
     name: 签 exe（Ubuntu 签名机）
@@ -255,7 +445,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in "bin/mandaryn-amd64-installer.exe" "bin/mandaryn-amd64.msi" \
+          for f in "bin/mandaryn-${{ needs.build.outputs.version }}-windows-amd64-installer.exe" "bin/mandaryn-${{ needs.build.outputs.version }}-windows-amd64.msi" \
                    "bin/mandaryn-${{ needs.build.outputs.version }}-windows-amd64-portable.zip"; do
             test -f "$f" || { echo "::error::缺少产物 $f"; exit 1; }
           done
@@ -268,8 +458,8 @@ jobs:
           retention-days: 7
           if-no-files-found: error
           path: |
-            bin/mandaryn-amd64-installer.exe
-            bin/mandaryn-amd64.msi
+            bin/mandaryn-${{ needs.build.outputs.version }}-windows-amd64-installer.exe
+            bin/mandaryn-${{ needs.build.outputs.version }}-windows-amd64.msi
             bin/mandaryn-${{ needs.build.outputs.version }}-windows-amd64-portable.zip
 
   # ── 4) 签安装器与 MSI（Ubuntu 签名机）──────────────────────────────────────
@@ -298,8 +488,8 @@ jobs:
       - name: 签安装器与 MSI
         run: |
           set -euo pipefail
-          build/linux/sign.sh --target installer --input bin/mandaryn-amd64-installer.exe
-          build/linux/sign.sh --target msi       --input bin/mandaryn-amd64.msi
+          build/linux/sign.sh --target installer --input bin/mandaryn-${{ needs.build.outputs.version }}-windows-amd64-installer.exe
+          build/linux/sign.sh --target msi       --input bin/mandaryn-${{ needs.build.outputs.version }}-windows-amd64.msi
           # 便携 zip 不单独签：它装的是已签过的 exe，Authenticode 签的是 PE 文件本身
 
       - name: 上传已签名产物
@@ -309,8 +499,8 @@ jobs:
           retention-days: 7
           if-no-files-found: error
           path: |
-            bin/mandaryn-amd64-installer.exe
-            bin/mandaryn-amd64.msi
+            bin/mandaryn-${{ needs.build.outputs.version }}-windows-amd64-installer.exe
+            bin/mandaryn-${{ needs.build.outputs.version }}-windows-amd64.msi
             bin/mandaryn-${{ needs.build.outputs.version }}-windows-amd64-portable.zip
 
   # ── 5) 发布：SHA256SUMS（在签名之后）+ 草稿 Release ───────────────────────
@@ -356,7 +546,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq && sudo apt-get install -y -qq osslsigncode
           rc=0
-          for f in bin/mandaryn-amd64-installer.exe bin/mandaryn-amd64.msi; do
+          for f in bin/mandaryn-${{ needs.build.outputs.version }}-windows-amd64-installer.exe bin/mandaryn-${{ needs.build.outputs.version }}-windows-amd64.msi; do
             echo "── verify $f"
             log="$RUNNER_TEMP/verify-$(basename "$f").log"
             if ! osslsigncode verify -ignore-timestamp -in "$f" > "$log" 2>&1; then
@@ -379,7 +569,8 @@ jobs:
         run: |
           set -euo pipefail
           cd bin
-          sha256sum mandaryn-amd64-installer.exe mandaryn-amd64.msi \
+          sha256sum "mandaryn-${{ needs.build.outputs.version }}-windows-amd64-installer.exe" \
+                    "mandaryn-${{ needs.build.outputs.version }}-windows-amd64.msi" \
                     "mandaryn-${{ needs.build.outputs.version }}-windows-amd64-portable.zip" > SHA256SUMS.txt
           cat SHA256SUMS.txt
           sha256sum -c SHA256SUMS.txt
@@ -411,9 +602,9 @@ jobs:
 
             | 产物 | 适用场景 |
             |------|----------|
-            | `mandaryn-*-installer.exe` | 普通用户：双击安装，自动创建桌面与开始菜单快捷方式 |
-            | `mandaryn-amd64.msi` | 企业部署（GPO / SCCM / Intune）。**与 NSIS 二选一**，不要同时安装 |
-            | `mandaryn-*-portable.zip` | 免安装：解压即用，数据写在解压目录的 `data\` 内 |
+            | `mandaryn-*-windows-amd64-installer.exe` | 普通用户：双击安装，自动创建桌面与开始菜单快捷方式 |
+            | `mandaryn-*-windows-amd64.msi` | 企业部署（GPO / SCCM / Intune）。**与 NSIS 二选一**，不要同时安装 |
+            | `mandaryn-*-windows-amd64-portable.zip` | 免安装：解压即用，数据写在解压目录的 `data\` 内 |
 
             安装器与 MSI 二选一：两者各自注册卸载项，同时安装会出现两个「Mandaryn」。
 
@@ -429,8 +620,8 @@ jobs:
 
             > 卸载不会删除你的数据（`%AppData%\Mandaryn` 或便携包内的 `data\`）。
           files: |
-            bin/mandaryn-amd64-installer.exe
-            bin/mandaryn-amd64.msi
+            bin/mandaryn-${{ needs.build.outputs.version }}-windows-amd64-installer.exe
+            bin/mandaryn-${{ needs.build.outputs.version }}-windows-amd64.msi
             bin/mandaryn-${{ needs.build.outputs.version }}-windows-amd64-portable.zip
             bin/SHA256SUMS.txt
             bin/SHA256SUMS.txt.minisig

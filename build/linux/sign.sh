@@ -215,12 +215,15 @@ fi
 
 [ -n "${BACKEND:-}" ] || BACKEND="${CONFIG_BACKEND:-}"
 if [ -z "$BACKEND" ]; then
-    if [ -n "${PKCS11_MODULE:-}" ] && [ -n "${PKCS11_URI:-}" ]; then
-        BACKEND="token-pkcs11"
-    elif [ -n "${JSIGN_KEYSTORE:-}" ]; then
+    # 两者都配了时优先 jsign：Ubuntu 24.04 的 osslsigncode 2.8 走 PKCS#11 engine
+    # 会 segfault，且官方源没有 pkcs11 provider 包；jsign 走 SunPKCS11，同一块令牌
+    # 可直接签 exe/installer/MSI。要强制老路线就显式写 CONFIG_BACKEND 或 --backend。
+    if [ -n "${JSIGN_KEYSTORE:-}" ]; then
         BACKEND="jsign"
+    elif [ -n "${PKCS11_MODULE:-}" ] && [ -n "${PKCS11_URI:-}" ]; then
+        BACKEND="token-pkcs11"
     else
-        die "配置里既没有 PKCS11_MODULE/PKCS11_URI 也没有 JSIGN_KEYSTORE，无法判断用哪个后端。"
+        die "配置里既没有 JSIGN_KEYSTORE 也没有 PKCS11_MODULE/PKCS11_URI，无法判断用哪个后端。"
     fi
 fi
 
@@ -251,7 +254,16 @@ command -v osslsigncode >/dev/null 2>&1 || {
 # 完整 CA/TSA 证书，能给出最严格结论；CI 那步只证明"字节没丢签名"，所以用
 # -ignore-timestamp 避免因 TSA 链不在容器里而误判。
 VERIFY_LOG="$(mktemp "${TMPDIR:-/tmp}/mandaryn-verify.XXXXXX")"
-if ! osslsigncode verify -in "$INPUT_ABS" >"$VERIFY_LOG" 2>&1; then
+# 自签 / 内部 CA 场景必须给 -CAfile：否则链不受信任，verify 必然失败，
+# 看起来像"签名没生效"。公信证书留空即可。
+VERIFY_ARGS=()
+if [ -n "${VERIFY_CAFILE:-}" ]; then
+    [ -f "$VERIFY_CAFILE" ] || {
+        printf 'sign.sh: VERIFY_CAFILE 指向的根证书不存在：%s\n' "$VERIFY_CAFILE" >&2
+        rm -f "$VERIFY_LOG"; exit 1; }
+    VERIFY_ARGS+=(-CAfile "$VERIFY_CAFILE")
+fi
+if ! osslsigncode verify -in "$INPUT_ABS" ${VERIFY_ARGS[@]+"${VERIFY_ARGS[@]}"} >"$VERIFY_LOG" 2>&1; then
     printf 'sign.sh: 验签失败：%s\n' "$INPUT_ABS" >&2
     sed -n '1,20p' "$VERIFY_LOG" >&2
     rm -f "$VERIFY_LOG"

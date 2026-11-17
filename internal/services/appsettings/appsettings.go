@@ -16,12 +16,14 @@ package appsettings
 import (
 	"context"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"vip.oberon.mandaryn/internal/apierr"
 	"vip.oberon.mandaryn/internal/contract"
 	"vip.oberon.mandaryn/internal/events"
+	"vip.oberon.mandaryn/internal/models"
 	"vip.oberon.mandaryn/internal/outbound"
 	"vip.oberon.mandaryn/internal/storage"
 	"vip.oberon.mandaryn/internal/utils/cryptox"
@@ -49,6 +51,8 @@ type Service struct {
 	// debugMode 把用户层的调试模式开关落实到运行时（装配层接 privacy.DebugMode.SetUser），
 	// 返回生效状态（可能被环境变量 MANDARYN_LOG_LEVEL 接管）。nil = 只落库。
 	debugMode func(userEnabled bool) (contract.DebugModeState, error)
+	// proxyTest 测试代理连通（API-9.4）。nil = 未接入模型域，返回 ERR_UNSUPPORTED。
+	proxyTest func(ctx context.Context, p contract.ProxyConfig) (contract.TestResult, error)
 }
 
 // Option 是可选依赖的注入方式。
@@ -68,6 +72,18 @@ func WithActiveSession(fn func() bool) Option {
 // WithDebugMode 注入调试模式的运行时落实函数（见 Service.debugMode）。
 func WithDebugMode(fn func(userEnabled bool) (contract.DebugModeState, error)) Option {
 	return func(s *Service) { s.debugMode = fn }
+}
+
+// WithProxyTester 注入代理连通性测试（API-9.4）。
+//
+// 装配层接 `modelsSvc.Manager().TestProxy`。为什么用构造注入而不是在这里
+// 自己发请求：测试必须复用**下载链路同一套** Transport 与同一份清单地址，
+// 否则「测通了但下载不通」的假阳性就无从发现（见 internal/models/proxytest.go）。
+//
+// 与 usage / debugMode 同理用构造注入：L3 服务上的 func 型导出方法会被绑定
+// 生成器扫进前端 API 并触发「function types are not supported」警告。
+func WithProxyTester(fn func(ctx context.Context, p contract.ProxyConfig) (contract.TestResult, error)) Option {
+	return func(s *Service) { s.proxyTest = fn }
 }
 
 // New 构造服务；outbound 记录器可为 nil（仅影响「最近出站点」面板）。
@@ -111,6 +127,14 @@ type Snapshot struct {
 
 	// —— 代理（密码为掩码）——
 	Proxy contract.ProxyConfig `json:"proxy"`
+
+	// ProxyEnvVar 是**接管代理配置的环境变量名**（`MANDARYN_HTTP_PROXY`）。
+	//
+	// 非空即表示设置页的代理配置当前**不生效** —— 模型下载与清单获取走该变量。
+	// 为什么由后端给而不是前端写死：变量名属于后端契约（models.EnvHTTPProxy），
+	// 前端硬编码会在改名时静默失配，用户看到的提示就变成谎话。
+	// 沿用 privacy 域 `OfflineEnvVar` 的同一做法。
+	ProxyEnvVar string `json:"proxyEnvVar"`
 
 	// —— 音频与录制 ——
 	Audio contract.AudioSettings `json:"audio"`
@@ -196,6 +220,9 @@ func (s *Service) Get(ctx context.Context) (Snapshot, error) {
 			NoAudioPersist: row.NoAudioPersist,
 			LogLevel:       row.LogLevel,
 		},
+		// 只在变量**真的设了值**时才算接管：空串等同于未配置（与 models 侧
+		// globalProxyFromEnv 的判定一致），否则界面会误报「已由环境变量接管」。
+		ProxyEnvVar: proxyEnvVar(),
 		LiveTranscribe: row.LiveTranscribe,
 		ResourceCapPct: row.ResourceCapPct,
 	}, nil
@@ -405,6 +432,40 @@ func (s *Service) SetProxy(ctx context.Context, p contract.ProxyConfig) error {
 	return nil
 }
 
+// TestProxy 测试代理连通（API-9.4）。
+//
+// 契约（DOC-03 §2.9）：
+//   - 传的是**待测试**的配置，本方法**不落库**（保存走 SetProxy，职责分开）；
+//   - 只测「能否经该代理拿到目标响应」，返回 OK / 延迟 / 错误分类 / 脱敏说明；
+//   - 网络失败以 `TestResult{OK:false, Category:...}` 表达（error 为 nil），
+//     只有配置本身非法（未知 scheme、缺主机）才返回 error —— 那才是必须先改的。
+//
+// 密码掩码处理：前端回传的密码可能是掩码（界面上不回显真实密码）。带掩码时
+// 用库里已存的明文去测，否则会拿字面量「••••」去认证，测出来必然 407。
+func (s *Service) TestProxy(ctx context.Context, p contract.ProxyConfig) (contract.TestResult, error) {
+	if s.proxyTest == nil {
+		return contract.TestResult{Category: "unknown", Note: "模型域未接入，无法测试代理连通性"},
+			apierr.New(apierr.CodeInvalidArgument).WithDetail("模型域未接入，无法测试代理连通性")
+	}
+
+	cfg := p
+	if cfg.Type == "" {
+		cfg.Type = contract.ProxyNone
+	}
+	if isMasked(cfg.Password) || cfg.Password == "" {
+		// 掩码 / 空：沿用库里已加密保存的那份（解密失败由调用方得到明确错误）。
+		var row storage.AppSettings
+		if err := s.db().WithContext(ctx).Where("id = ?", 1).First(&row).Error; err == nil {
+			if row.ProxyPasswordEnc != "" {
+				if plain, derr := cryptox.DecryptString(row.ProxyPasswordEnc); derr == nil {
+					cfg.Password = plain
+				}
+			}
+		}
+	}
+	return s.proxyTest(ctx, cfg)
+}
+
 // —— 音频与录制（FR-03）——
 
 // SetAudio 保存音频与录制设置（API-9.6）。
@@ -596,6 +657,18 @@ func maskSecret(plain string) string {
 }
 
 // isMasked 判断前端是否把掩码原样回传（此时应保留原密钥）。
+// proxyEnvVar 返回当前**接管**代理配置的环境变量名；未接管时返回空串。
+//
+// 判定与 models.globalProxyFromEnv 保持同一口径：变量存在且去空白后非空才算接管。
+// 两处若不一致，界面就会出现「提示说被接管、实际走的却是设置页」的自相矛盾。
+func proxyEnvVar() string {
+	if strings.TrimSpace(os.Getenv(models.EnvHTTPProxy)) == "" {
+		return ""
+	}
+	return models.EnvHTTPProxy
+}
+
+// isMasked 判断一个字符串是否为掩码（含 `***`）。
 func isMasked(v string) bool {
 	return strings.Contains(v, "***")
 }

@@ -48,21 +48,66 @@ func capabilities() contract.CaptureCaps {
 	probed, note := processLoopbackAvailable()
 	caps.ProcessLoopback = probed && processLoopbackImplemented
 
-	// 两种失败原因必须能被**同时**区分并表达，否则用户升级系统后会撞上
-	// 「界面说版本不够、实际是代码没实现」的诊断遮蔽。
+	// 三种失败原因必须能被**同时**区分并表达：
+	//   - 本机真的不支持（升级系统才有用）；
+	//   - 本版本没实现（升级应用才有用）；
+	//   - 音频服务瞬时未就绪（等一会儿就好，别让用户去查版本）。
+	// 混在一起会让用户沿着错的方向折腾（S1-07 教训）。
 	switch {
+	case !processLoopbackImplemented && probed:
+		caps.Reason = fmt.Sprintf(
+			"本机实测支持进程级捕获（Build %s，探测通过），但本版本尚未实现该能力；暂时只能使用设备回环",
+			windowsBuildLabel())
+	case !probed && isTransientProbeFailure(note):
+		// 瞬时原因不写「不支持」，也不提版本要求 —— 那是误导。
+		caps.Reason = fmt.Sprintf(
+			"进程级捕获暂时不可用：%s；当前只能使用设备回环（会包含全部应用声音），稍后会自动重试",
+			note)
 	case !probed:
 		caps.Reason = fmt.Sprintf(
 			"本机实测不支持进程级捕获：%s。当前系统 Build %s，官方文档标注的最低要求是 Build %d；"+
 				"当前仅支持设备回环（会包含全部应用声音）",
 			note, windowsBuildLabel(), minProcessLoopbackBuild)
-	case !processLoopbackImplemented:
-		caps.Reason = fmt.Sprintf(
-			"本机实测支持进程级捕获（Build %s，探测通过），但本版本尚未实现该能力；暂时只能使用设备回环",
-			windowsBuildLabel())
 	}
 	// 探测通过且已实现时不写 Reason：支持就不需要解释。
 	return caps
+}
+
+// isTransientProbeFailure 判断探测失败是否属于「等一会儿可能就好」的瞬时原因。
+//
+// 目前只有一类：音频服务（AudioSrv）未就绪。这类失败**不该**被表述成
+// 「系统版本不支持」—— 那会把一个可自愈的状态说成硬性限制，诱导用户去升级系统。
+func isTransientProbeFailure(note string) bool {
+	return strings.Contains(note, "AudioSrv") || strings.Contains(note, "音频服务")
+}
+
+// WarnProcessLoopbackUnavailable 是「本机不支持进程级捕获」的源警告键。
+//
+// 用键而不是整句文案：人类可见文本必须由前端 i18n 渲染（NFR-01 / DOC-05）。
+const WarnProcessLoopbackUnavailable = "process-loopback-unavailable"
+
+// processLoopbackCapable 是 capabilities() 里 ProcessLoopback 的同一判据，
+// 供枚举 / 探测路径复用，避免两处各写一遍「探测通过 && 已实现」。
+func processLoopbackCapable() bool {
+	probed, _ := processLoopbackAvailable()
+	return probed && processLoopbackImplemented
+}
+
+// gateAppSource 把「本机不支持进程级捕获」这一事实**落到应用源上**。
+//
+// 为什么必须这么做（FR-02-4 的诚实声明原则）：能力探测为 false 时，
+// 若枚举仍把应用源列为 Present=true，用户会看到一堆可点的源、点下去必然
+// 在 Open 阶段失败 —— 这与 caps_windows.go 顶部「不要引导用户选一个必然
+// 失败的源」是同一条约束的另一半。能力缺失是**源本身不可用**，所以置
+// Present=false 并带上 Warn 键，让 UI 直接禁用并说明原因。
+//
+// 只处理应用源：设备回环与进程级能力无关，不能被这条门控牵连。
+func gateAppSource(src *contract.Source, capable bool) {
+	if src == nil || capable || src.Kind != contract.SourceKindApplication {
+		return
+	}
+	src.Present = false
+	src.Warn = WarnProcessLoopbackUnavailable
 }
 
 // currentWindowsBuild 读取 Windows Build 号（如 19045）。

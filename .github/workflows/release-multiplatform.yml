@@ -1,0 +1,413 @@
+name: Release (Multi-platform)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 本工作流负责 Linux 与 macOS 的产物构建，并可把两者发布到 GitHub Release。
+#
+# 与现有 .github/workflows/release.yml 的分工（重要，别搞混）：
+#   release.yml              —— Windows 专线：exe 签名 → NSIS/MSI/便携 zip → 签安装器 → 发布
+#                                （签名依赖 self-hosted Ubuntu 签名机 + osslsigncode，见其顶部注释）
+#   release-multiplatform.yml —— Linux（amd64/arm64）与 macOS（universal）构建与发布（本文件）
+#
+# 为什么不把三者塞进同一个文件：Windows 那条链有 5 段签名闸门（签 exe 必须先于打包），
+# 与 Linux/macOS 的「构建+静态校验」节奏完全不同。强行合并会让一个与平台无关的
+# 签名配置错误阻塞全部平台的发版。
+#
+# 触发为什么只有 workflow_dispatch（沿用 NarraFork 的做法）：
+#   release.yml 已经监听 tag push。如果本文件也监听 v* tag，一次打 tag 会同时跑两条
+#   发布流水线，产生重复 Release 或互相覆盖资产。改成纯手动触发后两条流水线可以并存，
+#   由人在确认 Linux 产物文件名之后再手动发布。
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: '创建（草稿）GitHub Release。首次运行请保持关闭，先确认 Linux 产物文件名'
+        type: boolean
+        default: false
+      version_hint:
+        description: '可选：期望的版本号（留空则以 build/config.yml 的 info.version 为准）'
+        type: string
+        default: ''
+      retention_days:
+        description: '构建产物在 Actions 中的保留天数'
+        type: string
+        default: '7'
+
+permissions:
+  contents: write
+
+concurrency:
+  # 与 release.yml 用不同的 group：两者互不阻塞，但仍保证同一条流水线不被并发覆盖。
+  # 不取消进行中的运行：构建 + 发布可重入性差，中途取消更容易留下半成品 Release。
+  group: release-multiplatform
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '24'
+  PNPM_VERSION: '11.5.0'
+  # 必须与 go.mod 的 wails/v3 版本一致（CI 里若用旧版 CLI 会生成不匹配的 bindings）
+  WAILS_VERSION: 'v3.1.0'
+
+jobs:
+  # ── 1) 预检：把版本号与构建矩阵收敛到一处 ────────────────────────────────────
+  #
+  # 沿用 NarraFork 的 preflight 结构：版本、矩阵、输入校验都在这里算一次，
+  # 下游 job 通过 needs.*.outputs 消费，避免每个 job 各自 sed 一遍 config.yml 后出现分歧。
+  preflight:
+    name: 预检（版本与构建矩阵）
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      linux_matrix: ${{ steps.meta.outputs.linux_matrix }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 解析版本号与构建矩阵
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # 版本唯一事实源：build/config.yml 的 info.version
+          # （NSIS 的 INFO_PRODUCTVERSION、ldflags 注入、各包文件名都从它派生）
+          ver="$(sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1)"
+          [ -n "$ver" ] || { echo "::error::无法从 build/config.yml 读取 info.version"; exit 1; }
+
+          # 手工触发时允许用输入值覆盖，但要求两者一致，防止发出
+          # 「文件名写 2.1.0、应用内显示 2.0.0」的产物
+          hint='${{ inputs.version_hint }}'
+          if [ -n "$hint" ] && [ "$hint" != "$ver" ]; then
+            echo "::error::输入的 version_hint=$hint 与 config.yml 的 info.version=$ver 不一致"
+            exit 1
+          fi
+
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "解析到版本号：$ver"
+
+          # Linux 构建矩阵。arm64 用 GitHub 托管的 ARM runner（ubuntu-24.04-arm）。
+          # 注意：ARM runner 目前对公开仓库开放；私有仓库需要相应套餐才可用，
+          # 若不可用，把 arm64 项删掉即可（其余逻辑无需改动）。
+          matrix='{"include":[
+            {"arch":"amd64","runner":"ubuntu-24.04"},
+            {"arch":"arm64","runner":"ubuntu-24.04-arm"}
+          ]}'
+          # 单行 JSON：GitHub 的 job outputs 不允许多行值
+          echo "linux_matrix=$(echo "$matrix" | tr -d '\n ')" >> "$GITHUB_OUTPUT"
+
+  # ── 2a) Linux 构建（amd64 / arm64 矩阵）─────────────────────────────────────
+  #
+  # 为什么必须原生 Linux runner：CGO（sherpa-onnx + GTK4）不允许跨平台编译（ADR-01）。
+  # 与 ci.yml 的 linux-compile 区别：那个是 CGO_ENABLED=0 + purego 的编译门禁，不出包。
+  build-linux:
+    name: 构建 Linux (${{ matrix.arch }})
+    needs: [preflight]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false          # 一个架构失败不影响另一个架构出包，便于对比排查
+      matrix: ${{ fromJSON(needs.preflight.outputs.linux_matrix) }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # GTK4 + WebKitGTK 6.0 是 Wails v3.1 的 Linux 默认栈（GTK3 旧栈已在 v3.1 移除）。
+      # 必须是 -dev 包：cgo 阶段靠 pkg-config 找头文件，只装运行时不编译不过。
+      - name: 安装 GTK4 / WebKitGTK 6.0 开发依赖
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            libgtk-4-dev libwebkitgtk-6.0-dev pkg-config build-essential file binutils
+
+      - name: 安装 Go（版本取自 go.mod）
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: 安装 wails3 CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: 安装 Node 并缓存 pnpm store
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      # bindings 必须先于前端构建：前端 build 会引用 frontend/bindings 下的 TS 类型
+      - name: 生成前端 bindings
+        run: wails3 task common:generate:bindings
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      # linux:package = build + create:appimage / create:deb / create:rpm / create:aur
+      # AUR 产物（*.pkg.tar.*）暂不发布，靠下面的上传 glob 排除。
+      - name: 构建并打包（AppImage / deb / rpm）
+        run: wails3 task linux:package ARCH=${{ matrix.arch }}
+
+      # 断言用 glob 而不是写死文件名：AppImage 与 nfpm 的实际输出名由 CLI 决定，
+      # 尚未在真机确认。这里只要求「每类至少一个」，并把真实名字打印进日志，
+      # 首次运行后据此把断言收紧成精确文件名。
+      - name: 断言产物齐全（glob，文件名待实测确认）
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -lh bin/ || true
+          for pat in 'bin/*.AppImage' 'bin/*.deb' 'bin/*.rpm'; do
+            # shellcheck disable=SC2086
+            compgen -G "$pat" > /dev/null || { echo "::error::缺少产物：$pat"; exit 1; }
+          done
+          echo "—— 实际产物文件名（首次运行请记录，用于收紧断言与 Release 说明）——"
+          ls -1 bin/*.AppImage bin/*.deb bin/*.rpm
+
+      # 静态校验：确认架构正确，并实测「sherpa-onnx 是否静态链接」这个待确认项。
+      # 若 NEEDED 里出现 sherpa/onnx，说明必须随包分发 .so，当前打包方式会缺库。
+      - name: 校验二进制架构与动态依赖
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "—— file ——"; file bin/mandaryn
+          case "${{ matrix.arch }}" in
+            amd64) want="x86-64";;
+            arm64) want="aarch64";;
+            *)     want="";;
+          esac
+          file bin/mandaryn | grep -qi "$want" || { echo "::error::二进制架构不是 ${{ matrix.arch }}（期望 $want）"; exit 1; }
+
+          echo "—— NEEDED 动态库清单 ——"
+          readelf -d bin/mandaryn | grep -E "NEEDED" || true
+          if readelf -d bin/mandaryn | grep -iE "sherpa|onnx"; then
+            echo "::error::二进制依赖 sherpa/onnx 动态库：需随包分发 .so（当前打包未包含），修好后再发版"
+            exit 1
+          fi
+          echo "符合预期：未出现 sherpa/onnx 的 NEEDED 条目（即静态链接，无需分发 .so）"
+
+      - name: 上传 Linux 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-linux-${{ matrix.arch }}
+          retention-days: ${{ inputs.retention_days }}
+          if-no-files-found: error
+          path: |
+            bin/*.AppImage
+            bin/*.deb
+            bin/*.rpm
+
+  # ── 2b) macOS 构建（universal dmg，未签名）──────────────────────────────────
+  #
+  # 本项目没有付费 Apple Developer ID：没有 Developer ID 证书、也不做公证。
+  # dmg 内的 .app 走 ad-hoc 签名（codesign -s -），Gatekeeper 会拦截，
+  # 用户需手动「右键 → 打开」。发布说明必须写清这一步。
+  build-macos:
+    name: 构建 macOS（universal dmg，未签名）
+    needs: [preflight]
+    runs-on: macos-14            # Apple Silicon；macOS SDK 可同时产 amd64 + arm64 切片
+    timeout-minutes: 90
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # Info.plist 里的版本是硬编码的（与 nfpm.yaml 同类）。这里断言它与 config.yml
+      # 一致，避免 drift 成「dmg 名 2.1.0、应用内 CFBundleShortVersionString 2.0.0」。
+      - name: 断言 Info.plist 版本与 config.yml 一致
+        shell: bash
+        run: |
+          set -euo pipefail
+          plist_ver="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/darwin/Info.plist)"
+          cfg_ver="${{ needs.preflight.outputs.version }}"
+          echo "Info.plist=$plist_ver config.yml=$cfg_ver"
+          [ "$plist_ver" = "$cfg_ver" ] || {
+            echo "::error::build/darwin/Info.plist ($plist_ver) 与 config.yml ($cfg_ver) 版本不一致"
+            exit 1
+          }
+
+      # 权限声明缺失会让 macOS 在首次取音频时直接终止进程（不是报错，是 kill）。
+      # 这里显式断言，避免有人把 Info.plist 精简掉后发出「装了但打不开麦克风」的 dmg。
+      - name: 断言音频权限声明存在
+        shell: bash
+        run: |
+          set -euo pipefail
+          for k in NSMicrophoneUsageDescription NSAudioCaptureUsageDescription; do
+            v="$(/usr/libexec/PlistBuddy -c "Print :$k" build/darwin/Info.plist 2>/dev/null || true)"
+            [ -n "$v" ] || { echo "::error::Info.plist 缺少 $k"; exit 1; }
+            echo "$k OK"
+          done
+
+      - name: 安装 Go（版本取自 go.mod）
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: 安装 wails3 CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS_VERSION }}
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: 安装 Node 并缓存 pnpm store
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: 生成前端 bindings
+        run: wails3 task common:generate:bindings
+
+      - name: 安装前端依赖
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      # 该任务内部顺序：build:universal → package:universal → codesign:bundle
+      # → create:dmg → 重命名为 mandaryn-<ver>-macos-universal.dmg。
+      # 刻意不用 darwin:package:dmg：它的 deps 会把 universal 二进制覆盖成单架构。
+      - name: 构建 universal 应用并打包 dmg
+        run: wails3 task darwin:package:dmg:universal
+
+      - name: 校验 universal 架构与签名状态
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg="bin/mandaryn-${{ needs.preflight.outputs.version }}-macos-universal.dmg"
+          test -f "$dmg" || { echo "::error::缺少产物 $dmg"; ls -lh bin/ || true; exit 1; }
+          ls -lh "$dmg"
+
+          # lipo 必须同时列出两个架构，否则不是 universal
+          archs="$(lipo -archs bin/mandaryn.app/Contents/MacOS/mandaryn)"
+          echo "lipo archs = $archs"
+          echo "$archs" | grep -q "x86_64"  || { echo "::error::缺少 x86_64 切片"; exit 1; }
+          echo "$archs" | grep -q "arm64"   || { echo "::error::缺少 arm64 切片"; exit 1; }
+
+          # 确认 ad-hoc 签名有效（这不是 Developer ID，Gatekeeper 仍会拦）
+          codesign --verify --deep --strict --verbose=2 bin/mandaryn.app
+          e="$(codesign -dv --verbose=2 bin/mandaryn.app 2>&1 | grep -E '^(Authority|Signature|TeamIdentifier)' || true)"
+          echo "—— 签名信息 ——"; echo "$e"
+          echo "::warning::本产物为 ad-hoc 签名且未公证；用户需「右键 → 打开」放行（详见 Release 说明）"
+
+          # 实测「sherpa 是否静态链接」：若出现 sherpa/onnx 的 dylib 依赖，
+          # 说明必须把 .dylib 放进 .app 的 Contents/Frameworks，当前行为会缺库。
+          echo "—— otool -L __"
+          otool -L bin/mandaryn.app/Contents/MacOS/mandaryn | sed -n '1,25p'
+          if otool -L bin/mandaryn.app/Contents/MacOS/mandaryn | grep -iE "sherpa|onnx"; then
+            echo "::error::二进制依赖 sherpa/onnx 动态库：需随 .app 分发 .dylib，修好后再发版"
+            exit 1
+          fi
+
+      - name: 上传 macOS 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-macos
+          retention-days: ${{ inputs.retention_days }}
+          if-no-files-found: error
+          path: bin/mandaryn-*-macos-universal.dmg
+
+  # ── 3) 汇总发布（默认关闭；确认产物文件名后再打开）──────────────────────────
+  #
+  # 沿用 NarraFork 的「发布由输入开关控制」模型：默认 publish=false，只上传 Actions 产物，
+  # 不创建 Release。等 Linux 各包文件名在首次运行中被确认、断言收紧之后，再手动勾选发布。
+  #
+  # 注意：本 job 只发布 Linux 与 macOS。Windows 三个产物由 release.yml 独立发布
+  # （它带 Authenticode 签名链路），两者不要在同一 tag 上同时手动触发。
+  publish:
+    name: 发布（Linux + macOS 草稿 Release）
+    needs: [preflight, build-linux, build-macos]
+    if: inputs.publish == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: 下载全部产物
+        uses: actions/download-artifact@v4
+        with:
+          pattern: artifacts-*
+          merge-multiple: true
+          path: dist
+
+      - name: 列出待发布文件
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -lhR dist
+
+      # 校验和必须在所有签名/打包之后生成（此处无后续签名步骤，故放在发布前一次算完）。
+      # 用 glob 而非写死名字，理由同前：Linux 文件名尚未确认。
+      - name: 生成 SHA256SUMS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          # 排除可能存在的 *.txt（例如上一轮遗留），只对二进制产物求哈希
+          mapfile -t files < <(ls -1 | grep -vE '\.txt$' || true)
+          [ "${#files[@]}" -gt 0 ] || { echo "::error::没有可发布的产物"; exit 1; }
+          sha256sum "${files[@]}" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+
+      # 创建草稿 Release：draft=true 意味着不会立刻对外可见，给人最后一次核对机会。
+      # fail_on_unmatched_files=false 是刻意的：Linux 文件名未确认，若写死会直接失败；
+      # 这里靠上一步的 glob 校验保证「确实有产物」。
+      - name: 创建草稿 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: Mandaryn ${{ needs.preflight.outputs.version }}（Linux / macOS）
+          tag_name: v${{ needs.preflight.outputs.version }}
+          fail_on_unmatched_files: false
+          body: |
+            ## 本 Release 包含 Linux 与 macOS 产物
+
+            Windows 的安装包（NSIS / MSI / 便携 zip）由独立的 Windows 流水线发布，
+            且带 Authenticode 签名，请勿与此处混用。
+
+            ### macOS（universal）
+
+            `mandaryn-${{ needs.preflight.outputs.version }}-macos-universal.dmg`
+            适用于 Intel 与 Apple Silicon 两种 Mac。
+
+            **本版本未使用 Apple Developer ID 签名、也未公证**，首次打开会被 Gatekeeper 拦截。
+            放行方式（任选其一）：
+
+            1. 在 Finder 中按住 Control 点击应用图标 → 选择「打开」→ 在弹窗中再点「打开」；
+            2. 或打开「系统设置 → 隐私与安全性」，在页面下方点「仍要打开」；
+            3. 或终端执行：`xattr -dr com.apple.quarantine /Applications/Mandaryn.app`
+
+            首次运行会请求「麦克风」与「系统音频」权限，用于捕获与转写；音频只保存在本机。
+
+            ### Linux
+
+            产物为 AppImage / deb / rpm（amd64 与 arm64 各一套）。
+            包名以实际文件名中的架构字段为准。
+            deb/rpm 依赖 GTK4 与 WebKitGTK 6.0（Ubuntu 24.04+ / Debian 13+ / Fedora 等较新发行版）。
+
+            AppImage 使用方式：
+
+            ```
+            chmod +x <下载的 .AppImage>
+            ./<下载的 .AppImage>
+            ```
+
+            ### 完整性校验
+
+            ```
+            sha256sum -c SHA256SUMS.txt
+            ```
+          files: |
+            dist/*.dmg
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+            dist/SHA256SUMS.txt

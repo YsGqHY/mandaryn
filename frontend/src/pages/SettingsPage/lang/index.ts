@@ -10,6 +10,7 @@ import { registerPrivacyLocales } from '../privacy/lang';
 import { registerHotkeysLocales } from '../hotkeys/lang';
 import { registerAudioLocales } from '../audio/lang';
 import { registerAboutLocales } from '../about/lang';
+import { registerProxyLocales } from '../proxy/lang';
 
 let registered = false;
 
@@ -29,5 +30,6 @@ export const registerSettingsPageLocales = (): void => {
   registerHotkeysLocales();
   registerAudioLocales();
   registerAboutLocales();
+  registerProxyLocales();
   registered = true;
 };

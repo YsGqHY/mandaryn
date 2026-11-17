@@ -81,6 +81,13 @@ func enumerate() ([]contract.Source, error) {
 		return nil, err
 	}
 
+	// 能力门控：本机探测不到进程级捕获时，应用源一律标为不可用。
+	// 放在 withCOM 之外做——探测要自己开 MTA 线程，不该占用枚举的 STA 线程。
+	capable := processLoopbackCapable()
+	for i := range appSources {
+		gateAppSource(&appSources[i], capable)
+	}
+
 	out := make([]contract.Source, 0, len(appSources)+len(deviceSources))
 	out = append(out, appSources...)
 	out = append(out, deviceSources...)
@@ -208,7 +215,7 @@ func probeApplication(exe string) (contract.Source, error) {
 		return contract.Source{}, err
 	}
 
-	return contract.Source{
+	src := contract.Source{
 		ID:          AppSourceID(exe),
 		Kind:        contract.SourceKindApplication,
 		DisplayName: exeDisplay,
@@ -217,10 +224,12 @@ func probeApplication(exe string) (contract.Source, error) {
 		Present:     true,
 		Producing:   producing,
 		ChildCount:  len(pids) - len(roots),
-	}, nil
+	}
+	// 与 Enumerate 同一门控：能力缺失时探测结论必须是「不可用」，
+	// 否则前端 2s 一次的探测会把枚举标灰的源重新点亮，形成两处矛盾结论。
+	gateAppSource(&src, processLoopbackCapable())
+	return src, nil
 }
-
-// —— 设备枚举 ——
 
 // —— 设备枚举 ——
 

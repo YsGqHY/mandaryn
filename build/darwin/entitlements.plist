@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Mandaryn 的 macOS entitlements（codesign 时以 entitlements 参数传入）。
+
+  说明：本仓库当前没有付费 Apple Developer ID，因此产出的 dmg 只能做 ad-hoc 签名，
+  Gatekeeper 会拦，用户需手动「右键 → 打开」放行。
+  entitlements 在当前阶段作用有限，落地它是为了让签名链路一次成型：
+  将来拿到 Developer ID 后，只需把 codesign 的 identity 换掉，不必再改签名结构。
+
+  com.apple.security.device.audio-input
+    麦克风/音频输入授权。仅在应用启用 App Sandbox 或 Hardened Runtime 时才被系统校验；
+    未启用时该键被忽略，不会造成副作用。
+    注意：真正决定「权限弹窗是否出现、弹窗显示什么文案」的是 Info.plist 里的
+    NSMicrophoneUsageDescription / NSAudioCaptureUsageDescription，与这里无关。
+
+  维护提示：XML 注释内不允许连续两个短横，否则 plist 解析器直接报
+  "not well-formed"。写命令行参数时请避开该写法。
+-->
+<plist version="1.0">
+	<dict>
+		<key>com.apple.security.device.audio-input</key>
+		<true/>
+	</dict>
+</plist>

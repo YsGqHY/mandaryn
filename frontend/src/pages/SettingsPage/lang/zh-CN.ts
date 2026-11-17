@@ -34,6 +34,10 @@ export const settingsPageZhCN: Messages = {
         label: '音频与录制',
         description: '边录边转开关（默认关闭）',
       },
+      proxy: {
+        label: '网络代理',
+        description: '模型下载与在线转写的代理配置',
+      },
       privacy: {
         label: '隐私边界',
         description: '离线开关、出站记录与诊断包',

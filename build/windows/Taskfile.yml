@@ -221,6 +221,11 @@ tasks:
             -RootDir "{{.ROOT_DIR}}" \
             -OutFile "{{.ROOT_DIR}}\{{.BIN_DIR}}\{{.APP_NAME}}-{{.VERSION}}-windows-{{.ARCH}}-portable.zip"
         platforms: [windows]
+    vars:
+      # 与 create:msi:package 同因（见该任务 vars 注释）：本任务被直接调用
+      # （CI 为不覆盖已签名 exe 而绕过 package）时拿不到 wails3 task 包装注入的
+      # ARCH，产物名会变成 mandaryn-<版本>-windows--portable.zip。
+      ARCH: '{{.ARCH | default ARCH}}'
 
   create:msi:package:
     summary: Creates an MSI package (WiX)
@@ -279,8 +284,8 @@ tasks:
             -d BinDir="{{.ROOT_DIR}}/{{.BIN_DIR}}" \
             -d RootDir="{{.ROOT_DIR}}" \
             -d BuildDir="{{.ROOT_DIR}}/build" \
-            -o "{{.ROOT_DIR}}/{{.BIN_DIR}}/{{.APP_NAME}}-{{.ARCH}}.msi"
-          echo "MSI 已生成：{{.BIN_DIR}}/{{.APP_NAME}}-{{.ARCH}}.msi（version={{.VERSION}}）"
+            -o "{{.ROOT_DIR}}/{{.BIN_DIR}}/{{.APP_NAME}}-{{.VERSION}}-windows-{{.ARCH}}.msi"
+          echo "MSI 已生成：{{.BIN_DIR}}/{{.APP_NAME}}-{{.VERSION}}-windows-{{.ARCH}}.msi（version={{.VERSION}}）"
         platforms: [windows]
     vars:
       # 必须显式声明：本任务被直接调用（CI 里为了不覆盖已签名 exe 而绕过 package）
@@ -387,5 +392,12 @@ tasks:
           INSTALL_SCOPE: '{{.INSTALL_SCOPE | default "machine"}}'
     vars:
       INSTALL_SCOPE: '{{.INSTALL_SCOPE | default "machine"}}'
+      ARCH: '{{.ARCH | default ARCH}}'
+      VERSION:
+        sh: |
+          sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1
     cmds:
-      - wails3 tool sign --input "build/windows/nsis/{{.APP_NAME}}-installer.exe" {{if .SIGN_CERTIFICATE}}--certificate "{{.SIGN_CERTIFICATE}}"{{end}} {{if .SIGN_THUMBPRINT}}--thumbprint "{{.SIGN_THUMBPRINT}}"{{end}} {{if .TIMESTAMP_SERVER}}--timestamp "{{.TIMESTAMP_SERVER}}"{{end}}
+      # 修正原有死引用：此处之前指向 build/windows/nsis/<app>-installer.exe，
+      # 但 create:nsis:installer 实际把产物写到 bin/（见 project.nsi 的 OutFile），
+      # 该路径从来不存在。CI 的签名走 build/linux/sign.sh，未受此影响。
+      - wails3 tool sign --input "{{.BIN_DIR}}/{{.APP_NAME}}-{{.VERSION}}-windows-{{.ARCH}}-installer.exe" {{if .SIGN_CERTIFICATE}}--certificate "{{.SIGN_CERTIFICATE}}"{{end}} {{if .SIGN_THUMBPRINT}}--thumbprint "{{.SIGN_THUMBPRINT}}"{{end}} {{if .TIMESTAMP_SERVER}}--timestamp "{{.TIMESTAMP_SERVER}}"{{end}}

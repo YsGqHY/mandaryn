@@ -264,9 +264,20 @@ func Run(assets embed.FS, trayIcon []byte) error {
 	// 而 recSvc 的构造依赖 recorder 依赖 transSvc……顺序上只能先留空、由下面 recSvc 就绪后回填。
 	// 不回填时判定为「无活跃会话」（等价于装配未完成，设置域各开关仍是可改的，不会卡死）。
 	var activeSessionFn func() bool
+	// proxyTestFn 同理晚绑定：API-9.4 的代理连通性测试必须复用模型域的
+	// Transport 与清单地址（测的就是下载链路），而 modelsSvc 在下面才构造。
+	var proxyTestFn func(ctx context.Context, p contract.ProxyConfig) (contract.TestResult, error)
 	settingsSvc = appsettings.New(holder, outRecorder, perfSvc.Usage,
 		appsettings.WithActiveSession(func() bool {
 			return activeSessionFn != nil && activeSessionFn()
+		}),
+		// 未接入前返回明确错误，而不是假装测通。
+		appsettings.WithProxyTester(func(ctx context.Context, p contract.ProxyConfig) (contract.TestResult, error) {
+			if proxyTestFn == nil {
+				return contract.TestResult{Category: "unknown"},
+					apierr.New(apierr.CodeInvalidArgument).WithDetail("模型域尚未就绪，无法测试代理连通性")
+			}
+			return proxyTestFn(ctx, p)
 		}),
 		// 设置页切换调试模式 → 立即落实到 logx（环境变量接管时以环境变量为准）。
 		appsettings.WithDebugMode(debugMode.SetUser))
@@ -283,6 +294,10 @@ func Run(assets embed.FS, trayIcon []byte) error {
 	// 模型仓库：清单 / 下载 / 校验 / 迁移。启动时清理残留（.staging、卡住的断点）。
 	modelsSvc := modelssvc.New(holder, resolver, outRecorder)
 	modelsSvc.Cleanup(context.Background())
+	// API-9.4 代理连通性测试：复用模型域（同一套 Transport + 同一份清单地址）。
+	proxyTestFn = func(ctx context.Context, p contract.ProxyConfig) (contract.TestResult, error) {
+		return modelsSvc.Manager().TestProxy(ctx, p)
+	}
 
 	// —— Wave D：隐私边界（FR-08）——
 	// Gate 为 nil 时由 privacysvc 自建（环境变量 MANDARYN_OFFLINE + preferences 用户开关），

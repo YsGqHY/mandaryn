@@ -2,6 +2,9 @@ export { PreferencesService } from './preferences/PreferencesService';
 export {
   AppSettingsService,
   type AppSettingsSnapshot,
+  type ProxyConfigDTO,
+  type ProxyTestResult,
+  type ProxyType,
 } from './appsettings/AppSettingsService';
 export {
   StorageService,

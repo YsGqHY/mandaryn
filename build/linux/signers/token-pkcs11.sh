@@ -64,12 +64,20 @@ sign_with_token_pkcs11() {
         if [ "$target" = "msi" ]; then
             args+=(-add-msi-dse)
         fi
-        # 两条令牌路线：优先 OpenSSL 3 provider（osslsigncode README 称首选），
-        # 否则退到老的 engine 路线。
+        # 两条令牌路线：配了 PKCS11_PROVIDER 走 OpenSSL 3 provider，否则走 engine。
+        #
+        # 参数名是 -pkcs11engine 而**不是** -engine/-login：osslsigncode 2.8（Ubuntu
+        # 24.04 源内版本）只认 -pkcs11engine，传 -engine/-login 会直接 "Unknown option"。
+        #
+        # 另注（实测，Ubuntu 24.04 + osslsigncode 2.8 + libengine-pkcs11-openssl
+        # 0.4.12 + OpenSSL 3.0）：engine 路线即使参数正确，真实签名阶段仍会
+        # segfault（exit 139），且 24.04 官方源没有 pkcs11 provider 包
+        # （ossl-modules 里只有 legacy.so）。因此 **Ubuntu 24.04 上请优先用 jsign
+        # 后端**（signers/jsign.sh，走 SunPKCS11，不依赖 OpenSSL engine）。
         if [ -n "${PKCS11_PROVIDER:-}" ]; then
             args+=(-provider "$PKCS11_PROVIDER")
         else
-            args+=(-engine "${PKCS11_ENGINE:-/usr/lib/x86_64-linux-gnu/engines-3/pkcs11.so}" -login)
+            args+=(-pkcs11engine "${PKCS11_ENGINE:-/usr/lib/x86_64-linux-gnu/engines-3/pkcs11.so}")
         fi
         osslsigncode "${args[@]}"
     }
@@ -81,6 +89,7 @@ sign_with_token_pkcs11() {
             do_sign "$TIMESTAMP_URL_BACKUP" || {
                 rm -f "$out"
                 printf 'token-pkcs11: 签名失败。常见原因：令牌未插/pcscd 未跑（pcsc_scan）、PIN 错（注意会锁卡）、URI 与 pkcs11-tool -O 的 label 不一致、时间戳不可达、缺中间 CA（加 -ac）\n' >&2
+                printf 'token-pkcs11: 若在 Ubuntu 24.04 上（osslsigncode 2.8），engine 路线可能 segfault，请改用 jsign 后端：CONFIG_BACKEND="jsign"\n' >&2
                 return 1
             }
         else

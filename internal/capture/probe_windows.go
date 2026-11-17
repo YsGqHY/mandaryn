@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/go-ole/go-ole"
@@ -408,12 +409,41 @@ func activateAudioClient(devicePath string, params *audioClientActivationParams)
 	return (*wca.IAudioClient)(h.activated), hrS_OK, nil
 }
 
-// —— 能力探测（包级缓存，进程内只探测一次）——
+// —— 能力探测（包级缓存：成功结果常驻，失败结果按节流重试）——
 
-var processLoopbackProbe struct {
-	once sync.Once
-	ok   bool
-	note string
+// probeRetryInterval 是探测失败后的最小重试间隔。
+//
+// 为什么需要重试而不是「一次定终身」：应用常随系统开机自启，此时 AudioSrv
+// 可能尚未就绪，首次探测会拿到瞬时失败。若不重试，一次瞬时故障就会被当成
+// 「本机不支持」并持续整个进程生命周期（现象：主页一直挂版本限制提示，
+// 必须重启应用才恢复）。取 10s：足够躲开开机阶段的瞬时不可用，又不会
+// 让真正不支持的机器频繁付激活开销。
+const probeRetryInterval = 10 * time.Second
+
+var (
+	processLoopbackMu    sync.Mutex
+	processLoopbackProbe struct {
+		// ok 一旦为 true 就常驻：支持是稳定事实，不需要反复确认。
+		ok bool
+		// note 最近一次失败的一句话诊断（成功时清空）。
+		note string
+		// at 最近一次探测的时刻，用于失败节流。
+		at time.Time
+	}
+)
+
+// probeFn 是实际执行探测的函数。默认是 probeProcessLoopback；
+// 用变量而非直接调用，是为了让「先失败、后成功」这条自愈路径可被单测驱动
+// （真机探测恒为 true，无法覆盖失败分支）。
+var probeFn = probeProcessLoopback
+
+// resetProbeCache 清空探测缓存（单测用；生产路径不需要）。
+func resetProbeCache() {
+	processLoopbackMu.Lock()
+	defer processLoopbackMu.Unlock()
+	processLoopbackProbe.ok = false
+	processLoopbackProbe.note = ""
+	processLoopbackProbe.at = time.Time{}
 }
 
 // processLoopbackAvailable 返回本机是否**实测**支持进程级回环，以及一句话诊断。
@@ -421,13 +451,36 @@ var processLoopbackProbe struct {
 // 用自身 PID 做探测目标：只要系统受理该激活类型并成功激活音频客户端即可判定可用，
 // 与「本进程当前有没有在放声音」无关（我们没有渲染流，本来就不出声）。
 //
-// 结果用 sync.Once 缓存：探测会真的走一次 COM 异步激活，没必要每次
-// GetCapabilities 都付这个开销；结论在进程生命周期内保持稳定（FR-02-4）。
+// 缓存策略（这里踩过一次坑，改过一版）：
+//   - **只缓存成功**。旧实现用 `sync.Once`，把失败也永久固化 —— 应用若在开机早期
+//     启动（音频服务 AudioSrv 尚未就绪），首次探测拿到的是瞬时失败，于是整个会话
+//     都被判成「本机不支持按应用分路」，主页一直挂着版本限制提示，直到重启应用。
+//   - 失败按 `probeRetryInterval` 节流重试。真正不支持的机器每次都会失败，
+//     结论仍然稳定为「不支持」（FR-02-4 的诚实声明不破），只是不会把瞬时故障
+//     当成永久结论。
+//
+// 探测会真的走一次 COM 异步激活，因此成功结果常驻、不做重复探测。
 func processLoopbackAvailable() (bool, string) {
-	processLoopbackProbe.once.Do(func() {
-		processLoopbackProbe.ok, processLoopbackProbe.note = probeProcessLoopback()
-	})
-	return processLoopbackProbe.ok, processLoopbackProbe.note
+	processLoopbackMu.Lock()
+	defer processLoopbackMu.Unlock()
+
+	if processLoopbackProbe.ok {
+		return true, ""
+	}
+	// 失败结果在节流窗口内直接复用，避免每次 GetCapabilities 都付一次激活开销。
+	if !processLoopbackProbe.at.IsZero() && time.Since(processLoopbackProbe.at) < probeRetryInterval {
+		return false, processLoopbackProbe.note
+	}
+
+	ok, note := probeFn()
+	processLoopbackProbe.ok = ok
+	processLoopbackProbe.note = note
+	processLoopbackProbe.at = time.Now()
+	if ok {
+		// 成功即有定论：清掉失败备注，后续直接命中缓存。
+		processLoopbackProbe.note = ""
+	}
+	return ok, note
 }
 
 // ProbeProcessLoopback 是 processLoopbackAvailable 的导出形式，
@@ -466,6 +519,12 @@ func probeProcessLoopback() (ok bool, note string) {
 			return
 		}
 		if hr != hrS_OK {
+			// 音频服务未运行是**瞬时**状态（开机早期、服务重启、被手动停掉），
+			// 不是「本机不支持」。文案要说清可恢复，否则用户会以为是系统版本问题。
+			if uint32(hr) == hrServiceNotRunning {
+				ok, note = false, "Windows 音频服务（AudioSrv）未就绪，稍后会自动重试"
+				return
+			}
 			ok, note = false, fmt.Sprintf("ActivateAudioInterfaceAsync 返回 HRESULT 0x%08X", hr)
 			return
 		}

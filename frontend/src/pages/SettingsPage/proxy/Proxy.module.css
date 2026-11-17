@@ -1,0 +1,148 @@
+/* 代理子页面样式（FR-05-5）。
+   颜色一律取 --fd-*（禁止硬编码十六进制），圆角与卡片沿用其它设置子页面。 */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--fd-divider);
+  border-radius: 8px;
+  background-color: var(--fd-bg-elevated);
+}
+
+/* —— 头行：图标 + 标题说明 —— */
+.headRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.headIcon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--fd-accent);
+}
+
+.headTexts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.headTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--fd-text-primary);
+}
+
+.headDesc {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-text-muted);
+}
+
+/* —— 字段 —— */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fd-text-primary);
+}
+
+.fieldHint {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--fd-text-muted);
+}
+
+.typeSwitch {
+  max-width: 420px;
+}
+
+/* 地址 + 端口并排：端口固定窄列，地址吃掉余量。 */
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.hostInput {
+  flex: 1;
+  min-width: 0;
+}
+
+.portInput {
+  width: 160px;
+  flex-shrink: 0;
+}
+
+.switchRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.actions {
+  padding-top: 2px;
+}
+
+.dirtyHint {
+  font-size: 11px;
+  color: var(--fd-text-muted);
+}
+
+/* —— 环境变量接管提示 —— */
+.envAlert {
+  border: 1px solid var(--fd-divider);
+  background-color: var(--fd-bg-hover);
+}
+
+.envText {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-text-muted);
+}
+
+/* —— 反馈区 —— */
+.feedback {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--fd-divider);
+  background-color: var(--fd-bg-hover);
+}
+
+.feedbackIcon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--fd-text-muted);
+}
+
+.feedback[data-tone='success'] .feedbackIcon {
+  color: var(--fd-accent);
+}
+
+.feedback[data-tone='warning'] .feedbackIcon,
+.feedback[data-tone='danger'] .feedbackIcon {
+  color: var(--fd-danger, var(--fd-text-primary));
+}
+
+.feedbackText {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-text-primary);
+}
+
+.feedbackNote {
+  color: var(--fd-text-muted);
+}

@@ -31,6 +31,10 @@ export const settingsPageEnUS: Messages = {
         label: 'Audio & recording',
         description: 'Live transcription switch (off by default)',
       },
+      proxy: {
+        label: 'Network proxy',
+        description: 'Proxy for model downloads and online transcription',
+      },
       privacy: {
         label: 'Privacy boundary',
         description: 'Offline switch, outbound ledger and diagnostics',

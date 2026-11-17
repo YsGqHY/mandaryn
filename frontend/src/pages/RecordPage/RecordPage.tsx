@@ -656,6 +656,13 @@ const SourceRow = ({ source, selected, locked, onSelect }: SourceRowProps) => {
     source.exeName !== '' ? source.exeName : source.deviceId !== '' ? source.deviceId : source.id;
   const disabled = !source.present || locked;
 
+  // warn 是后端给的非阻塞警告**键**（如 exclusive-mode / process-loopback-unavailable），
+  // 文案必须按键查 i18n；查不到就整条隐藏，而不是把所有键都渲染成「独占模式」——
+  // 那会把「本机不支持按应用分路」误报成音频独占问题，误导用户。
+  const warnKey = source.warn !== '' ? `record.sources.warn.${source.warn}` : '';
+  const warnTranslated = warnKey !== '' ? t(warnKey) : '';
+  const warnText = warnTranslated !== warnKey ? warnTranslated : '';
+
   return (
     <Tooltip
       label={locked ? t('record.sources.lockedTooltip') : t('record.sources.absentTooltip')}
@@ -701,9 +708,9 @@ const SourceRow = ({ source, selected, locked, onSelect }: SourceRowProps) => {
               {t('record.sources.producing')}
             </span>
           )}
-          {source.warn !== '' && (
+          {warnText !== '' && (
             <span className={classes.chip} data-tone="warning">
-              {t('record.sources.warnExclusive')}
+              {warnText}
             </span>
           )}
           <span className={classes.chip} data-tone={source.present ? 'success' : 'muted'}>

@@ -110,6 +110,27 @@ printf '%s\n' "$*" >> "$STUB_LOG.jsign"
 exit 0
 STUB
 chmod +x "$STUB_DIR/jsign"
+
+# —— 假 systemctl / pcsc_scan：让 --preflight 的「pcscd / 读卡器」两项与宿主无关 ——
+# 不桩这两项时，预检结果取决于测试机自身环境：在「装了 pcsc-tools 但没有读卡器」
+# 的 Linux 上，virt 预检必然报「读卡器 ✗」→ rc=1，第 7 组会假失败；而在没装
+# pcsc-tools 的机器（Windows/Git Bash）上该项是「?」，反而通过。同一份脚本在
+# 不同机器上结论不同，断言就失去了意义。
+cat > "$STUB_DIR/systemctl" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+  *is-enabled*) echo enabled; exit 0 ;;
+  *)            exit 0 ;;
+esac
+STUB
+chmod +x "$STUB_DIR/systemctl"
+
+cat > "$STUB_DIR/pcsc_scan" <<'STUB'
+#!/usr/bin/env bash
+echo "Card found"
+STUB
+chmod +x "$STUB_DIR/pcsc_scan"
+
 export STUB_LOG="$WORK/calls.log"
 
 # —— 假 PIN 与假待签名文件 ——
@@ -148,12 +169,12 @@ last_call() { tail -1 "$STUB_LOG"; }
 call_count() { wc -l < "$STUB_LOG" | tr -d ' '; }
 
 # ─────────────────────────────────────────────────────────────
-echo "1) exe + engine 路线（默认，未配 PKCS11_PROVIDER）"
+echo "1) exe + engine 路线（默认，未配 PKCS11_PROVIDER；指针名 -pkcs11engine）"
 cfg="$(mkcfg)"; in="$(mkinput a.exe)"; reset_log
 "$SIGN" --target exe --input "$in" --config "$cfg" --skip-verify >/dev/null 2>&1
 call="$(last_call)"
 check "调用了 osslsigncode sign"        '[[ "$call" == sign* ]]'
-check "带 -engine 与 -login"            '[[ "$call" == *"-engine"* && "$call" == *"-login"* ]]'
+check "带 -pkcs11engine（osslsigncode 2.8 没有 -login）" '[[ "$call" == *"-pkcs11engine"* && "$call" != *"-login"* ]]'
 check "未带 -provider"                  '[[ "$call" != *"-provider"* ]]'
 check "带 -pkcs11module"                '[[ "$call" == *"-pkcs11module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so"* ]]'
 check "证书 URI 带 type=cert"           '[[ "$call" == *"pkcs11:token=TestToken;object=Code%20Signing;type=cert"* ]]'
@@ -178,7 +199,7 @@ in="$(mkinput b.exe)"; reset_log
 "$SIGN" --target exe --input "$in" --config "$cfg" --skip-verify >/dev/null 2>&1
 call="$(last_call)"
 check "带 -provider"                    '[[ "$call" == *"-provider /usr/lib/x86_64-linux-gnu/ossl-modules/pkcs11prov.so"* ]]'
-check "不带 -engine / -login"           '[[ "$call" != *"-engine"* && "$call" != *"-login"* ]]'
+check "不带 -pkcs11engine / -login"      '[[ "$call" != *"-pkcs11engine"* && "$call" != *"-login"* ]]'
 
 # ─────────────────────────────────────────────────────────────
 echo "4) 首次失败 → 用备用时间戳重试"

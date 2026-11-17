@@ -95,7 +95,10 @@ export const recordPageEnUS: Messages = {
       unavailableBanner: 'The selected source "{{name}}" is no longer available. Please choose another one.',
       unknownUnavailable: 'The previously selected source is no longer available. Please choose another one.',
       loadFailed: 'Failed to load audio sources.',
-      warnExclusive: 'This source may be held in exclusive mode, so no audio will be heard while recording.',
+      warn: {
+        'exclusive-mode': 'This source may be held in exclusive mode, so no audio will be heard while recording.',
+        'process-loopback-unavailable': 'This machine cannot capture per-application audio, so this source cannot be recorded. Use a device source instead (it includes audio from all applications).',
+      },
       lockedHint: 'The audio source cannot be changed while recording.',
       lockedTooltip: 'Recording is in progress and the audio source is bound to the current session. Stop recording to change it.',
     },

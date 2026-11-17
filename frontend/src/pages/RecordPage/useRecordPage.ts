@@ -26,6 +26,13 @@ import {
 // 电平事件的 UI 节流：后端 10Hz 推送，页面只需约 4Hz 刷新（避免每帧重渲染）。
 const LEVEL_UI_INTERVAL_MS = 250;
 
+// 能力为 false 时的重校验间隔。
+//
+// 取值 10s：与后端探测失败的重试节流（probeRetryInterval = 10s）对齐 ——
+// 比它更快只会命中后端节流缓存、拿回同一个失败结论；更慢则让「瞬时不可用已
+// 恢复」的界面滞后太久。只在结论为「不支持」时启用，支持后立即停表。
+const CAPABILITY_RECHECK_MS = 10_000;
+
 // RecordingMetrics 是「电平 + 节拍」两个事件的展示聚合（纯 UI 组装，不是契约类型）。
 export interface RecordingMetrics {
   // Peak 峰值 0–1：用于削波指示。
@@ -237,6 +244,28 @@ export const useRecordPage = (): UseRecordPageResult => {
     });
     return cancel;
   }, []);
+
+  // 能力为 false 时定期重校验，让瞬时不可用自愈后自动撤下「版本限制」提示。
+  //
+  // 为什么需要它：进程级捕获的探测可能因为开机早期音频服务未就绪而瞬时失败。
+  // 后端已改为「失败可重试、成功常驻」，但如果前端只在挂载时读一次 caps，
+  // 界面就会一直停在失败结论上 —— 提示与实际能力不符，正是这条 rendering bug
+  // 的表现。这里只在**当前结论为不支持**时才轮询（支持是稳定事实，不必打扰），
+  // 一旦转为支持即停止。
+  useEffect(() => {
+    if (caps === null || caps.processLoopback) return;
+    const timer = window.setInterval(() => {
+      void CaptureService.getCapabilities()
+        .then((next) => {
+          if (!aliveRef.current) return;
+          setCaps(next);
+        })
+        .catch(() => {
+          // 读失败保持现有结论，不把界面打回 loading。
+        });
+    }, CAPABILITY_RECHECK_MS);
+    return () => window.clearInterval(timer);
+  }, [caps]);
 
   // 订阅录制状态机（EV-01）。会话切换时清掉上一段的电平 / 节拍，避免串台。
   useEffect(() => {

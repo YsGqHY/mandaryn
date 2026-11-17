@@ -8,7 +8,7 @@
   WiX v6 要求文案写在 Value 属性里，元素内文本已废弃（WIX0400）。
 
   **为什么当前只有中文 UI（待改双语，见 ROADMAP）**
-  ---------------------------------------------------------
+  =========================================================
   `wix build` 一次只能产出**一种** culture；官方文档给出的多语言做法是用
   MSBuild 的 `.wixproj`（`<Cultures>en-US;zh-CN</Cultures>`）。本项目当前是
   Taskfile 驱动的 `wix build`，因此暂时只能单语。
@@ -21,8 +21,8 @@
   - 多传 `-culture` 会让主语言变成第一项（实测变 1033 英文）且**丢失本文件的中文串**。
 
   改双语（.wixproj）在本机受阻：dotnet SDK 的 NuGet 组件损坏
-  （任何 `dotnet restore` 都报 `Value cannot be null (path1)`，连 `dotnet --info`
-  都抛 TypeInitializationException），无法验证。需先修好 dotnet 环境再切。
+  （任何 `dotnet restore` 都报 `Value cannot be null (path1)`，连 `dotnet` 的 `info`
+  子命令都抛 TypeInitializationException），无法验证。需先修好 dotnet 环境再切。
 -->
 <WixLocalization Culture="zh-cn" Codepage="936" xmlns="http://wixtoolset.org/schemas/v4/wxl">
 

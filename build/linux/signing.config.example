@@ -9,8 +9,16 @@
 # 本文件是 shell 变量赋值文件（KEY=value，不带 export），由 sign.sh source。
 
 # —— 后端选择 ——
-# token-pkcs11（osslsigncode，首选）| jsign（令牌兼容性更好）
-CONFIG_BACKEND="token-pkcs11"
+# jsign（默认）| token-pkcs11（osslsigncode 直连 PKCS#11）
+#
+# 为什么默认 jsign：在 Ubuntu 24.04 + osslsigncode 2.8 上实测，token-pkcs11 的
+# PKCS#11 路线不可用 ——
+#   ① 参数是 -pkcs11engine，没有 -login（传了会 "Unknown option"）；
+#   ② 参数改对后，sign 阶段仍稳定 segfault（exit 139）；
+#   ③ 官方源不提供 pkcs11 provider（/usr/lib/*/ossl-modules 只有 legacy.so）。
+# jsign 走 SunPKCS11，不依赖 OpenSSL engine，同一块令牌可直接签 exe/installer/MSI，
+# 并自带时间戳重试。用 USB 令牌时也建议先用 jsign，除非你在别的发行版上验证过 osslsigncode。
+CONFIG_BACKEND="jsign"
 
 # —— 令牌（token-pkcs11 用）——
 # 库路径：dpkg -L opensc | grep pkcs11    或    find / -name 'libeTPkcs11.so'
@@ -23,14 +31,19 @@ PKCS11_PROVIDER=""
 # engine 路径（可选，仅 engine 路线用）
 PKCS11_ENGINE="/usr/lib/x86_64-linux-gnu/engines-3/pkcs11.so"
 
-# —— jsign（jsign 后端用）——
-# SunPKCS11 配置文件路径，内容形如：
+# —— jsign（采用默认后端时必填）——
+# SunPKCS11 配置文件路径（内容不在本文件里），内容形如：
 #   name = MandarynCS
-#   library = /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so
-#   slot = 0
+#   library = /usr/lib/x86_64-linux-gnu/softhsm/libsofthsm2.so
+#   slotListIndex = 0
+#
+# ⚠ 用 slotListIndex，**不要**写 slot：SoftHSM 的 slot ID 是随机值（实测如
+#   0x6917cd1a），写 `slot = 0` 会让 jsign 报 CKR_SLOT_ID_INVALID。
+# ⚠ 该配置文件含令牌库路径但不含 PIN，权限 644 即可；PIN 仍只放 PIN_FILE。
 JSIGN_KEYSTORE=""
 JSIGN_ALIAS="Code Signing"
-# 厂商专用 storetype（可选）：ETOKEN / OPENSC / YUBIKEY / PIV
+# 厂商专用 storetype（可选）：PKCS11（默认）/ ETOKEN / OPENSC / YUBIKEY / PIV
+# 云签名时改用：TRUSTEDSIGNING（Azure）/ DIGICERTONE / ESIGNER / SIGNPATH
 JSIGN_STORETYPE=""
 
 # —— PIN（两种后端共用，不要写明文 PIN 到这个文件）——
@@ -42,3 +55,8 @@ TIMESTAMP_URL_BACKUP="http://timestamp.sectigo.com"
 
 # —— 签名描述（可选，显示在文件属性里）——
 SIGN_DESCRIPTION="Mandaryn"
+
+# —— 验签根证书（自签 / 内部 CA 时必填）——
+# sign.sh 签完会立刻 osslsigncode verify。公信证书留空；用内部 CA 时必须指向
+# 根证书，否则链不受信任 → verify 失败 → 看起来像"签名没生效"。
+VERIFY_CAFILE=""
