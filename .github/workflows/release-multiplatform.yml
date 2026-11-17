@@ -226,7 +226,13 @@ jobs:
   build-macos:
     name: 构建 macOS（universal dmg，未签名）
     needs: [preflight]
-    runs-on: macos-14            # Apple Silicon；macOS SDK 可同时产 amd64 + arm64 切片
+    # 标签选择依据（勿随手改回 macos-14）：
+    #   GitHub 官方 runner-images 文档：所有 macOS 14 镜像已于 2026-11-02 从
+    #   GitHub Actions 退役（Intel 版仅在 Azure DevOps 延至 2026-11-23）。
+    #   使用已退役标签时，job 永远匹配不到 runner —— 表现为 started 后 1 秒内
+    #   cancelled、runner_id=0、零步骤执行，且没有任何报错日志。
+    #   macos-15 为 arm64 GA 镜像，可用 macOS SDK 交叉产出 amd64 切片供 lipo 合并。
+    runs-on: macos-15
     timeout-minutes: 90
     steps:
       - name: 检出代码
