@@ -3,6 +3,12 @@ name: Release (Multi-platform)
 # ─────────────────────────────────────────────────────────────────────────────
 # 本工作流负责 Windows / Linux / macOS 三平台的产物构建，并可发布到 GitHub Release。
 #
+# 发布形态：publish=true 时创建 **prerelease（预览版）+ 非草稿** 的 Release ——
+# 立即可见，但不会占据 Latest（GitHub 只把非 prerelease 的最新一个算作 Latest）。
+#
+# job 依赖：三个 build-* 互不依赖、也不依赖任何前置节点；publish 只依赖产物本身。
+# 详见 jobs 段开头的说明 —— 之前那个「所有 job 都必须先等 preflight」的门禁已解除。
+#
 # 与现有 .github/workflows/release.yml 的分工（重要，别搞混）：
 #   release.yml              —— Windows **带代码签名**的正式发版线：exe 签名 → NSIS/MSI/便携
 #                                zip → 签安装器 → 发布（依赖 self-hosted Ubuntu 签名机 +
@@ -16,15 +22,14 @@ name: Release (Multi-platform)
 #
 # 触发为什么只有 workflow_dispatch（沿用 NarraFork 的做法）：
 #   release.yml 已经监听 tag push。如果本文件也监听 v* tag，一次打 tag 会同时跑两条
-#   发布流水线，产生重复 Release 或互相覆盖资产。改成纯手动触发后两条流水线可以并存，
-#   由人在确认 Linux 产物文件名之后再手动发布。
+#   发布流水线，产生重复 Release 或互相覆盖资产。改成纯手动触发后两条流水线可以并存。
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
   workflow_dispatch:
     inputs:
       publish:
-        description: '创建（草稿）GitHub Release。首次运行请保持关闭，先确认 Linux 产物文件名'
+        description: '发布 GitHub Release（prerelease 预览版，非草稿；立即对外可见）'
         type: boolean
         default: false
       version_hint:
@@ -52,68 +57,64 @@ env:
   WAILS_VERSION: 'v3.1.0'
 
 jobs:
-  # ── 1) 预检：把版本号与构建矩阵收敛到一处 ────────────────────────────────────
+  # ── 关于 job 依赖：刻意不设 preflight 前置节点 ───────────────────────────────
   #
-  # 沿用 NarraFork 的 preflight 结构：版本、矩阵、输入校验都在这里算一次，
-  # 下游 job 通过 needs.*.outputs 消费，避免每个 job 各自 sed 一遍 config.yml 后出现分歧。
-  preflight:
-    name: 预检（版本与构建矩阵）
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    outputs:
-      version: ${{ steps.meta.outputs.version }}
-      linux_matrix: ${{ steps.meta.outputs.linux_matrix }}
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
+  # 原先有一个 preflight job，专门算版本号与 Linux 构建矩阵，其余 job 全部 needs 它。
+  # 这带来一个实际代价：任何一个平台想单独重跑（GitHub 的「Re-run this job」），
+  # 都会连带把预检一起重跑，而预检本质只是读一次 build/config.yml —— 没有任何构建
+  # 或打包环节必须先等它完成。因此改成：
+  #
+  #   · 版本号：每个 job 自己用一步「解析版本号」读 config.yml（唯一事实源不变），
+  #     输出走 steps.meta.outputs，不再跨 job 传递；
+  #   · Linux 矩阵：直接内联在 strategy.matrix 里，不再由 fromJSON 拼装；
+  #   · 三个 build-* job 因此**互不依赖、也不依赖任何上游 job**，可独立执行/重跑；
+  #   · publish 只保留「产物」这一层真实依赖（见该 job 注释），不再经过预检。
+  #
+  # 「独立执行」的边界要说清：Windows 的 create:* 打包任务仍然要求 bin/ 里已有 exe 与
+  # 运行时 DLL（Taskfile 的 precondition），这是打包工具本身的物理前提，不是流水线的
+  # 顺序约束 —— 所以在同一 job 内，构建步骤仍必须早于打包步骤。
 
-      - name: 解析版本号与构建矩阵
-        id: meta
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # 版本唯一事实源：build/config.yml 的 info.version
-          # （NSIS 的 INFO_PRODUCTVERSION、ldflags 注入、各包文件名都从它派生）
-          ver="$(sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1)"
-          [ -n "$ver" ] || { echo "::error::无法从 build/config.yml 读取 info.version"; exit 1; }
-
-          # 手工触发时允许用输入值覆盖，但要求两者一致，防止发出
-          # 「文件名写 2.1.0、应用内显示 2.0.0」的产物
-          hint='${{ inputs.version_hint }}'
-          if [ -n "$hint" ] && [ "$hint" != "$ver" ]; then
-            echo "::error::输入的 version_hint=$hint 与 config.yml 的 info.version=$ver 不一致"
-            exit 1
-          fi
-
-          echo "version=$ver" >> "$GITHUB_OUTPUT"
-          echo "解析到版本号：$ver"
-
-          # Linux 构建矩阵。arm64 用 GitHub 托管的 ARM runner（ubuntu-24.04-arm）。
-          # 注意：ARM runner 目前对公开仓库开放；私有仓库需要相应套餐才可用，
-          # 若不可用，把 arm64 项删掉即可（其余逻辑无需改动）。
-          matrix='{"include":[
-            {"arch":"amd64","runner":"ubuntu-24.04"},
-            {"arch":"arm64","runner":"ubuntu-24.04-arm"}
-          ]}'
-          # 单行 JSON：GitHub 的 job outputs 不允许多行值
-          echo "linux_matrix=$(echo "$matrix" | tr -d '\n ')" >> "$GITHUB_OUTPUT"
-
-  # ── 2a) Linux 构建（amd64 / arm64 矩阵）─────────────────────────────────────
+  # ── 1) Linux 构建（amd64 / arm64 矩阵）─────────────────────────────────────
   #
   # 为什么必须原生 Linux runner：CGO（sherpa-onnx + GTK4）不允许跨平台编译（ADR-01）。
   # 与 ci.yml 的 linux-compile 区别：那个是 CGO_ENABLED=0 + purego 的编译门禁，不出包。
   build-linux:
     name: 构建 Linux (${{ matrix.arch }})
-    needs: [preflight]
+    # 无 needs：本 job 自己解析版本号，不依赖任何上游 job
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:
       fail-fast: false          # 一个架构失败不影响另一个架构出包，便于对比排查
-      matrix: ${{ fromJSON(needs.preflight.outputs.linux_matrix) }}
+      # 矩阵内联在这里（原先是 preflight 算好后 fromJSON 传下来的）。
+      # arm64 用 GitHub 托管的 ARM runner（ubuntu-24.04-arm）；ARM runner 目前对公开仓库
+      # 开放，私有仓库需要相应套餐。若不可用，删掉 arm64 这一项即可，其余逻辑无需改动。
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+
+      # 版本唯一事实源：build/config.yml 的 info.version（NSIS 的 INFO_PRODUCTVERSION、
+      # ldflags 注入、各包文件名都从它派生）。每个 job 各读一次，是这次解除 preflight
+      # 门禁的代价 —— 换来的是任一 job 可独立重跑。提示值仍要求与之相等。
+      - name: 解析版本号
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1)"
+          [ -n "$ver" ] || { echo "::error::无法从 build/config.yml 读取 info.version"; exit 1; }
+          hint='${{ inputs.version_hint }}'
+          if [ -n "$hint" ] && [ "$hint" != "$ver" ]; then
+            echo "::error::输入的 version_hint=$hint 与 config.yml 的 info.version=$ver 不一致"
+            exit 1
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "解析到版本号：$ver"
 
       # GTK4 + WebKitGTK 6.0 是 Wails v3.1 的 Linux 默认栈（GTK3 旧栈已在 v3.1 移除）。
       # 必须是 -dev 包：cgo 阶段靠 pkg-config 找头文件，只装运行时不编译不过。
@@ -170,7 +171,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ver="${{ needs.preflight.outputs.version }}"
+          ver="${{ steps.meta.outputs.version }}"
           arch="${{ matrix.arch }}"
           cd bin
           case "$arch" in
@@ -216,9 +217,9 @@ jobs:
           retention-days: ${{ inputs.retention_days }}
           if-no-files-found: error
           path: |
-            bin/mandaryn-${{ needs.preflight.outputs.version }}-linux-${{ matrix.arch }}.AppImage
-            bin/mandaryn-${{ needs.preflight.outputs.version }}-linux-${{ matrix.arch }}.deb
-            bin/mandaryn-${{ needs.preflight.outputs.version }}-linux-${{ matrix.arch }}.rpm
+            bin/mandaryn-${{ steps.meta.outputs.version }}-linux-${{ matrix.arch }}.AppImage
+            bin/mandaryn-${{ steps.meta.outputs.version }}-linux-${{ matrix.arch }}.deb
+            bin/mandaryn-${{ steps.meta.outputs.version }}-linux-${{ matrix.arch }}.rpm
 
   # ── 2b) macOS 构建（universal dmg，未签名）──────────────────────────────────
   #
@@ -227,7 +228,7 @@ jobs:
   # 用户需手动「右键 → 打开」。发布说明必须写清这一步。
   build-macos:
     name: 构建 macOS（universal dmg，未签名）
-    needs: [preflight]
+    # 无 needs：本 job 自己解析版本号，不依赖任何上游 job
     # 标签选择依据（勿随手改回 macos-14）：
     #   GitHub 官方 runner-images 文档：所有 macOS 14 镜像已于 2026-11-02 从
     #   GitHub Actions 退役（Intel 版仅在 Azure DevOps 延至 2026-11-23）。
@@ -240,6 +241,21 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
+      - name: 解析版本号
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1)"
+          [ -n "$ver" ] || { echo "::error::无法从 build/config.yml 读取 info.version"; exit 1; }
+          hint='${{ inputs.version_hint }}'
+          if [ -n "$hint" ] && [ "$hint" != "$ver" ]; then
+            echo "::error::输入的 version_hint=$hint 与 config.yml 的 info.version=$ver 不一致"
+            exit 1
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "解析到版本号：$ver"
+
       # Info.plist 里的版本是硬编码的（与 nfpm.yaml 同类）。这里断言它与 config.yml
       # 一致，避免 drift 成「dmg 名 2.1.0、应用内 CFBundleShortVersionString 2.0.0」。
       - name: 断言 Info.plist 版本与 config.yml 一致
@@ -247,7 +263,7 @@ jobs:
         run: |
           set -euo pipefail
           plist_ver="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/darwin/Info.plist)"
-          cfg_ver="${{ needs.preflight.outputs.version }}"
+          cfg_ver="${{ steps.meta.outputs.version }}"
           echo "Info.plist=$plist_ver config.yml=$cfg_ver"
           [ "$plist_ver" = "$cfg_ver" ] || {
             echo "::error::build/darwin/Info.plist ($plist_ver) 与 config.yml ($cfg_ver) 版本不一致"
@@ -305,7 +321,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          dmg="bin/mandaryn-${{ needs.preflight.outputs.version }}-macos-universal.dmg"
+          dmg="bin/mandaryn-${{ steps.meta.outputs.version }}-macos-universal.dmg"
           test -f "$dmg" || { echo "::error::缺少产物 $dmg"; ls -lh bin/ || true; exit 1; }
           ls -lh "$dmg"
 
@@ -348,12 +364,27 @@ jobs:
   # 跨平台编译（ADR-01），Windows 产物必须在 Windows 上构建。
   build-windows:
     name: 构建 Windows（NSIS / MSI / 便携 zip，未签名）
-    needs: [preflight]
+    # 无 needs：本 job 自己解析版本号，不依赖任何上游 job
     runs-on: windows-latest
     timeout-minutes: 90
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
+
+      - name: 解析版本号
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1)"
+          [ -n "$ver" ] || { echo "::error::无法从 build/config.yml 读取 info.version"; exit 1; }
+          hint='${{ inputs.version_hint }}'
+          if [ -n "$hint" ] && [ "$hint" != "$ver" ]; then
+            echo "::error::输入的 version_hint=$hint 与 config.yml 的 info.version=$ver 不一致"
+            exit 1
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "解析到版本号：$ver"
 
       # 必须早于 setup-go：CGO 依赖 msys2 提供的 gcc / windres。
       # path-type: inherit 让 gcc 真正进 PATH，否则 go build 直接报 gcc not found。
@@ -456,7 +487,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ver="${{ needs.preflight.outputs.version }}"
+          ver="${{ steps.meta.outputs.version }}"
           for f in "mandaryn-${ver}-windows-amd64-installer.exe" \
                    "mandaryn-${ver}-windows-amd64.msi" \
                    "mandaryn-${ver}-windows-amd64-portable.zip"; do
@@ -481,21 +512,28 @@ jobs:
           retention-days: ${{ inputs.retention_days }}
           if-no-files-found: error
           path: |
-            bin/mandaryn-${{ needs.preflight.outputs.version }}-windows-amd64-installer.exe
-            bin/mandaryn-${{ needs.preflight.outputs.version }}-windows-amd64.msi
-            bin/mandaryn-${{ needs.preflight.outputs.version }}-windows-amd64-portable.zip
+            bin/mandaryn-${{ steps.meta.outputs.version }}-windows-amd64-installer.exe
+            bin/mandaryn-${{ steps.meta.outputs.version }}-windows-amd64.msi
+            bin/mandaryn-${{ steps.meta.outputs.version }}-windows-amd64-portable.zip
 
-  # ── 3) 汇总发布（默认关闭；确认产物文件名后再打开）──────────────────────────
+  # ── 2) 汇总发布（publish 开关控制）───────────────────────────────────────────
   #
-  # 沿用 NarraFork 的「发布由输入开关控制」模型：默认 publish=false，只上传 Actions 产物，
-  # 不创建 Release。等产物文件名被确认、断言收紧之后，再手动勾选发布。
+  # 「发布由输入开关控制」：默认 publish=false，只上传 Actions 产物、不创建 Release。
   #
-  # 本 job 发布三平台全部产物。Windows 产物是**未签名**的；需要带 Authenticode 签名的
-  # 正式 Windows 包时走 release.yml（同一 tag 不要两条同时触发）。
+  # 依赖关系收紧到**只剩产物本身**：needs 里去掉 preflight 后，本 job 只需等三个
+  # build-* 产出 artifacts-*。版本号自己解析，不再经过任何中间节点。
+  #
+  # if 用 !cancelled() 而不是省略：needs 只要有一个失败，GitHub 默认会跳过本 job。
+  # 这里要的是「即使某个平台挂了也照样进 publish，然后把缺失的平台指名道姓报出来」，
+  # 而不是静默地什么都不做 —— 缺哪个平台由下面「断言三平台产物齐全」负责失败。
+  #
+  # 本 job 发布三平台全部产物，发布形态为 **prerelease（预览版）+ 非草稿**（立即可见）。
+  # Windows 产物是**未签名**的；需要带 Authenticode 签名的正式 Windows 包时走
+  # release.yml（同一 tag 不要两条同时触发）。
   publish:
-    name: 发布（Windows + Linux + macOS 草稿 Release）
-    needs: [preflight, build-linux, build-macos, build-windows]
-    if: inputs.publish == true
+    name: 发布（Windows + Linux + macOS 预览版 Release）
+    needs: [build-linux, build-macos, build-windows]
+    if: inputs.publish == true && !cancelled()
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -503,18 +541,61 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
+      - name: 解析版本号
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(sed -n 's/^  version: "\([^"]*\)".*/\1/p' build/config.yml | head -1)"
+          [ -n "$ver" ] || { echo "::error::无法从 build/config.yml 读取 info.version"; exit 1; }
+          hint='${{ inputs.version_hint }}'
+          if [ -n "$hint" ] && [ "$hint" != "$ver" ]; then
+            echo "::error::输入的 version_hint=$hint 与 config.yml 的 info.version=$ver 不一致"
+            exit 1
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "解析到版本号：$ver"
+
       - name: 下载全部产物
         uses: actions/download-artifact@v4
         with:
           pattern: artifacts-*
           merge-multiple: true
           path: dist
+          # download-artifact@v4 没有 if-no-files-found（那是 upload-artifact 的输入）。
+          # 用 pattern 匹配时，没有命中不会让这一步失败 —— 正好交给下面的
+          # 「断言三平台产物齐全」给出带平台名的明确报错。
 
       - name: 列出待发布文件
         shell: bash
         run: |
           set -euo pipefail
           ls -lhR dist
+
+      # 三平台齐全性断言。放在这里（而不是靠 needs 的默认跳过）是为了在
+      # !cancelled() 放行后仍然拒绝发布缺胳膊少腿的 Release —— 正文里写着三个平台
+      # 的下载链接，只发一半比不发更糟。
+      - name: 断言三平台产物齐全
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="${{ steps.meta.outputs.version }}"
+          missing=0
+          require() {
+            if [ ! -f "dist/$1" ]; then echo "::error::缺少产物 dist/$1（对应 job $2 未成功？）"; missing=1; fi
+          }
+          require "mandaryn-${ver}-windows-amd64-installer.exe"  build-windows
+          require "mandaryn-${ver}-windows-amd64.msi"            build-windows
+          require "mandaryn-${ver}-windows-amd64-portable.zip"   build-windows
+          require "mandaryn-${ver}-macos-universal.dmg"          build-macos
+          require "mandaryn-${ver}-linux-amd64.AppImage"         build-linux
+          require "mandaryn-${ver}-linux-amd64.deb"              build-linux
+          require "mandaryn-${ver}-linux-amd64.rpm"              build-linux
+          require "mandaryn-${ver}-linux-arm64.AppImage"         build-linux
+          require "mandaryn-${ver}-linux-arm64.deb"              build-linux
+          require "mandaryn-${ver}-linux-arm64.rpm"              build-linux
+          [ "$missing" = "0" ] || { echo "::error::产物不全，拒绝发布"; exit 1; }
+          echo "三平台 10 个产物齐全"
 
       # 校验和必须在所有签名/打包之后生成（此处无后续签名步骤，故放在发布前一次算完）。
       # 用 glob 而非写死名字，理由同前：Linux 文件名尚未确认。
@@ -543,7 +624,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ver="${{ needs.preflight.outputs.version }}"
+          ver="${{ steps.meta.outputs.version }}"
           mkdir -p notes
           f="docs/release-notes/v${ver}.md"
           if [ -f "$f" ]; then
@@ -571,15 +652,17 @@ jobs:
           fi
           wc -c notes/body.md
 
-      # 创建草稿 Release：draft=true 意味着不会立刻对外可见，给人最后一次核对机会。
+      # 发布形态：draft=false + prerelease=true ⇒ 立刻对外可见，但按「预览版」标记，
+      # 不会出现在 Latest（GitHub 只把非 prerelease 的最新一个算作 Latest）。
       # fail_on_unmatched_files=false 是刻意的：某一平台的文件名将来若有调整，
-      # 不该让已经构建好的其余平台产物发不出去；「确实有产物」由上一步的 SHA256SUMS 保证。
-      - name: 创建草稿 Release
+      # 不该让已经构建好的其余平台产物发不出去；产物齐全性由上面的断言负责。
+      - name: 创建/更新 Release（预览版，非草稿）
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
-          name: Mandaryn v${{ needs.preflight.outputs.version }}
-          tag_name: v${{ needs.preflight.outputs.version }}
+          draft: false
+          prerelease: true
+          name: Mandaryn v${{ steps.meta.outputs.version }}
+          tag_name: v${{ steps.meta.outputs.version }}
           fail_on_unmatched_files: false
           body_path: notes/body.md
           files: |
@@ -592,22 +675,22 @@ jobs:
             dist/*.rpm
             dist/SHA256SUMS.txt
 
-      # 上一步在「已存在草稿」时会走「创建」分支，把 name / body 丢给 GitHub 却**不生效**，
-      # 于是重跑时正文一直停留在第一次创建时的那份（实测 run 44061412051：11 个资产全部
-      # 正确更新，而 name 与 body 仍是旧文案）。根因是草稿状态下按 tag 查 Release 会 404：
+      # 上一步在「tag 上已有草稿」时会走「创建」分支，把 name / body 丢给 GitHub 却
+      # **不生效**，于是正文停留在第一次创建时的那份（实测 run 44061412051：11 个资产
+      # 全部正确更新，name 与 body 仍是旧文案）。根因是草稿状态下按 tag 查 Release 会 404：
       #   GET /repos/{owner}/{repo}/releases/tags/v2.1.0 → 404（即使该草稿确实存在）
-      # 所以这里补一步「按 tag_name 从列表里找到它，再显式 PATCH」。
       #
-      # 为什么用列表而不是 /releases/tags/<tag>：后者对草稿不可靠（上面那条 404）。
-      # 只在找到时 PATCH：首次运行时上一步已经建好了带正确正文的草稿，无需重复写。
-      - name: 校正草稿 Release 的名称与正文（草稿状态按 tag 查不到，只能按列表找）
+      # 所以这里补一步「按 tag_name 从列表里找到它，再显式 PATCH」。列表接口对草稿是可靠的。
+      # 同时把 draft=false / prerelease=true 一起写死：即使上一轮遗留的是草稿，
+      # 这一步也会把它转成「预览版已发布」，避免出现「流水线绿了但 Release 还是草稿」。
+      - name: 校正 Release 的名称、正文与发布形态
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          ver="${{ needs.preflight.outputs.version }}"
+          ver="${{ steps.meta.outputs.version }}"
           tag="v${ver}"
 
           rid="$(gh api "repos/${REPO}/releases?per_page=100" \
@@ -620,6 +703,8 @@ jobs:
           gh api -X PATCH "repos/${REPO}/releases/${rid}" \
             -F name="Mandaryn ${tag}" \
             -F tag_name="${tag}" \
+            -F draft=false \
+            -F prerelease=true \
             -F body=@"notes/body.md" >/dev/null
 
           # 断言真的写进去了：本条流水线发布的每个平台都应在正文里出现自己的文件名。
