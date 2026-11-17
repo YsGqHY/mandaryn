@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"vip.oberon.mandaryn/internal/contract"
 	"vip.oberon.mandaryn/internal/utils/procx"
 )
 
@@ -38,6 +39,32 @@ const (
 //
 // 注意 go test 的工作目录是**包目录**，所以项目素材要向上逐级查找
 // （internal/capture → internal → 仓库根），否则会静默落到系统素材上。
+// requirePlaybackDevice 断言本机存在音频输出设备，否则跳过。
+//
+// 为什么需要这一条：进程级回环捕获在**没有音频设备**的机器上依然「可用」
+// （`processLoopbackAvailable()` 返回 true），但播放器不会产生任何可被路由的音量，
+// 抓到的必然是静音流 —— 峰值 0.0000x 远低于 `ProducingPeakThreshold`。
+// 这类机器包括 GitHub 托管的 Windows runner（无音频端点），CI 上曾因此长期报红：
+//
+//	--- FAIL: TestE2ECapturedContentMatchesSource
+//	    峰值 0.000031 不高于有声阈值 0.001000 —— 抓到的是静音流
+//
+// 这不是代码缺陷，而是环境不具备条件 —— 与本文件开头「环境不具备条件时跳过，
+// 不制造假失败」的约定一致。
+func requirePlaybackDevice(t *testing.T) {
+	t.Helper()
+	srcs, err := Enumerate()
+	if err != nil {
+		t.Skipf("枚举音频源失败（大概率本机没有音频设备）：%v", err)
+	}
+	for _, s := range srcs {
+		if s.Kind == contract.SourceKindDevice && s.Present {
+			return
+		}
+	}
+	t.Skip("本机没有可用的音频输出设备（如 CI runner）：无法产生可捕获的声音，跳过真实音频 E2E")
+}
+
 func resolveE2EWav(t *testing.T) string {
 	t.Helper()
 
@@ -281,6 +308,7 @@ func TestE2ECapturedContentMatchesSource(t *testing.T) {
 	if ok, note := processLoopbackAvailable(); !ok {
 		t.Skipf("本机不支持进程回环：%s", note)
 	}
+	requirePlaybackDevice(t)
 	wavPath := resolveE2EWav(t)
 
 	src, err := readWavMono(wavPath)
@@ -346,6 +374,7 @@ func TestE2EAppRestartReconnect(t *testing.T) {
 	if ok, note := processLoopbackAvailable(); !ok {
 		t.Skipf("本机不支持进程回环：%s", note)
 	}
+	requirePlaybackDevice(t)
 	wavPath := resolveE2EWav(t)
 	srcID := AppSourceID(e2ePlayerExe)
 
