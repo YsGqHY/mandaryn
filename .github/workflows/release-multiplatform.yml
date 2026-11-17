@@ -591,3 +591,45 @@ jobs:
             dist/*.deb
             dist/*.rpm
             dist/SHA256SUMS.txt
+
+      # 上一步在「已存在草稿」时会走「创建」分支，把 name / body 丢给 GitHub 却**不生效**，
+      # 于是重跑时正文一直停留在第一次创建时的那份（实测 run 44061412051：11 个资产全部
+      # 正确更新，而 name 与 body 仍是旧文案）。根因是草稿状态下按 tag 查 Release 会 404：
+      #   GET /repos/{owner}/{repo}/releases/tags/v2.1.0 → 404（即使该草稿确实存在）
+      # 所以这里补一步「按 tag_name 从列表里找到它，再显式 PATCH」。
+      #
+      # 为什么用列表而不是 /releases/tags/<tag>：后者对草稿不可靠（上面那条 404）。
+      # 只在找到时 PATCH：首次运行时上一步已经建好了带正确正文的草稿，无需重复写。
+      - name: 校正草稿 Release 的名称与正文（草稿状态按 tag 查不到，只能按列表找）
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          ver="${{ needs.preflight.outputs.version }}"
+          tag="v${ver}"
+
+          rid="$(gh api "repos/${REPO}/releases?per_page=100" \
+                   --jq "[.[] | select(.tag_name == \"${tag}\")][0].id // empty")"
+          if [ -z "$rid" ]; then
+            echo "::error::未找到 tag=${tag} 的 Release，无法校正正文"
+            exit 1
+          fi
+
+          gh api -X PATCH "repos/${REPO}/releases/${rid}" \
+            -F name="Mandaryn ${tag}" \
+            -F tag_name="${tag}" \
+            -F body=@"notes/body.md" >/dev/null
+
+          # 断言真的写进去了：本条流水线发布的每个平台都应在正文里出现自己的文件名。
+          # 用语义标记而不是字符数：`wc -m` 在 LC_ALL=C 下会退化成按字节计数，
+          # 与 API 返回的字符数对不上，只会造出一条假失败。
+          body="$(gh api "repos/${REPO}/releases/${rid}" --jq '.body')"
+          for need in "## 快速下载" "mandaryn-${ver}-windows-amd64-installer.exe" \
+                      "mandaryn-${ver}-macos-universal.dmg" "mandaryn-${ver}-linux-amd64.AppImage"; do
+            case "$body" in
+              *"$need"*) echo "正文包含：$need" ;;
+              *) echo "::error::Release 正文缺少「$need」"; exit 1 ;;
+            esac
+          done
