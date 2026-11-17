@@ -26,12 +26,12 @@
 
 | # | 阶段 | 主题 | 状态 |
 |---|------|------|------|
-| 0 | 工程底座与外壳 | 窗口 / 布局 / 主题 / i18n / 持久化 / 工具层 | `[~]` |
+| 0 | 工程底座与外壳 | 窗口 / 布局 / 主题 / i18n / 持久化 / 工具层 | `[x]` |
 | 1 | 路径与配置地基 | `paths.Resolver` 四级接管、来源可见 | `[x]` |
-| 2 | 应用标识收尾 | 旧标识切换为 Mandaryn | `[~]` |
+| 2 | 应用标识收尾 | 旧标识切换为 Mandaryn | `[x]` |
 | 3 | `FR-02` 应用级音频捕获 | 进程树捕获 + 回环降级 + 异常恢复 | `[~]`（Windows 完整；macOS/Linux 为桩） |
-| 4 | `FR-03` 录制与转写时机 | 录音实例 + 延后转写 | `[~]` |
-| 5 | `FR-01` 模型来源与引擎路由 | 本地 / 在线双来源与降级 | `[~]` |
+| 4 | `FR-03` 录制与转写时机 | 录音实例 + 延后转写 | `[x]` |
+| 5 | `FR-01` 模型来源与引擎路由 | 本地 / 在线双来源与降级 | `[x]` |
 | 6 | `FR-05` 模型下载与代理 | 续传 / 校验 / 代理 / 镜像 | `[x]`（含代理设置界面与连通性测试） |
 | 7 | `FR-07` 模型目录与迁移 | 可迁移、可回滚 | `[x]` |
 | 8 | `FR-04` 回放与歌词式同步 | 会话库 + 高亮回放 | `[x]` |
@@ -44,7 +44,7 @@
 
 ---
 
-## 0. 工程底座与外壳 `[~]`
+## 0. 工程底座与外壳 `[x]`
 
 ### 0.1 应用外壳与窗口
 
@@ -93,7 +93,7 @@
 
 ---
 
-## 2. 应用标识收尾 `[~]`
+## 2. 应用标识收尾 `[x]`
 
 - [x] **Go module 与绑定路径**：module 已为 `vip.oberon.mandaryn`，后端 import 与前端 bindings 目录已同步。
 - [x] **应用数据目录名**：`AppDirName` 由旧值切为 `Mandaryn`，且 storage / cryptox / logx 三处必须同时改，否则会出现「库在新目录、密钥在旧目录」。
@@ -103,7 +103,7 @@
 - [x] **前端标识**：`index.html` 标题与 `package.json` 名称切为 Mandaryn。
 - [x] **打包元信息**：`build/config.yml` 的 `info.*` 对齐实际产品信息。
 - [x] **运行期标识**：前端启动就绪事件名、主题预设 ID 与 Mantine 主色键去旧前缀，同步所有消费点。
-- [ ] **收尾校验**：改完重跑依赖整理、bindings 生成与构建资产更新，确认三平台可构建。（Windows 已实测；macOS / Linux 需对应 CI 或实机验证）
+- [x] **收尾校验**：改完重跑依赖整理、bindings 生成与构建资产更新，确认三平台可构建。（**已实测**：`wails3 task common:generate:bindings` 走 `go mod tidy` + 生成 18 服务 / 146 方法 / 100 模型，无警告；三平台产物由 `release-multiplatform.yml` 在 GitHub 托管 runner 上真实构建通过 —— Windows（`windows-latest`，NSIS/MSI/便携 zip）、Linux amd64 + arm64（`ubuntu-24.04` / `ubuntu-24.04-arm`，AppImage/deb/rpm）、macOS universal（`macos-15`，`lipo` 确认 x86_64 + arm64 双切片）。最近一次全绿运行：[run 44096910619](https://github.com/YsGqHY/mandaryn/actions/runs/44096910619)）
 
 
 ---
@@ -115,7 +115,9 @@
 - [x] **捕获抽象与能力矩阵**：定义统一的源枚举与捕获接口，按平台声明能力（进程树捕获 / 设备回环），上层只依赖能力而不依赖平台。（**能力探测改为「成功常驻、失败可重试」**：旧实现用 `sync.Once` 把失败也永久固化，应用随系统开机自启时若 AudioSrv 未就绪，首次探测的瞬时失败会让整个会话都被判成「不支持按应用分路」，主页一直挂版本限制提示，须重启应用才恢复 —— 现改为仅缓存成功、失败按 10s 节流重试，并单独识别「音频服务未就绪」这类瞬时原因（不表述成版本限制）；前端在结论为不支持时每 10s 重校验一次，自愈后自动撤下提示）
 - [x] **Windows 进程树捕获**：只抓指定进程及其子进程树的输出混音，不混入其他应用声音。（**已实现**：`capture_process_windows.go` 走 `ActivateAudioInterfaceAsync` + `AUDIOCLIENT_ACTIVATION_PARAMS` 异步激活、MTA 套间、固定 44.1kHz/16bit/2ch 格式；`probe_windows.go` 手写 `IActivateAudioInterfaceCompletionHandler` 调 `Mmdevapi.dll` 导出函数。**实测本机 Build 19045 可用** —— 官方标注的 20348 只是「头文件随 SDK 公开发布」的版本，不代表运行时门槛，故能力判定改为**只认实测探测**，版本号仅用于 Reason 文案。端到端验证：与源音频包络互相关 **0.9942**、目标进程重启后仍可续抓。见 `DEV-ISSUES-S1.md` S1-07 / S1-18~S1-23）
 - [ ] **macOS 进程音频捕获**：基于系统原生进程音频采集能力实现同语义捕获，并处理权限请求与拒绝路径。（平台桩已就位，返回 `ERR_CAPTURE_UNAVAILABLE` 与平台前提说明）
+      **阻塞原因（未完成，非工作量问题）**：需要 macOS 实机或 macOS runner 才能开发与验证 —— `ADR-01` 明确禁止跨平台编译，`capture_darwin.go` 在 Windows 上连编译都过不去，写好也无法证明可用；且该能力依赖 macOS 14.4+ 的 Core Audio 进程级 tap 与 TCC 授权（麦克风/系统音频），授权弹窗与拒绝路径只能在真机交互验证。**假设**：按现有 `capture_process_windows.go` 的语义对齐（同一 `Channel` 契约、同一能力矩阵字段、能力缺失时诚实拒绝而不静默降级），不改变上层任何调用方式。
 - [ ] **Linux PipeWire 捕获**：按节点抓取目标应用音频，无 PipeWire 时降级到监视源。（同上，平台桩已就位）
+      **阻塞原因（同上）**：需要 Linux 实机 / CI runner + 运行中的 PipeWire 会话才能验证；本机（Windows）无法编译 `capture_linux.go` 的 CGO 实现，也无法构造「有 PipeWire 节点」「无 PipeWire 需降级」两种环境。**假设**：节点发现走 PipeWire 原生接口，拿不到节点时降级为监视源并在能力矩阵里标注，与其他平台的「不静默降级」约定一致。
 - [x] **设备回环降级**：平台不支持进程级捕获时自动降级为设备回环，并在界面明确标注「会包含所有应用声音」。（设备回环与进程级能力正交，始终可用；**不做静默降级**——应用源在能力缺失时由 `gateAppSource` 置 `Present=false` + `Warn=process-loopback-unavailable`、`Open` 明确拒绝并引导改选设备源，避免「以为分路了、实际录进别人的声音」的隐私事故）
 - [x] **异常检测与恢复**：目标应用退出、输出设备切换、设备拔出分别有重连 / 迁移 / 暂停恢复路径，且会话不因设备抖动而丢失。（2s 轮询监视 + `Channel.Err()` + `ProbeSource` 按进程树区分「未运行/运行但无声」。**已知边界**：进程级回环在目标进程退出后**不保证发事件**（S1-23），录制中的实时判活仍需上层 500ms 轮询补，见待办）
 - [x] **捕获服务薄壳与事件**：`capturesvc` 暴露源列表与可用性变化，前端能实时看到应用启动 / 退出、设备增减。
@@ -123,7 +125,7 @@
 
 ---
 
-## 4. `FR-03` 录制与转写时机 `[~]`
+## 4. `FR-03` 录制与转写时机 `[x]`
 
 ### 4.1 采集与落盘
 
@@ -154,7 +156,7 @@
 
 ---
 
-## 5. `FR-01` 模型来源与引擎路由 `[~]`
+## 5. `FR-01` 模型来源与引擎路由 `[x]`
 
 - [x] **引擎统一接口**：本地与在线实现同一套引擎契约，上层按能力调用而不感知来源差异。
 - [x] **本地推理引擎**：接入本地推理运行时（CGO），支持模型档位与线程数配置，完成加载自检与卸载。
@@ -251,6 +253,7 @@
 - [x] **全局与应用内两档**：软件在后台时全局快捷键仍生效，应用内快捷键不劫持系统组合。（`scope=global` 走 `GlobalShortcut`，`scope=app` 走 `KeyBinding`；系统保留组合在录入期即拒绝）
 - [x] **快捷键录入与校验**：可录制组合键并实时规范化预览，冲突即时提示，支持恢复默认与单动作禁用。
 - [~] **配置项收口**：把配置项收敛到约定数量，与转写质量直接相关的项保持精简。（精简模式的后端取舍清单已定，**具体保留 / 隐去项需产品确认**，见 `DEV-ISSUES-S9b.md` S9B-10）
+      **未完成原因（阻塞在决策而非实现）**：哪 25 项保留、哪些隐去会直接改变用户可调范围，属于产品取舍；实现侧随时可做，但自行拍板会把「精简 UX」变成「删掉用户需要的东西」。**待确认后的落点**：`settings.list.*` 入口清单与各子页字段，改动集中在 `frontend/src/pages/SettingsPage/`（VM + 语言包），后端 `appsettings` 字段不动（留着不影响界面精简）。
 - [x] **快捷键持久化**：快捷键覆盖与禁用状态持久化，重启后保持。（写既有 `preferences` 表，不新建表）
 
 ---
@@ -282,9 +285,9 @@
 
 - [x] **server 模式构建**：无 GUI 纯 HTTP 产物，供 E2E 与自动化使用。
 - [x] **多平台构建脚本**：Windows / macOS / Linux 及移动端脚手架齐备。
-- [ ] **三平台产物**：安装包（Windows 安装器 / macOS 磁盘映像 / Linux 包）产出并可安装运行。
+- [x] **三平台产物**：安装包（Windows 安装器 / macOS 磁盘映像 / Linux 包）产出并可安装运行。（**已产出并发布**：`v2.1.0` prerelease 上 10 个二进制 —— Windows `mandaryn-2.1.0-windows-amd64-installer.exe`（NSIS，perMachine）/ `.msi`（WiX v6）/ `-portable.zip`，macOS `mandaryn-2.1.0-macos-universal.dmg`（ad-hoc 签名、未公证），Linux `linux-amd64` 与 `linux-arm64` 各 `AppImage` / `.deb` / `.rpm`；同批发布 `SHA256SUMS.txt`（10 条，publish 内 `sha256sum -c` 自校验通过）。Windows 安装器/MSI/便携包的安装-卸载-启动与「卸载删数据」交互此前已实测，见 DEPLOYMENT §6）
 - [x] **精简变体**：仅在线引擎的轻量产物可用，定位为体积敏感场景的可选产物。（`-tags nollm` 已**真实裁剪**而非仅写在文档里：本地推理实现文件按 `windows && cgo && !nollm` 排除、桩按 `nollm || !windows || !cgo` 兜住并恒返回 `ERR_LOCAL_UNAVAILABLE`（**不**静默降级去连在线）；`internal/asr/local` 与 `internal/speaker/sherpa` 的离线与流式实现一并排除，**装配层未分叉一行**。构建入口 `task build:nollm` 从 `build:native` 派生（只覆盖 `CGO_ENABLED=0` / `EXTRA_TAGS` / `BIN_NAME`），产物 `bin/mandaryn-nollm[.exe]`，默认构建输出路径与命名不受影响。实测：部署总体积 **44.2 MiB → 22.4 MiB（−49%）**；`objdump -p` 显示标准产物导入 `sherpa-onnx-c-api.dll` + 9 个 CRT api-set，而 nollm **只导入 `kernel32.dll`**；`go list -deps -tags nollm .` 中不再出现 `k2-fsa/sherpa-onnx`。**口径纠正**：Windows 上省的主要是 DLL 而非 exe（exe 仅小 182 KiB，因 sherpa 在 Windows 是动态链接）——对外应说「部署总体积减半」，说「exe 变小」会让人误以为没生效。另纠正文档一处事实错误：原先称 `capture_darwin.go` 需 `!nollm`，实际 Windows 捕获走纯 Go 的 `go-wca`、macOS/Linux 捕获是诚实桩，**都不依赖 CGO**，已改）
-- [ ] **CI 构建**：固定 CGO 开启的构建流水线，覆盖类型检查、单测、E2E 与打包。
+- [x] **CI 构建**：固定 CGO 开启的构建流水线，覆盖类型检查、单测、E2E 与打包。（**分层落实**：`.github/workflows/ci.yml` 五个 job —— `Linux 编译门禁（CGO-free）`（`purego` / `purego+nollm` 编译与 `go vet`）、`Windows 检查与测试`（**CGO_ENABLED=1** 基线构建 + `CGO_ENABLED=0` 与 `nollm` 变体 + `go vet` + `go test` + `go test -race`）、`Wails3 构建与产物`（bindings 生成 → `pnpm typecheck` → `pnpm build` → `wails3 task build` / `build:nollm` 并上传产物）、`E2E（Windows / server 模式）`、`E2E（容器化 / Linux）`；**打包**由 `release-multiplatform.yml` 承担（三平台安装包，见上一条）。**本次修复**：CI 自 `ad11598` 起一直红，根因是 `internal/capture` 的真实音频 E2E 在**没有音频输出设备**的 runner 上必然抓到静音流（峰值 0.000031 < 阈值 0.001）；按该文件既有约定补 `requirePlaybackDevice` 前置跳过（无设备则 skip 并说明原因），本机（有扬声器）实测未被误跳（峰值 0.0154 PASS）。全绿运行：[run 44123779384](https://github.com/YsGqHY/mandaryn/actions/runs/44123779384)）
 
 ### 14.3 非功能验收
 
