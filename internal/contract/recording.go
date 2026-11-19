@@ -5,14 +5,14 @@ package contract
 // 注意：`degraded`（ST-07）**不是**独立状态而是正交标记，因此这里不列为常量值，
 // 只保留 ST-01~ST-06、ST-08、ST-09 八个真正可存的 state 值。
 const (
-	StateIdle       = "idle"       // ST-01
-	StatePreparing  = "preparing"  // ST-02
-	StateRecording  = "recording"  // ST-03
-	StatePaused     = "paused"     // ST-04
-	StateFinalizing = "finalizing" // ST-05
-	StateCompleted  = "completed"  // ST-06
+	StateIdle        = "idle"        // ST-01
+	StatePreparing   = "preparing"   // ST-02
+	StateRecording   = "recording"   // ST-03
+	StatePaused      = "paused"      // ST-04
+	StateFinalizing  = "finalizing"  // ST-05
+	StateCompleted   = "completed"   // ST-06
 	StateInterrupted = "interrupted" // ST-08
-	StateFailed     = "failed"     // ST-09
+	StateFailed      = "failed"      // ST-09
 )
 
 // 性能档位（DOC-02 §4.7.3）。
@@ -45,6 +45,9 @@ type RecordingState struct {
 	State string `json:"state"`
 	// SessionID 当前会话 ID（idle 时为空）。
 	SessionID string `json:"sessionId"`
+	// AudioFormat is the format fixed at the current session's start.
+	AudioFormat    string `json:"audioFormat"`
+	NoAudioPersist bool   `json:"noAudioPersist"`
 	// Degraded ST-07 正交标记：模型来源是否回退过。
 	Degraded bool `json:"degraded"`
 	// DegradeNote 降级原因（已脱敏）。
@@ -114,7 +117,7 @@ type ErrorDTO struct {
 
 // RecordingLevel 采集电平（EV-02，10Hz 节流）。
 type RecordingLevel struct {
-	SessionID string  `json:"sessionId"`
+	SessionID string `json:"sessionId"`
 	// RMS 均方根电平 0–1。
 	RMS float32 `json:"rms"`
 	// Peak 峰值 0–1。

@@ -385,6 +385,7 @@ func toContract(row storage.Session) contract.Session {
 		SegmentCount:         row.SegmentCount,
 		SpeakerCount:         row.SpeakerCount,
 		AudioPath:            row.AudioPath,
+		HasAudio:             strings.TrimSpace(row.AudioPath) != "",
 		SizeBytes:            row.SizeBytes,
 		TranscriptionStatus:  row.TranscriptionStatus,
 		TranscribeProgressMs: row.TranscribeProgressMs,

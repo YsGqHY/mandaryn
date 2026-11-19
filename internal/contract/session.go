@@ -132,6 +132,7 @@ type Session struct {
 	SpeakerCount int   `json:"speakerCount"`
 	// AudioPath 相对 dataRoot。
 	AudioPath string `json:"audioPath"`
+	HasAudio  bool   `json:"hasAudio"`
 	SizeBytes int64  `json:"sizeBytes"`
 	// TranscriptionStatus none|queued|running|done|failed（独立轴）。
 	TranscriptionStatus string `json:"transcriptionStatus"`

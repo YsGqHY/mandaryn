@@ -8,17 +8,17 @@ package contract
 //   - 凭据仅用于 Proxy-Authorization，禁止写入 URL query 或日志。
 type ProxyConfig struct {
 	// Type none | http | https | socks5。
-	Type string `json:"type"`
-	Host string `json:"host"`
-	Port int `json:"port"`
+	Type     string `json:"type"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
 	Username string `json:"username"`
 	// Password 读取时掩码；写入时传明文（后端加密落库）。
 	Password string `json:"password"`
 	// UseForDownload 默认 true。
 	UseForDownload bool `json:"useForDownload"`
 	// UseForOnline 默认 true。
-	UseForOnline bool `json:"useForOnline"`
-	NoProxy string `json:"noProxy"`
+	UseForOnline bool   `json:"useForOnline"`
+	NoProxy      string `json:"noProxy"`
 }
 
 // 代理类型取值。
@@ -29,6 +29,21 @@ const (
 	ProxySOCKS5 = "socks5"
 )
 
+const (
+	SensitivityStandard = "standard"
+	SensitivityNoisy    = "noisy"
+	VadPresetStandardV1 = "standard-v1"
+	VadPresetNoisyV1    = "noisy-v1"
+)
+
+// SnapshotVadPreset fixes the profile revision for the lifetime of the recording.
+func SnapshotVadPreset(sensitivity string) string {
+	if sensitivity == SensitivityNoisy {
+		return VadPresetNoisyV1
+	}
+	return VadPresetStandardV1
+}
+
 // AudioSettings 音频与录制设置（API-9.6，UX-SPEC §3.2）。
 type AudioSettings struct {
 	// SaveFormat wav | flac。
@@ -36,7 +51,7 @@ type AudioSettings struct {
 	// Sensitivity standard | noisy（替代旧 VAD 阈值滑块，UX-SPEC §4）。
 	Sensitivity string `json:"sensitivity"`
 	// MaxSpeakers 0 = auto，2–8。
-	MaxSpeakers int `json:"maxSpeakers"`
+	MaxSpeakers     int    `json:"maxSpeakers"`
 	DefaultSourceID string `json:"defaultSourceId"`
 	// AutoName 会话自动命名。
 	AutoName bool `json:"autoName"`
@@ -59,7 +74,7 @@ type OutboundEntry struct {
 	// Kind model-download | online-asr。
 	Kind string `json:"kind"`
 	// Audio 是否包含音频。
-	Audio bool `json:"audio"`
+	Audio bool  `json:"audio"`
 	Bytes int64 `json:"bytes"`
 	// Result ok 或错误码。
 	Result string `json:"result"`

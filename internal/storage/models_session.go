@@ -11,8 +11,8 @@ package storage
 
 // Session 是录音实例的元数据（TBL-03）。
 type Session struct {
-	ID string `gorm:"primaryKey;size:32"` // s_<ULID>
-	Title string `gorm:"size:255;not null"`
+	ID         string `gorm:"primaryKey;size:32"` // s_<ULID>
+	Title      string `gorm:"size:255;not null"`
 	SourceID   string `gorm:"size:255;index:idx_sessions_source"`
 	SourceName string `gorm:"size:128"`
 	SourceKind string `gorm:"size:16"` // application | device
@@ -30,6 +30,7 @@ type Session struct {
 
 	AudioPath   string `gorm:"size:512"`
 	AudioFormat string `gorm:"size:8"`
+	VadPreset   string `gorm:"column:vad_preset;size:24;not null;default:'standard-v1'"`
 	SizeBytes   int64  `gorm:"not null;default:0"`
 
 	SegmentCount int   `gorm:"not null;default:0"`
@@ -37,11 +38,11 @@ type Session struct {
 	CharCount    int64 `gorm:"not null;default:0"`
 
 	// —— 转写任务轴（与 Status 正交，DOC-02 §6.4）——
-	TranscriptionStatus string `gorm:"size:16;not null;default:'none';index:idx_sessions_transcription,priority:1"`
-	TranscribedAt       int64
-	TranscribeEngineID  string `gorm:"size:128"`
-	LiveTranscribed     bool   `gorm:"not null;default:false"`
-	TranscribeProgressMs int64 `gorm:"not null;default:0"`
+	TranscriptionStatus  string `gorm:"size:16;not null;default:'none';index:idx_sessions_transcription,priority:1"`
+	TranscribedAt        int64
+	TranscribeEngineID   string `gorm:"size:128"`
+	LiveTranscribed      bool   `gorm:"not null;default:false"`
+	TranscribeProgressMs int64  `gorm:"not null;default:0"`
 
 	CreatedAt int64 `gorm:"autoCreateTime:milli"`
 	UpdatedAt int64 `gorm:"autoUpdateTime:milli"`
@@ -56,21 +57,21 @@ func (Session) TableName() string { return "sessions" }
 //   - `(SessionID, Seq)` 唯一 → 重转幂等覆盖，不产生重复句；
 //   - `StartMs <= EndMs` 且 `StartMs >= 上一句.StartMs` → 前端二分定位的前提。
 type Segment struct {
-	ID int64 `gorm:"primaryKey;autoIncrement"`
+	ID        int64  `gorm:"primaryKey;autoIncrement"`
 	SessionID string `gorm:"size:32;not null;uniqueIndex:uq_segments_session_seq,priority:1;index:idx_segments_timeline,priority:1"`
 	Seq       int    `gorm:"not null;uniqueIndex:uq_segments_session_seq,priority:2"`
 
-	StartMs int64 `gorm:"not null;index:idx_segments_timeline,priority:2"`
-	EndMs   int64 `gorm:"not null"`
+	StartMs int64  `gorm:"not null;index:idx_segments_timeline,priority:2"`
+	EndMs   int64  `gorm:"not null"`
 	Text    string `gorm:"type:text;not null"`
 
 	// SpeakerID 空 = 未识别（重叠语音不强行拆分，ARCH §4.4）。
-	SpeakerID  string  `gorm:"size:32;index:idx_segments_speaker"`
+	SpeakerID  string `gorm:"size:32;index:idx_segments_speaker"`
 	Confidence float64
 	EngineID   string `gorm:"size:128"`
 
-	IsFinal bool `gorm:"not null;default:true"`
-	Edited  bool `gorm:"not null;default:false"`
+	IsFinal   bool  `gorm:"not null;default:true"`
+	Edited    bool  `gorm:"not null;default:false"`
 	CreatedAt int64 `gorm:"autoCreateTime:milli"`
 
 	// Session 关联只为让 AutoMigrate 生成 ON DELETE CASCADE；
@@ -82,9 +83,9 @@ func (Segment) TableName() string { return "segments" }
 
 // SessionEvent 是时间轴标记（TBL-10）：录制中的异常在回放时可见。
 type SessionEvent struct {
-	ID int64 `gorm:"primaryKey;autoIncrement"`
+	ID        int64  `gorm:"primaryKey;autoIncrement"`
 	SessionID string `gorm:"size:32;not null;index:idx_session_events,priority:1"`
-	AtMs int64 `gorm:"not null;index:idx_session_events,priority:2"`
+	AtMs      int64  `gorm:"not null;index:idx_session_events,priority:2"`
 	// Kind degrade|source-lost|device-switch|paused|resumed|perf-throttle|perf-suspend|perf-resume。
 	Kind string `gorm:"size:32;not null"`
 	Note string `gorm:"size:255"`

@@ -183,6 +183,7 @@ type AppSettings struct {
 	MaxSpeakers     int    `gorm:"not null;default:0"`         // 0 = auto，2–8
 	DefaultSourceID string `gorm:"size:255"`
 	AutoName        bool   `gorm:"not null;default:true"`
+	RecordingCues   bool   `gorm:"not null;default:true"` // UX-SPEC #19；旧数据库加列时同样默认开
 
 	// —— 边录边转（FR-03-10）——
 	// LiveTranscribe 默认 **false**：录制与转写解耦是产品默认形态，
@@ -258,6 +259,7 @@ func ensureSingletonSettings(db *gorm.DB) error {
 		Sensitivity:      "standard",
 		MaxSpeakers:      0,
 		AutoName:         true,
+		RecordingCues:    true,
 		// LiveTranscribe 默认关，但**必须显式写**：GORM 的 Create 会把结构体零值
 		// 写进 INSERT，覆盖 SQL 的 default:false —— 值恰好一致，但把「默认关」
 		// 表达成「零值」会让以后改默认值时的行为不可预测（同类问题见 resource_cap_pct）。

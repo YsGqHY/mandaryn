@@ -137,7 +137,8 @@ type Snapshot struct {
 	ProxyEnvVar string `json:"proxyEnvVar"`
 
 	// —— 音频与录制 ——
-	Audio contract.AudioSettings `json:"audio"`
+	Audio         contract.AudioSettings `json:"audio"`
+	RecordingCues bool                   `json:"recordingCues"`
 
 	// LiveTranscribe 边录边转开关（FR-03-10，默认 false）。
 	//
@@ -179,11 +180,37 @@ func (s *Service) SetLiveTranscribe(ctx context.Context, enabled bool) error {
 	return nil
 }
 
+// SetRecordingCues 切换是否播放录制提示音，录制中也可修改。
+func (s *Service) SetRecordingCues(ctx context.Context, enabled bool) error {
+	if err := s.db().WithContext(ctx).Model(&storage.AppSettings{}).Where("id = ?", 1).
+		Update("recording_cues", enabled).Error; err != nil {
+		return apierr.Wrap(err, apierr.CodeDBWrite)
+	}
+	s.emit("recordingCues")
+	return nil
+}
+
+// RecordingCuesEnabled 供后台提示音 worker 在播放前查询当前数据库。
+// 不读其它设置，查询失败时保持安静，不影响录制。
+func RecordingCuesEnabled(ctx context.Context, holder *storage.Holder) bool {
+	var row storage.AppSettings
+	err := holder.Current().GORM.WithContext(ctx).Select("recording_cues").First(&row, "id = ?", 1).Error
+	return err == nil && row.RecordingCues
+}
+
 // Get 一次性返回完整快照（密钥 / 密码只返回掩码）。
 func (s *Service) Get(ctx context.Context) (Snapshot, error) {
 	var row storage.AppSettings
 	if err := s.db().WithContext(ctx).First(&row, "id = ?", 1).Error; err != nil {
 		return Snapshot{}, apierr.Wrap(err, apierr.CodeDBWrite)
+	}
+	// 兼容旧版录制页的选择；显式清空时 SetAudio 会同时清空旧键，不能复活旧值。
+	if row.DefaultSourceID == "" {
+		var old storage.Preference
+		if err := s.db().WithContext(ctx).Where("key = ?", "capture.preferredSource").Find(&old).Error; err != nil {
+			return Snapshot{}, apierr.Wrap(err, apierr.CodeDBWrite)
+		}
+		row.DefaultSourceID = old.Value
 	}
 	return Snapshot{
 		ThemeChoice:        row.ThemeChoice,
@@ -222,8 +249,9 @@ func (s *Service) Get(ctx context.Context) (Snapshot, error) {
 		},
 		// 只在变量**真的设了值**时才算接管：空串等同于未配置（与 models 侧
 		// globalProxyFromEnv 的判定一致），否则界面会误报「已由环境变量接管」。
-		ProxyEnvVar: proxyEnvVar(),
+		ProxyEnvVar:    proxyEnvVar(),
 		LiveTranscribe: row.LiveTranscribe,
+		RecordingCues:  row.RecordingCues,
 		ResourceCapPct: row.ResourceCapPct,
 	}, nil
 }
@@ -489,14 +517,20 @@ func (s *Service) SetAudio(ctx context.Context, a contract.AudioSettings) error 
 		return apierr.Newf(apierr.CodeInvalidArgument, "maxSpeakers must be 0 (auto) or 2-8")
 	}
 
-	if err := s.db().WithContext(ctx).Model(&storage.AppSettings{}).Where("id = ?", 1).
-		Updates(map[string]any{
-			"save_format":       format,
-			"sensitivity":       sensitivity,
-			"max_speakers":      a.MaxSpeakers,
-			"default_source_id": a.DefaultSourceID,
-			"auto_name":         a.AutoName,
-		}).Error; err != nil {
+	if err := s.db().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&storage.AppSettings{}).Where("id = ?", 1).
+			Updates(map[string]any{
+				"save_format":       format,
+				"sensitivity":       sensitivity,
+				"max_speakers":      a.MaxSpeakers,
+				"default_source_id": a.DefaultSourceID,
+				"auto_name":         a.AutoName,
+			}).Error; err != nil {
+			return err
+		}
+		// 保留旧 API 的兼容镜像，清空默认源也必须同步，避免回退到历史选择。
+		return tx.Save(&storage.Preference{Key: "capture.preferredSource", Value: a.DefaultSourceID}).Error
+	}); err != nil {
 		return apierr.Wrap(err, apierr.CodeDBWrite)
 	}
 	s.emit("audio")
@@ -504,6 +538,32 @@ func (s *Service) SetAudio(ctx context.Context, a contract.AudioSettings) error 
 }
 
 // —— 隐私 ——
+
+// SaveDefaultSource 是旧 Capture API 的兼容入口；只改音源，不回写其它音频设置。
+// 默认源以 app_settings 为准，旧键只作兼容镜像。
+func SaveDefaultSource(ctx context.Context, holder *storage.Holder, id string) error {
+	s := New(holder, nil, nil)
+	if err := s.db().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&storage.AppSettings{}).Where("id = ?", 1).Update("default_source_id", id).Error; err != nil {
+			return err
+		}
+		return tx.Save(&storage.Preference{Key: "capture.preferredSource", Value: id}).Error
+	}); err != nil {
+		return apierr.Wrap(err, apierr.CodeDBWrite)
+	}
+	s.emit("audio")
+	return nil
+}
+
+// SetNoAudioPersist only changes the policy for the next online recording.
+func (s *Service) SetNoAudioPersist(ctx context.Context, enabled bool) error {
+	if err := s.db().WithContext(ctx).Model(&storage.AppSettings{}).Where("id = ?", 1).
+		Update("no_audio_persist", enabled).Error; err != nil {
+		return apierr.Wrap(err, apierr.CodeDBWrite)
+	}
+	s.emit("privacy")
+	return nil
+}
 
 // SetPrivacy 保存隐私设置（API-9.7）。
 //

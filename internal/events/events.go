@@ -61,6 +61,9 @@ const (
 
 	// EV-18 快捷键绑定变化（单个动作，含注册失败原因）。
 	HotkeysChanged = "hotkeys:changed"
+
+	// 精简模式成功持久化；各窗口据此重新读取完整 LeanState。
+	LeanModeChanged = "ux:leanChanged"
 )
 
 // Register 在 application 初始化前注册所有强类型事件，
@@ -95,6 +98,7 @@ func Register() {
 
 	application.RegisterEvent[contract.HotkeyTrigger](HotkeyTrigger)
 	application.RegisterEvent[contract.Binding](HotkeysChanged)
+	application.RegisterEvent[bool](LeanModeChanged)
 }
 
 // Emitter 抽象「向后端 emit 事件」的能力，便于 L3 服务被单测驱动。
