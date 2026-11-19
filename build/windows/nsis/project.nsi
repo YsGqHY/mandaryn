@@ -67,6 +67,7 @@ ${StrLoc}
 !insertmacro MUI_PAGE_WELCOME # Welcome to the installer page.
 # !insertmacro MUI_PAGE_LICENSE "resources\eula.txt" # Adds a EULA page to the installer
 !insertmacro MUI_PAGE_DIRECTORY # In which folder install page.
+Page custom ShortcutPage ShortcutPageLeave # 快捷方式选项（开始菜单 / 快捷栏 / 桌面）
 !insertmacro MUI_PAGE_INSTFILES # Installing page.
 !insertmacro MUI_PAGE_FINISH # Finished installation page.
 
@@ -80,6 +81,15 @@ ${StrLoc}
 ## 静默卸载（/S）不会进入这个页面，$RemoveUserData 保持未勾选状态 → 保留数据。
 Var RemoveUserData
 Var UnDataCheckbox
+
+## 安装时的快捷方式选项：由独立页面提供，默认全选（保持既有行为）。
+## 静默安装（/S）不进入自定义页面，因此默认值必须在 .onInit 里设好。
+Var CreateStartMenu
+Var CreateQuickLaunch
+Var CreateDesktop
+Var CbStartMenu
+Var CbQuickLaunch
+Var CbDesktop
 
 UninstPage custom un.DataPage un.DataPageLeave
 
@@ -100,6 +110,43 @@ Function un.DataPageLeave
     ${NSD_GetState} $UnDataCheckbox $RemoveUserData
 FunctionEnd
 
+## 快捷方式选项页。
+##
+## 为什么单独一页而不是塞进「组件」页：组件页的勾选项与 Section 一一对应，
+## 改动会牵动 wails_tools.nsh 的 Section 结构；自定义页只影响本文件，风险更小，
+## 也与本安装器已有的「卸载选项」页风格一致（同样用 nsDialogs）。
+Function ShortcutPage
+    !insertmacro MUI_HEADER_TEXT "$(STR_SHORTCUT_TITLE)" "$(STR_SHORTCUT_SUBTITLE)"
+    nsDialogs::Create 1018
+    Pop $0
+    ${If} $0 == error
+        Abort
+    ${EndIf}
+
+    ${NSD_CreateCheckbox} 0 0 100% 12u "$(STR_SHORTCUT_STARTMENU)"
+    Pop $CbStartMenu
+    ${NSD_SetState} $CbStartMenu $CreateStartMenu
+
+    ${NSD_CreateCheckbox} 0 16u 100% 12u "$(STR_SHORTCUT_QUICKLAUNCH)"
+    Pop $CbQuickLaunch
+    ${NSD_SetState} $CbQuickLaunch $CreateQuickLaunch
+
+    ${NSD_CreateCheckbox} 0 32u 100% 12u "$(STR_SHORTCUT_DESKTOP)"
+    Pop $CbDesktop
+    ${NSD_SetState} $CbDesktop $CreateDesktop
+
+    ${NSD_CreateLabel} 0 52u 100% 24u "$(STR_SHORTCUT_HINT)"
+    Pop $0
+
+    nsDialogs::Show
+FunctionEnd
+
+Function ShortcutPageLeave
+    ${NSD_GetState} $CbStartMenu    $CreateStartMenu
+    ${NSD_GetState} $CbQuickLaunch  $CreateQuickLaunch
+    ${NSD_GetState} $CbDesktop      $CreateDesktop
+FunctionEnd
+
 ## 安装器多语言：**跟随系统语言**，无需用户手动选择。
 ##
 ## MUI 的行为：按下面的声明顺序与系统 UI 语言做匹配，命中即用；都不命中则用第一个。
@@ -115,6 +162,14 @@ LangString STR_SHORTCUT_DESKTOP ${LANG_ENGLISH}  "Create a desktop shortcut"
 LangString STR_SHORTCUT_DESKTOP ${LANG_SIMPCHINESE} "创建桌面快捷方式"
 LangString STR_SHORTCUT_STARTMENU ${LANG_ENGLISH}  "Create a Start Menu shortcut"
 LangString STR_SHORTCUT_STARTMENU ${LANG_SIMPCHINESE} "创建开始菜单快捷方式"
+LangString STR_SHORTCUT_QUICKLAUNCH ${LANG_ENGLISH}  "Create a Quick Launch shortcut"
+LangString STR_SHORTCUT_QUICKLAUNCH ${LANG_SIMPCHINESE} "创建快捷栏（快速启动）快捷方式"
+LangString STR_SHORTCUT_TITLE ${LANG_ENGLISH}  "Shortcuts"
+LangString STR_SHORTCUT_TITLE ${LANG_SIMPCHINESE} "快捷方式"
+LangString STR_SHORTCUT_SUBTITLE ${LANG_ENGLISH}  "Choose where to create shortcuts."
+LangString STR_SHORTCUT_SUBTITLE ${LANG_SIMPCHINESE} "选择要在哪些位置创建快捷方式。"
+LangString STR_SHORTCUT_HINT ${LANG_ENGLISH}  "You can change this later by re-running the installer."
+LangString STR_SHORTCUT_HINT ${LANG_SIMPCHINESE} "之后可重新运行安装程序修改这些选项。"
 LangString STR_KEEP_DATA ${LANG_ENGLISH}  "Keep my recordings and settings (recommended)"
 LangString STR_KEEP_DATA ${LANG_SIMPCHINESE} "保留我的录音与设置（推荐）"
 LangString STR_RUNNING_WARN ${LANG_ENGLISH}  "Mandaryn is running. Please close it and try again."
@@ -175,6 +230,10 @@ FunctionEnd
 Function .onInit
    !insertmacro wails.checkArchitecture
    Call CheckAppNotRunning
+   ; 默认全选：保持与旧版行为一致，也让 /S 静默安装仍然创建快捷方式。
+   StrCpy $CreateStartMenu ${BST_CHECKED}
+   StrCpy $CreateQuickLaunch ${BST_CHECKED}
+   StrCpy $CreateDesktop ${BST_CHECKED}
 FunctionEnd
 
 Section
@@ -186,8 +245,16 @@ Section
     
     !insertmacro wails.files
 
-    CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
-    CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    ; 三个快捷方式都按用户在上一步的选择创建（默认全选，静默安装也走默认值）。
+    ${If} $CreateStartMenu == ${BST_CHECKED}
+        CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    ${EndIf}
+    ${If} $CreateQuickLaunch == ${BST_CHECKED}
+        CreateShortcut "$QUICKLAUNCH\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    ${EndIf}
+    ${If} $CreateDesktop == ${BST_CHECKED}
+        CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    ${EndIf}
 
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
@@ -210,7 +277,9 @@ Section "uninstall"
 
     RMDir /r $INSTDIR
 
+    ; 无论安装时是否创建，三个位置都尝试删除：Delete 对不存在的文件是空操作。
     Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk"
+    Delete "$QUICKLAUNCH\${INFO_PRODUCTNAME}.lnk"
     Delete "$DESKTOP\${INFO_PRODUCTNAME}.lnk"
 
     !insertmacro wails.unassociateFiles
