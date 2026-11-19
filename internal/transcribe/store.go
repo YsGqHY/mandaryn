@@ -31,6 +31,8 @@ type SessionRow struct {
 	Title string
 	// AudioPath 相对 dataRoot（TBL-03 约定），由 L3 负责解析成绝对路径。
 	AudioPath string
+	// VadPreset is immutable once recording starts; old rows use the standard profile.
+	VadPreset string
 	// DurationMs 逻辑时长（帧计数换算）。音频头缺失时作为兜底时长。
 	DurationMs int64
 

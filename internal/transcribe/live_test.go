@@ -456,58 +456,74 @@ func TestLiveAfterCloseNeverPanics(t *testing.T) {
 // 否则手动重转的幂等覆盖会错位（同一句写到别处）。
 func TestLiveSeqMatchesDeferredTranscription(t *testing.T) {
 	const sr = 16000
-	// 三段语音 + 两段静音：足够产生 3 个 seq。
-	audio := concat(
-		tone(700, sr), silence(600, sr),
-		tone(700, sr), silence(600, sr),
-		tone(700, sr),
-	)
+	quiet := tone(700, sr)
+	for i := range quiet {
+		quiet[i] *= 0.07 // RMS sits between the standard and noisy gates.
+	}
+	audio := concat(quiet, silence(650, sr), tone(700, sr), silence(650, sr), tone(700, sr), silence(650, sr))
+	path := writeWAV(t, t.TempDir(), audio, sr, false)
+	for _, tc := range []struct {
+		preset string
+		count  int
+	}{
+		{contract.VadPresetStandardV1, 3}, {contract.VadPresetNoisyV1, 2}, {"", 3},
+	} {
+		t.Run(tc.preset, func(t *testing.T) {
+			row := SessionRow{ID: "s_same_pcm", VadPreset: tc.preset}
+			st := newFakeStore(row)
+			r := mustRunner(t, st, newFakeEngine(), openerFor(path), Options{})
+			req := TaskRequest{SessionID: row.ID, Trigger: "manual"}
+			if _, err := r.Run(context.Background(), req); err != nil {
+				t.Fatal(err)
+			}
+			_, expected := st.snapshot()
+			if len(expected) != tc.count {
+				t.Fatalf("deferred wrote %d, want %d", len(expected), tc.count)
+			}
 
-	// 1) 延后转写：拿到 seq 列表。
-	stDef, path, _ := twoSentenceStore(t)
-	engDef := newFakeEngine()
-	runner := mustRunner(t, stDef, engDef, openerFor(path), Options{})
-	// twoSentenceStore 的音频与这里不同：用它自己的音频算 seq 基线。
-	_, defSegs := stDef.snapshot()
-	if len(defSegs) != 0 {
-		t.Fatalf("初始应无片段")
-	}
-	if _, err := runner.Run(context.Background(), TaskRequest{SessionID: stDef.session.ID, Trigger: "manual"}); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	_, defSegs = stDef.snapshot()
+			live, _, liveStore := newLiveTestRunner(t, newFakeStreamEngine(), func(o *LiveOptions) {
+				o.Vad = VadForSessionPreset(o.Vad, row.VadPreset)
+			})
+			pushAll(live, audio, 1600)
+			live.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if !live.Wait(ctx) {
+				t.Fatal("live runner did not stop")
+			}
+			_, liveSegments := liveStore.snapshot()
 
-	// 2) 边录边转：用同一套 VAD 参数分句。
-	engLive := newFakeStreamEngine()
-	l, _, stLive := newLiveTestRunner(t, engLive, nil)
-	pushAll(l, audio, 1600)
-	l.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if !l.Wait(ctx) {
-		t.Fatal("LiveRunner 未退出")
-	}
-	_, liveSegs := stLive.snapshot()
-
-	// 3) 同源音频用 SplitAll 算「应有的 seq 序列」，与两条路径逐一比对。
-	want := SplitAll(audio, VadConfig{})
-	if len(liveSegs) != len(want) {
-		t.Fatalf("边录边转落库 %d 句，分句器给出 %d 句", len(liveSegs), len(want))
-	}
-	for i, u := range want {
-		if liveSegs[i].Seq != u.Index {
-			t.Fatalf("第 %d 句 seq=%d，分句器给出 %d", i, liveSegs[i].Seq, u.Index)
-		}
-		if liveSegs[i].StartMs != u.StartMs || liveSegs[i].EndMs != u.EndMs {
-			t.Fatalf("第 %d 句时间轴与分句器不一致：live=[%d,%d] want=[%d,%d]",
-				i, liveSegs[i].StartMs, liveSegs[i].EndMs, u.StartMs, u.EndMs)
-		}
-	}
-	// 延后转写的 seq 也是 0..n-1：两条路径同源，因此不会撞号。
-	for i, s := range defSegs {
-		if s.Seq != i {
-			t.Fatalf("延后转写 seq=%d，期望 %d", s.Seq, i)
-		}
+			resumeStore := newFakeStore(row)
+			ctx1, cancel1 := context.WithCancel(context.Background())
+			defer cancel1()
+			eng := newFakeEngine()
+			eng.onCall = func(call int, _ asr.AudioSegment) {
+				if call == 1 {
+					cancel1()
+				}
+			}
+			first := mustRunner(t, resumeStore, eng, openerFor(path), Options{})
+			res, err := first.Run(ctx1, req)
+			if err != nil || res.Outcome != OutcomeCanceled {
+				t.Fatalf("checkpoint run: %+v, %v", res, err)
+			}
+			resumed := mustRunner(t, resumeStore, newFakeEngine(), openerFor(path), Options{})
+			res, err = resumed.Run(context.Background(), req)
+			if err != nil || res.Outcome != OutcomeDone || res.Skipped != 1 {
+				t.Fatalf("resume: %+v, %v", res, err)
+			}
+			_, resumedSegments := resumeStore.snapshot()
+			for _, got := range [][]SegmentRow{liveSegments, resumedSegments} {
+				if len(got) != len(expected) {
+					t.Fatalf("segment count %d, want %d", len(got), len(expected))
+				}
+				for i, want := range expected {
+					if s := got[i]; s.Seq != want.Seq || s.StartMs != want.StartMs || s.EndMs != want.EndMs {
+						t.Fatalf("segment %d differs: [%d %d %d] != [%d %d %d]", i, s.Seq, s.StartMs, s.EndMs, want.Seq, want.StartMs, want.EndMs)
+					}
+				}
+			}
+		})
 	}
 }
 

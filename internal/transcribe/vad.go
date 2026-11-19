@@ -1,6 +1,10 @@
 package transcribe
 
-import "math"
+import (
+	"math"
+
+	"vip.oberon.mandaryn/internal/contract"
+)
 
 // 简单 VAD 分句：帧级能量门限 + 静音段判定 + 最小语音时长 + 最大句长。
 //
@@ -43,6 +47,15 @@ type VadConfig struct {
 	PaddingMs int
 	// EnergyThreshold 帧 RMS 门限。
 	EnergyThreshold float64
+}
+
+// VadForSessionPreset resolves the saved revision, not the current setting.
+// Keep the v1 thresholds stable so a resumed task reaches the same sentence boundaries.
+func VadForSessionPreset(base VadConfig, preset string) VadConfig {
+	if preset == contract.VadPresetNoisyV1 {
+		base.EnergyThreshold = 0.02
+	}
+	return base.Normalize()
 }
 
 // Normalize 用默认值填充零值字段。

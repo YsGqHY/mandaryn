@@ -10,6 +10,7 @@ import (
 	"vip.oberon.mandaryn/internal/apierr"
 	"vip.oberon.mandaryn/internal/asr"
 	"vip.oberon.mandaryn/internal/contract"
+	"vip.oberon.mandaryn/internal/utils/audioframes"
 	"vip.oberon.mandaryn/internal/utils/logx"
 )
 
@@ -321,7 +322,7 @@ func (r *Runner) Run(ctx context.Context, req TaskRequest) (Result, error) {
 	}
 
 	// 逐窗读 + 分句 + 逐句转写。
-	splitter := NewUtteranceSplitter(r.opts.Vad)
+	splitter := NewUtteranceSplitter(VadForSessionPreset(r.opts.Vad, session.VadPreset))
 	window := int64(splitter.Config().SampleRate * r.opts.WindowMs / 1000)
 	if window <= 0 {
 		window = int64(splitter.Config().SampleRate / 5)
@@ -331,7 +332,7 @@ func (r *Runner) Run(ctx context.Context, req TaskRequest) (Result, error) {
 		if err := exec.checkpoint(); err != nil {
 			return exec.abort(ctx, session, err)
 		}
-		pcm, rerr := src.ReadFrames(pos, window)
+		pcm, rerr := audioframes.ReadFramesContext(ctx, src, pos, window)
 		if rerr != nil {
 			return exec.abort(ctx, session, apierr.From(rerr, apierr.CodeInvalidArgument))
 		}
@@ -350,13 +351,13 @@ func (r *Runner) Run(ctx context.Context, req TaskRequest) (Result, error) {
 	return exec.finish(ctx, session, audioMs, src)
 }
 
-// openAudio 打开音频并解析 WAV 头。
-func (r *Runner) openAudio(ctx context.Context, session SessionRow) (*wavSource, error) {
+// openAudio 打开音频并识别 WAV 或 FLAC 容器。
+func (r *Runner) openAudio(ctx context.Context, session SessionRow) (audioframes.FrameSource, error) {
 	raw, err := r.open(ctx, session)
 	if err != nil {
 		return nil, apierr.From(err, apierr.CodeNotFound)
 	}
-	src, err := openWAV(raw)
+	src, err := audioframes.OpenFrameSource(raw)
 	if err != nil {
 		_ = raw.Close()
 		return nil, apierr.From(err, apierr.CodeInvalidArgument)
@@ -511,7 +512,7 @@ func (e *execution) advanceProgress(endMs int64, countSegment bool) error {
 }
 
 // finish 收尾：回填计数、状态置 done。
-func (e *execution) finish(ctx context.Context, session SessionRow, audioMs int64, src *wavSource) (Result, error) {
+func (e *execution) finish(ctx context.Context, session SessionRow, audioMs int64, src audioframes.FrameSource) (Result, error) {
 	page, err := e.runner.store.ListSegments(e.writeCtx, SegmentFilter{SessionID: session.ID, Limit: 1})
 	if err != nil {
 		return e.abort(ctx, session, apierr.From(err, apierr.CodeDBWrite))
@@ -558,7 +559,7 @@ func (e *execution) finish(ctx context.Context, session SessionRow, audioMs int6
 	logx.For("transcribe").Info("转写完成", "sessionId", session.ID,
 		"audioMs", audioMs, "written", e.written, "skipped", e.skipped,
 		"engineCalls", e.engineCalls, "engineId", engineID,
-		"audio", describeWAV(src.Info()))
+		"audioSampleRate", src.SampleRate(), "audioFrames", src.TotalFrames())
 	return Result{Outcome: OutcomeDone, State: st, Written: e.written, Skipped: e.skipped,
 		EngineCalls: e.engineCalls}, nil
 }
