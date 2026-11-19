@@ -118,10 +118,17 @@ jobs:
 
       # GTK4 + WebKitGTK 6.0 是 Wails v3.1 的 Linux 默认栈（GTK3 旧栈已在 v3.1 移除）。
       # 必须是 -dev 包：cgo 阶段靠 pkg-config 找头文件，只装运行时不编译不过。
-      - name: 安装 GTK4 / WebKitGTK 6.0 开发依赖
+      - name: 更新 Linux 软件源索引
+        timeout-minutes: 10
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq \
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o APT::Update::Error-Mode=any update
+
+      - name: 安装 GTK4 / WebKitGTK 6.0 开发依赖
+        timeout-minutes: 15
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=60 install -y \
             libgtk-4-dev libwebkitgtk-6.0-dev pkg-config build-essential file binutils
 
       - name: 安装 Go（版本取自 go.mod）
