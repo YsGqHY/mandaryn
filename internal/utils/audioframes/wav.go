@@ -1,8 +1,7 @@
-package transcribe
+package audioframes
 
 import (
 	"encoding/binary"
-	"fmt"
 	"io"
 	"math"
 
@@ -50,7 +49,7 @@ func (h wavInfo) totalMs() int64 {
 
 // wavSource 是 WAV 文件的随机读封装：按帧读取并归一化成 [-1,1] 的 float32 单声道。
 type wavSource struct {
-	r   AudioSource
+	r   io.ReadSeekCloser
 	inf wavInfo
 }
 
@@ -60,7 +59,7 @@ type wavSource struct {
 //   - 文件不是 RIFF/WAVE、位深/编码不支持 → ERR_INVALID_ARGUMENT（不可重试，用户需重录/修复）；
 //   - 读失败（IO）→ ERR_DB_WRITE 不合适，用 ERR_INVALID_ARGUMENT 之外的兜底由调用方决定，
 //     这里统一返回 ERR_INVALID_ARGUMENT 并带 Detail（不含音频内容）。
-func openWAV(r AudioSource) (*wavSource, error) {
+func openWAV(r io.ReadSeekCloser) (*wavSource, error) {
 	if r == nil {
 		return nil, errAudioInvalid("音频句柄为空")
 	}
@@ -78,9 +77,6 @@ func (s *wavSource) Close() error {
 	}
 	return s.r.Close()
 }
-
-// Info 返回解析出的头信息。
-func (s *wavSource) Info() wavInfo { return s.inf }
 
 // TotalFrames 返回总采样帧数。
 func (s *wavSource) TotalFrames() int64 { return s.inf.frames }
@@ -104,7 +100,7 @@ func (s *wavSource) ReadFrames(start, n int64) ([]float32, error) {
 	if start >= s.inf.frames {
 		return nil, nil
 	}
-	if start+n > s.inf.frames {
+	if n > s.inf.frames-start {
 		n = s.inf.frames - start
 	}
 
@@ -180,7 +176,7 @@ func (s *wavSource) decode(buf []byte) ([]float32, error) {
 }
 
 // readWAVHeader 扫描 RIFF 块，定位 `fmt ` 与 `data`。
-func readWAVHeader(r AudioSource) (wavInfo, error) {
+func readWAVHeader(r io.ReadSeekCloser) (wavInfo, error) {
 	var inf wavInfo
 
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
@@ -207,12 +203,12 @@ func readWAVHeader(r AudioSource) (wavInfo, error) {
 
 		switch id {
 		case "fmt ":
-			fmtBuf := make([]byte, size)
-			if _, err := io.ReadFull(r, fmtBuf); err != nil {
-				return inf, errAudioInvalid("fmt 块损坏").WithCause(err)
-			}
-			if len(fmtBuf) < 16 {
+			var fmtBuf [16]byte
+			if size < int64(len(fmtBuf)) {
 				return inf, errAudioInvalid("fmt 块过短")
+			}
+			if _, err := io.ReadFull(r, fmtBuf[:]); err != nil {
+				return inf, errAudioInvalid("fmt 块损坏").WithCause(err)
 			}
 			inf.format = int(binary.LittleEndian.Uint16(fmtBuf[0:2]))
 			inf.channels = int(binary.LittleEndian.Uint16(fmtBuf[2:4]))
@@ -293,10 +289,4 @@ func errAudioInvalid(format string, args ...any) *apierr.Err {
 		e = e.WithDetail("%s", format)
 	}
 	return e
-}
-
-// describeWAV 生成日志用的音频摘要（**只含格式元数据，不含音频内容**）。
-func describeWAV(inf wavInfo) string {
-	return fmt.Sprintf("%dHz/%dch/%dbit/%dms", inf.sampleRate, inf.channels,
-		inf.bitsPerSample, inf.totalMs())
 }

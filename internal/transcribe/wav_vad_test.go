@@ -4,6 +4,8 @@ import (
 	"math"
 	"os"
 	"testing"
+
+	"vip.oberon.mandaryn/internal/utils/audioframes"
 )
 
 // TestWAVParseAndRead 验证头解析与采样归一化。
@@ -24,7 +26,7 @@ func TestWAVParseAndRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	src, err := openWAV(f)
+	src, err := audioframes.OpenFrameSource(f)
 	if err != nil {
 		t.Fatalf("parse wav: %v", err)
 	}
@@ -77,7 +79,7 @@ func TestWAVSkipsExtraChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	src, err := openWAV(f)
+	src, err := audioframes.OpenFrameSource(f)
 	if err != nil {
 		t.Fatalf("parse wav with extra chunk: %v", err)
 	}
@@ -110,8 +112,8 @@ func TestWAVRejectsNonWAV(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	if _, err := openWAV(f); err == nil {
-		t.Fatal("openWAV 应当拒绝非 WAV 文件")
+	if _, err := audioframes.OpenFrameSource(f); err == nil {
+		t.Fatal("OpenFrameSource 应当拒绝未知容器")
 	}
 }
 

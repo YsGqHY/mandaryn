@@ -6,6 +6,7 @@ require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-ole/go-ole v1.3.0
 	github.com/k2-fsa/sherpa-onnx-go v1.13.8
+	github.com/mewkiz/flac v1.0.14
 	github.com/moutend/go-wca v0.3.0
 	github.com/wailsapp/wails/v3 v3.1.0
 	github.com/xuri/excelize/v2 v2.11.1
@@ -21,12 +22,15 @@ require (
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/icza/bitio v1.1.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/k2-fsa/sherpa-onnx-go-linux v1.13.8 // indirect
 	github.com/k2-fsa/sherpa-onnx-go-macos v1.13.8 // indirect
 	github.com/k2-fsa/sherpa-onnx-go-windows v1.13.8 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mewkiz/pkg v0.0.0-20250417130911-3f050ff8c56d // indirect
+	github.com/mewpkg/term v0.0.0-20241026122259-37a80af23985 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/richardlehane/mscfb v1.0.9 // indirect
