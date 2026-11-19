@@ -9,42 +9,21 @@ import (
 	"vip.oberon.mandaryn/internal/utils/logx"
 )
 
-// 精简模式的后端侧支撑（FR-09-3 / DOC-05 §4、§5.1）。
-//
-// 边界：本文件**不做渲染**。它只回答两件前端无法自行裁决的事：
-//  1. 精简模式现在是开还是关（跨会话持久化，只能走后端 SQLite）；
-//  2. 开启时哪些区域 / 控件应当隐去 —— 这份清单是产品取舍（DOC-05 §4 的
-//     「移除 7 项、合并 5 组」）的后端权威副本，前端不得各页各写一份。
-
-// 可见区域键（精简模式**保留**的部分）。
-//
-// 依据 DOC-05 §5.1 三层信息层级：L1 全局状态 + L2 当前任务必须常在，
-// L3 只留一个入口（设置），其余高级面板在精简模式下一律隐去。
+// 精简模式（FR-09-3 / S9B-10）。仅声明现有界面的对应区域，不配置或删除业务数据。
 const (
-	RegionStatus  = "status"  // L1 顶部状态条（录制 / 降级 / 错误）
-	RegionRecord  = "record"  // L2 录制页主体
-	RegionLibrary = "library" // L2 会话库列表
-	RegionSession = "session" // L2 会话详情（回放 + 歌词）
-)
+	RegionStatus          = "status"
+	RegionRecord          = "record"
+	RegionLibrary         = "library"
+	RegionSession         = "session"
+	RegionSettingsHotkeys = "settings.hotkeys"
+	RegionSettingsPrivacy = "settings.privacy"
+	RegionSettingsProxy   = "settings.proxy"
+	RegionModelsDownloads = "models.downloads"
 
-// 隐去区域键（精简模式**不显示**的部分）。
-const (
-	RegionSettingsAdvanced = "settings.advanced" // 设置页「高级」分区（采样率 / VAD / 分片等实现细节）
-	RegionSettingsDiag     = "settings.diagnostics"
-	RegionModelsAdmin      = "models.admin"     // 模型包内部信息（校验和 / 分片进度等）
-	RegionLibraryInsights  = "library.insights" // 会话库统计与趋势
-	RegionDiagnostics      = "diagnostics"      // 诊断面板（日志级别、出站记录）
-)
-
-// 隐去控件键（区域里仍保留、但精简模式收起的零散控件）。
-const (
-	ControlStatusBadges        = "status.secondaryBadges" // 状态条上的次要徽章（模型档位 / 队列长度）
-	ControlLibraryBulk         = "library.bulkActions"    // 批量选择与批量删除
-	ControlSessionExportOpts   = "session.exportOptions"  // 导出格式等次要选项（导出动作本身保留）
-	ControlRecordSourceHints   = "record.sourceHints"     // 源列表的技术提示（采样率 / 通道数）
-	ControlSettingsUpdateOpts  = "settings.updateOptions" // 更新检查频率等（DOC-05 §4.2 固定策略）
-	ControlSettingsDbStats     = "settings.databaseStats" // 表行数统计
-	ControlSettingsSecurityLog = "settings.securityNotes" // 安全说明长文
+	RegionSettingsAdvanced = "settings.advanced"      // 性能公式说明和采样读数，保留预算滑杆与暂停提示
+	RegionSettingsDiag     = "settings.diagnostics"   // 调试日志与诊断包，保留离线控制、出站记录与自检
+	RegionModelsAdmin      = "models.admin"           // 仓库占用和下载临时文件等统计，保留目录、迁移和正常下载
+	ControlSettingsDbStats = "settings.databaseStats" // 分表图表与元数据，保留目录和清空操作
 )
 
 // LeanState 是精简模式的完整状态（API-8.x 补充：GetLeanState / SetLeanMode）。
@@ -79,23 +58,12 @@ func defaultLeanState() LeanState {
 }
 
 var (
-	leanVisibleRegions = []string{RegionStatus, RegionRecord, RegionLibrary, RegionSession}
-	leanHiddenRegions  = []string{
-		RegionSettingsAdvanced,
-		RegionSettingsDiag,
-		RegionModelsAdmin,
-		RegionLibraryInsights,
-		RegionDiagnostics,
+	leanVisibleRegions = []string{
+		RegionStatus, RegionRecord, RegionLibrary, RegionSession,
+		RegionSettingsHotkeys, RegionSettingsPrivacy, RegionSettingsProxy, RegionModelsDownloads,
 	}
-	leanHiddenControls = []string{
-		ControlStatusBadges,
-		ControlLibraryBulk,
-		ControlSessionExportOpts,
-		ControlRecordSourceHints,
-		ControlSettingsUpdateOpts,
-		ControlSettingsDbStats,
-		ControlSettingsSecurityLog,
-	}
+	leanHiddenRegions  = []string{RegionSettingsAdvanced, RegionSettingsDiag, RegionModelsAdmin}
+	leanHiddenControls = []string{ControlSettingsDbStats}
 )
 
 // GetLeanState 返回精简模式状态与取舍清单。
@@ -110,8 +78,22 @@ func (s *Service) GetLeanState(_ context.Context) (LeanState, error) {
 // 可能错误：ERR_DB_WRITE（持久化失败时内存态回滚，避免出现
 // 「界面上开着、重启后变了」的假状态）。
 func (s *Service) SetLeanMode(ctx context.Context, enabled bool) (LeanState, error) {
+	return s.changeLeanMode(ctx, &enabled)
+}
+
+// ToggleLeanMode 由应用快捷键调用；在后端原子翻转，避免多个窗口各翻转一次。
+func (s *Service) ToggleLeanMode(ctx context.Context) error {
+	_, err := s.changeLeanMode(ctx, nil)
+	return err
+}
+
+func (s *Service) changeLeanMode(ctx context.Context, desired *bool) (LeanState, error) {
 	s.mu.Lock()
 	prev := s.lean.Enabled
+	enabled := !prev
+	if desired != nil {
+		enabled = *desired
+	}
 	s.lean.Enabled = enabled
 	if err := s.persistLeanLocked(ctx); err != nil {
 		// 持久化失败就回滚内存态：否则界面显示已开启、重启后又变回关闭。

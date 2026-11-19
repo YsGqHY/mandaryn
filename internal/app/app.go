@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -58,6 +59,9 @@ const (
 	AppDescription = "按应用分路录制并转写中文语音，默认不联网"
 )
 
+// Populated only by an explicitly enabled Windows desktop smoke build.
+var desktopSmokeBrowserArgs []string
+
 // Run 创建 Wails 应用、注册服务、打开主窗口并启动事件循环。
 // assets 由调用方（main.go）通过 //go:embed 注入。
 func Run(assets embed.FS, trayIcon []byte) error {
@@ -75,6 +79,7 @@ func Run(assets embed.FS, trayIcon []byte) error {
 	// holder 在数据库打开后才赋值；modelRoot 的 user/pending 层存放在 DB 里，
 	// 因此这些闭包只能在此之后被调用（Resolve(dataRoot) 不需要它们）。
 	var holder *storage.Holder
+	var startupFallback string
 
 	resolver := paths.New(paths.Options{
 		CLI: cliPaths,
@@ -82,7 +87,10 @@ func Run(assets embed.FS, trayIcon []byte) error {
 			switch key {
 			case paths.KeyDataRoot:
 				// dataRoot 的用户层落在 storage.json（鸡生蛋：不能存进它自己配置的库）。
-				return cfgMgr.Get().DataPath, nil
+				if startupFallback != "" {
+					return startupFallback, nil
+				}
+				return cfgMgr.Get().UserRoot(), nil
 			case paths.KeyModelRoot:
 				if holder == nil {
 					return "", nil
@@ -96,6 +104,12 @@ func Run(assets embed.FS, trayIcon []byte) error {
 			return "", nil
 		},
 		PendingValue: func(key paths.Key) (string, error) {
+			if key == paths.KeyDataRoot {
+				if plan := cfgMgr.Get().PendingRoot; plan != nil {
+					return plan.Target, nil
+				}
+				return "", nil
+			}
 			if key != paths.KeyModelRoot || holder == nil {
 				return "", nil
 			}
@@ -127,10 +141,55 @@ func Run(assets embed.FS, trayIcon []byte) error {
 		},
 	})
 
-	dataRoot, err := resolver.Effective(paths.KeyDataRoot)
+	root, err := resolver.Resolve(paths.KeyDataRoot)
 	if err != nil {
 		return fmt.Errorf("resolve data root: %w", err)
 	}
+	var rootLock *os.File
+	var migrationError, fallbackDatabase string
+	if plan := cfgMgr.Get().PendingRoot; plan != nil && !resolver.HasDataRootOverride() {
+		// The scheduled source can differ from the normal resolver result, e.g.
+		// when a deployment override was removed before restarting.
+		if info, statErr := os.Stat(plan.Source); statErr == nil && info.IsDir() {
+			rootLock, err = storage.LockDataRoot(plan.Source)
+			if err != nil {
+				return fmt.Errorf("lock migration source: %w", err)
+			}
+			newLock, applyErr := cfgMgr.ApplyRootMigration(*plan)
+			if errors.Is(applyErr, storage.ErrRootPlanChanged) {
+				_ = rootLock.Close()
+				return applyErr
+			}
+			if applyErr != nil {
+				migrationError = applyErr.Error()
+				startupFallback = plan.Source
+				fallbackDatabase = plan.SourceDatabase()
+			} else if newLock != nil {
+				_ = rootLock.Close()
+				rootLock = newLock
+			}
+		} else {
+			return fmt.Errorf("pending data migration source is unavailable; no directory was switched: %s", plan.Source)
+		}
+		resolver.Invalidate()
+		root, err = resolver.Resolve(paths.KeyDataRoot)
+		if err != nil || !root.Writable {
+			_ = rootLock.Close()
+			return fmt.Errorf("resolve migrated data root: %v", err)
+		}
+		if startupFallback != "" && filepath.Clean(root.Effective) != filepath.Clean(startupFallback) {
+			_ = rootLock.Close()
+			return fmt.Errorf("migration failed and source cannot be reopened: %s", migrationError)
+		}
+	}
+	dataRoot := root.Effective
+	if rootLock == nil {
+		rootLock, err = storage.LockDataRoot(dataRoot)
+		if err != nil {
+			return err
+		}
+	}
+	defer rootLock.Close()
 
 	// —— 1) 工具层就绪：日志 → HTTP UA → 后续模块都能直接用 ——
 	// 日志目录显式取自解析结果，保证「库 / 密钥 / 日志」必然同根。
@@ -162,13 +221,23 @@ func Run(assets embed.FS, trayIcon []byte) error {
 	events.Register()
 
 	// —— 2) 持久化层 ——
-	dbPath := storage.DBPathIn(dataRoot)
+	dbPath := cfgMgr.Get().DatabaseAt(dataRoot, root.Source == contract.PathSourceEnv || root.Source == contract.PathSourceCLI)
+	if fallbackDatabase != "" {
+		dbPath = fallbackDatabase
+		if fi, err := os.Stat(dbPath); err != nil || !fi.Mode().IsRegular() || fi.Size() == 0 {
+			return fmt.Errorf("migration failed and source database is unavailable: %s", dbPath)
+		}
+	}
 	db, err := storage.Open(dbPath)
 	if err != nil {
 		return fmt.Errorf("open db: %w", err)
 	}
+	defer db.Close()
 	holder = storage.NewHolder(db)
 	logx.For("app").Info("storage opened", "path", dbPath)
+	if migrationError != "" {
+		logx.For("app").Warn("data directory migration failed; using source", "error", migrationError)
+	}
 
 	// 调试模式的用户层：app_settings.log_level（debug = 开）。读到即生效，无需重启。
 	var logLevelRow storage.AppSettings
@@ -204,7 +273,7 @@ func Run(assets embed.FS, trayIcon []byte) error {
 	systraySvc := NewSystrayService(prefsSvc, trayIcon)
 
 	// 数据目录切换后让解析器缓存失效，避免 UI 继续显示旧生效路径。
-	storageSvc := storagesvc.New(holder, cfgMgr, resolver.Invalidate)
+	storageSvc := storagesvc.New(holder, cfgMgr, root, resolver, migrationError)
 
 	// —— Wave D：整机性能预算（NFR-08）——
 	//
@@ -330,6 +399,7 @@ func Run(assets embed.FS, trayIcon []byte) error {
 	//     所以这里只留一个间接调用，等 transSvc 构造完成后再回填 newLiveSink。
 	// 任一为 nil 即「不旁路」，与未实现该功能时的行为逐字一致。
 	var newLiveSink func(sessionID string) recording.LiveSink
+	var newMemorySink func(sessionID string) (recording.MemorySink, error)
 	recorder, err = recording.New(recording.Options{
 		Store:    recording.NewGORMStore(holder),
 		DataRoot: func() (string, error) { return dataRoot, nil },
@@ -341,6 +411,12 @@ func Run(assets embed.FS, trayIcon []byte) error {
 				return false // 读不到设置就当作关闭：宁可不出字，也不要意外占 CPU
 			}
 			return snap.LiveTranscribe
+		},
+		NewMemorySink: func(sessionID string) (recording.MemorySink, error) {
+			if newMemorySink == nil {
+				return nil, apierr.New(apierr.CodeEngineNotReady)
+			}
+			return newMemorySink(sessionID)
 		},
 		NewLiveSink: func(sessionID string) recording.LiveSink {
 			if newLiveSink == nil {
@@ -373,8 +449,15 @@ func Run(assets embed.FS, trayIcon []byte) error {
 			// silentMs 渲染提示，这里无需额外事件。
 		},
 	})
+	cueCtx, stopCues := context.WithCancel(context.Background())
+	defer stopCues()
+	observeCue := newRecordingCueObserver(cueCtx, func(ctx context.Context) bool {
+		return appsettings.RecordingCuesEnabled(ctx, holder)
+	})
+	// recordingsvc.New 接管 Recorder.OnState；提示音走真实状态，不依赖 WebView。
 	recSvc := recordingsvc.New(recorder, holder, recordingsvc.Emit{
 		State: func(st contract.RecordingState) {
+			observeCue(st)
 			if app := application.Get(); app != nil {
 				app.Event.Emit(events.RecordingState, st)
 			}
@@ -509,6 +592,20 @@ func Run(assets embed.FS, trayIcon []byte) error {
 	if err != nil {
 		return fmt.Errorf("wire transcriptsvc: %w", err)
 	}
+	defer transSvc.Close()
+	newMemorySink = func(sessionID string) (recording.MemorySink, error) {
+		ctx := context.Background()
+		eng, err := enginesvc.NewMemoryOnlineEngine(ctx, engineSvc)
+		if err != nil {
+			return nil, err
+		}
+		sink, err := transcriptsvc.NewMemorySink(ctx, transSvc, sessionID, eng)
+		if err != nil {
+			_ = eng.Close()
+			return nil, err
+		}
+		return sink, nil
+	}
 	// 回填边录边转的旁路工厂（见上方 recording.Options 的晚绑定说明）。
 	// 能力缺失时返回 nil：本会话只录音、不出实时字，录制不受影响（FR-03-6）。
 	newLiveSink = func(sessionID string) recording.LiveSink {
@@ -597,7 +694,8 @@ func Run(assets embed.FS, trayIcon []byte) error {
 			//
 			// 固定到 dataRoot 下的 webview/：既消除对环境变量的隐式依赖，
 			// 也符合 ADR-02「所有落盘路径经 Resolver 取得、单一数据根」的约定。
-			WebviewUserDataPath: joinPath(dataRoot, "webview"),
+			WebviewUserDataPath:   joinPath(dataRoot, "webview"),
+			AdditionalBrowserArgs: desktopSmokeBrowserArgs,
 		},
 	})
 	subSvc.AttachApp(app)
@@ -614,11 +712,12 @@ func Run(assets embed.FS, trayIcon []byte) error {
 			Changed: func(b contract.Binding) {
 				app.Event.Emit(events.HotkeysChanged, b)
 			},
-			// Lean 不单独发事件：精简开关的调用方（设置页 / 热键触发后的前端）
-			// 都能从返回值或 EV-17 得知结果，多一条事件只会多一套真相。
+			Lean: func(st hotkeys.LeanState) {
+				app.Event.Emit(events.LeanModeChanged, st.Enabled)
+			},
 		})
 	hkShell.Attach(hkSvc)
-	wireHotkeyHandlers(hkRegistry, recSvc, settingsSvc, mainWindow, app)
+	wireHotkeyHandlers(hkRegistry, hkSvc, recSvc, settingsSvc, mainWindow, app)
 
 	// 系统托盘默认禁用：由前端 SystrayService.enable() 开启，开关持久化在 preferences 表，
 	// 这里按上次会话的状态恢复（app.Run 之前创建的托盘 / 窗口会延迟到事件循环启动后生效）。

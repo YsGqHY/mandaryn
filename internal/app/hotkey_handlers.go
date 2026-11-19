@@ -24,6 +24,7 @@ import (
 // 而不是参数错误），由 hotkeys.Service 统一映射。
 func wireHotkeyHandlers(
 	reg *hotkeys.Registry,
+	hkSvc *hotkeys.Service,
 	recSvc *recordingsvc.Service,
 	settingsSvc *appsettings.Service,
 	win application.Window,
@@ -86,13 +87,18 @@ func wireHotkeyHandlers(
 		logx.For("app").Warn("接线热键失败", "action", hotkeys.ActionWindowShow, "err", err.Error())
 	}
 
+	// ux.leanMode：共享持久化状态只在后端翻转一次，窗口各自接收变更通知。
+	if err := reg.SetHandler(hotkeys.ActionLeanMode, hkSvc.ToggleLeanMode); err != nil {
+		logx.For("app").Warn("接线热键失败", "action", hotkeys.ActionLeanMode, "err", err.Error())
+	}
+
 	// 其余动作：广播给前端。
 	for _, id := range []string{
 		hotkeys.ActionPlaybackPlay, hotkeys.ActionPlaybackBack, hotkeys.ActionPlaybackForward,
 		hotkeys.ActionPlaybackPrevSeg, hotkeys.ActionPlaybackNextSeg, hotkeys.ActionPlaybackRecenter,
 		hotkeys.ActionNavRecord, hotkeys.ActionNavLibrary, hotkeys.ActionNavModels,
 		hotkeys.ActionNavSettings, hotkeys.ActionSearchFocus, hotkeys.ActionRoleRename,
-		hotkeys.ActionSessionDelete, hotkeys.ActionModelSwitchSrc, hotkeys.ActionLeanMode,
+		hotkeys.ActionSessionDelete, hotkeys.ActionModelSwitchSrc,
 	} {
 		action := id
 		if err := reg.SetHandler(action, func(_ context.Context) error {

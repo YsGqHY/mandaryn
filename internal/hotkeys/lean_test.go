@@ -71,6 +71,29 @@ func TestLeanTogglePersists(t *testing.T) {
 	}
 }
 
+// TestLeanShortcutPersistsAndEmits covers the same callback path as the application hotkey.
+func TestLeanShortcutPersistsAndEmits(t *testing.T) {
+	ctx := context.Background()
+	store := NewMemoryStore()
+	var notifications []bool
+	svc := New(nil, newFakeRegistrar(), store, Emit{Lean: func(st LeanState) {
+		notifications = append(notifications, st.Enabled)
+	}})
+	for _, want := range []bool{true, false} {
+		if err := svc.ToggleLeanMode(ctx); err != nil {
+			t.Fatalf("ToggleLeanMode: %v", err)
+		}
+		reloaded := New(nil, newFakeRegistrar(), store, Emit{})
+		st, err := reloaded.GetLeanState(ctx)
+		if err != nil || st.Enabled != want {
+			t.Fatalf("reloaded Enabled = %v, err = %v; want %v", st.Enabled, err, want)
+		}
+	}
+	if len(notifications) != 2 || !notifications[0] || notifications[1] {
+		t.Fatalf("lean change notifications = %v; want [true false]", notifications)
+	}
+}
+
 // TestLeanSnapshotIsolated 断言调用方改返回切片不影响后续调用（别名泄漏防御）。
 func TestLeanSnapshotIsolated(t *testing.T) {
 	svc := New(nil, newFakeRegistrar(), NewMemoryStore(), Emit{})

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -15,6 +16,14 @@ import (
 
 // systrayPrefKey 是托盘开关在 preferences 表中的键；值为 JSON 布尔（"true" / "false"）。
 const systrayPrefKey = "systray.enabled"
+
+// systrayClickActionPrefKey 是托盘左键行为的偏好键。
+const systrayClickActionPrefKey = "systray.clickAction"
+
+const (
+	systrayClickActionPanel  = "panel"
+	systrayClickActionWindow = "window"
+)
 
 // 跨窗口广播协议（与前端 services/childwindow/bus.ts 保持一致）。
 // 托盘面板的 QuickActions 通过 child:broadcast 发出下面两种消息，由后端统一处理：
@@ -38,14 +47,15 @@ type SystrayService struct {
 	app        *application.App
 	mainWindow application.Window
 
-	mu       sync.Mutex
-	labels   TrayMenuLabels // 托盘右键菜单文案（前端按当前语言经 SetMenuLabels 推送）
-	menu     *application.Menu
-	showItem *application.MenuItem
-	quitItem *application.MenuItem
-	tray     *application.SystemTray
-	panel    *application.WebviewWindow
-	offBcast func()
+	mu          sync.Mutex
+	labels      TrayMenuLabels // 托盘右键菜单文案由前端设置。
+	mainOnClick atomic.Bool
+	menu        *application.Menu
+	showItem    *application.MenuItem
+	quitItem    *application.MenuItem
+	tray        *application.SystemTray
+	panel       *application.WebviewWindow
+	offBcast    func()
 
 	// shuttingDown 置位后，面板的关闭拦截不再生效，让应用退出时正常销毁窗口。
 	shuttingDown atomic.Bool
@@ -64,6 +74,29 @@ var defaultTrayMenuLabels = TrayMenuLabels{ShowWindow: "Show Window", Quit: "Qui
 // NewSystrayService 创建托盘服务。icon 为托盘图标字节（main.go embed）。
 func NewSystrayService(prefs *preferences.Service, icon []byte) *SystrayService {
 	return &SystrayService{prefs: prefs, icon: icon, labels: defaultTrayMenuLabels}
+}
+
+// GetClickAction returns the action used by the native tray icon.
+func (s *SystrayService) GetClickAction(_ context.Context) (string, error) {
+	if s.mainOnClick.Load() {
+		return systrayClickActionWindow, nil
+	}
+	return systrayClickActionPanel, nil
+}
+
+// SetClickAction saves and applies the next left-click action without enabling the tray.
+func (s *SystrayService) SetClickAction(ctx context.Context, action string) error {
+	if action != systrayClickActionPanel && action != systrayClickActionWindow {
+		return fmt.Errorf("systray: invalid click action")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	value, _ := json.Marshal(action)
+	if err := s.prefs.Set(ctx, systrayClickActionPrefKey, string(value)); err != nil {
+		return fmt.Errorf("systray: persist click action: %w", err)
+	}
+	s.mainOnClick.Store(action == systrayClickActionWindow)
+	return nil
 }
 
 // SetMenuLabels 更新托盘右键菜单文案（主窗口在语言切换时调用）。托盘未启用时只保存，下次创建时生效。
@@ -94,6 +127,14 @@ func (s *SystrayService) attach(app *application.App, mainWindow application.Win
 
 // restore 读取持久化的开关，若为启用则在启动时创建托盘。读失败按禁用处理。
 func (s *SystrayService) restore(ctx context.Context) {
+	if raw, err := s.prefs.Get(ctx, systrayClickActionPrefKey); err == nil {
+		var action string
+		if json.Unmarshal([]byte(raw), &action) == nil {
+			s.mainOnClick.Store(action == systrayClickActionWindow)
+		}
+	} else {
+		logx.For("systray").Warn("read tray click action failed", "err", err)
+	}
 	raw, err := s.prefs.Get(ctx, systrayPrefKey)
 	if err != nil {
 		logx.For("systray").Warn("read systray preference failed", "err", err)
@@ -182,8 +223,16 @@ func (s *SystrayService) createLocked() {
 	tray.SetMenu(menu)
 	s.menu = menu
 
-	// 左键：切换面板（Wails 默认行为，基于 AttachWindow）；右键：原生菜单（未设 OnRightClick 时的默认行为）。
+	// 左键按偏好切换面板或显示主窗口；右键保留 Wails 默认原生菜单。
 	tray.AttachWindow(panel).WindowOffset(5)
+	tray.OnClick(func() {
+		if s.mainOnClick.Load() {
+			panel.Hide()
+			s.showMainWindow()
+			return
+		}
+		tray.ToggleWindow()
+	})
 
 	s.offBcast = s.app.Event.On(broadcastEvent, s.handleBroadcast)
 	s.tray = tray

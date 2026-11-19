@@ -114,6 +114,27 @@ func TestAudioRouteRange(t *testing.T) {
 	}
 }
 
+func TestAudioRouteFLACRange(t *testing.T) {
+	content := append([]byte("fLaC"), wavBytes(60)...)
+	h, _ := newTestAudioHandler(t, "sessions/s_test/audio.flac", content, http.NotFoundHandler())
+	for _, ranged := range []bool{false, true} {
+		req := httptest.NewRequest(http.MethodGet, "/audio/s_test", nil)
+		wantStatus, wantBody := http.StatusOK, content
+		if ranged {
+			req.Header.Set("Range", "bytes=5-12")
+			wantStatus, wantBody = http.StatusPartialContent, content[5:13]
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != wantStatus || rec.Header().Get("Content-Type") != "audio/flac" || !bytes.Equal(rec.Body.Bytes(), wantBody) {
+			t.Fatalf("range=%t: status=%d headers=%v body length=%d", ranged, rec.Code, rec.Header(), rec.Body.Len())
+		}
+		if ranged && rec.Header().Get("Content-Range") != "bytes 5-12/64" {
+			t.Fatalf("Content-Range=%q", rec.Header().Get("Content-Range"))
+		}
+	}
+}
+
 // seek 的另一半：开放结尾 Range。
 func TestAudioRouteRangeOpenEnded(t *testing.T) {
 	content := wavBytes(1000)

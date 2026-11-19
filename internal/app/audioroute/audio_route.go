@@ -35,8 +35,10 @@ import (
 // audioRoutePrefix 是音频路由前缀（前端 `src` 直接用 `/audio/<sessionId>`）。
 const audioRoutePrefix = "/audio/"
 
-// audioContentTypeAudioWAV 会话音频统一为 WAV（recording.AudioFileName = audio.wav）。
-const audioContentTypeAudioWAV = "audio/wav"
+const (
+	audioContentTypeAudioWAV  = "audio/wav"
+	audioContentTypeAudioFLAC = "audio/flac"
+)
 
 // sessionAudioLookup 按会话 ID 查库里的音频相对路径（相对 dataRoot）。
 //
@@ -119,9 +121,10 @@ func (h *audioRouteHandler) serveAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 只服务 .wav：落库路径后缀是唯一依据（不信任客户端 Content-Type / Accept）。
-	if !strings.EqualFold(path.Ext(relPath), ".wav") {
-		h.miss(w, r, sessionID, "not_wav")
+	// 按落库路径允许 FLAC 与旧 WAV，不信任客户端 Content-Type / Accept。
+	contentType := audioContentType(relPath)
+	if contentType != audioContentTypeAudioWAV && contentType != audioContentTypeAudioFLAC {
+		h.miss(w, r, sessionID, "unsupported_audio_format")
 		return
 	}
 
@@ -153,7 +156,7 @@ func (h *audioRouteHandler) serveAudio(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = f.Close() }()
 
 	info, err := f.Stat()
-	if err != nil || info.IsDir() {
+	if err != nil || !info.Mode().IsRegular() {
 		h.miss(w, r, sessionID, "stat_failed")
 		return
 	}
@@ -162,7 +165,7 @@ func (h *audioRouteHandler) serveAudio(w http.ResponseWriter, r *http.Request) {
 	// 它已经实现 Range / If-Range / If-Modified-Since / HEAD / 206 / 416，
 	// 手写这些分支是 seek 卡顿与边界错误的常见来源。
 	hdr := w.Header()
-	hdr.Set("Content-Type", audioContentType(relPath))
+	hdr.Set("Content-Type", contentType)
 	hdr.Set("Accept-Ranges", "bytes")
 	// no-store：会话音频可能被重新录制覆盖（同 ID 不可能，但重转/导出会改 mtime），
 	// 且这是本机私密音频，不该在 WebView 缓存里留副本。
@@ -283,7 +286,7 @@ func audioContentType(p string) string {
 	case ".opus", ".ogg":
 		return "audio/ogg"
 	case ".flac":
-		return "audio/flac"
+		return audioContentTypeAudioFLAC
 	case ".m4a":
 		return "audio/mp4"
 	default:
