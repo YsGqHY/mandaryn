@@ -173,7 +173,7 @@ type CaptureCaps struct {
 | API-2.4 | `Stop` | `() (RecordingState, error)` | `→ ST-05 → ST-06/ST-08`；封存录音实例（不转写） | `ERR_STATE_FORBIDDEN`、`ERR_DB_WRITE` |
 | API-2.5 | `GetState` | `() (RecordingState, error)` | 幂等查询（窗口重新打开时用） | — |
 | API-2.6 | `RecoverSession` | `(sessionID string) (Session, error)` | 把 `interrupted` 会话修补为可回放（UC-07） | `ERR_MODEL_NOT_FOUND`、`ERR_DB_WRITE` |
-| API-2.7 | `ExportAudio` | `(sessionID, targetPath string) (string, error)` | 另存录音实例为单个音频文件（`wav`/`flac`）；`targetPath` 空则弹原生「另存为」。**不改库**（`FR-03-11`） | `ERR_NOT_FOUND`、`ERR_DISK_FULL` |
+| API-2.7 | `ExportAudio` | `(sessionID, targetPath string) (string, error)` | 按原录音格式（`wav` 或 `flac`）另存，不转码、不改数据库。原生「另存为」由前端打开；后端要求非空、格式匹配的目标路径。 | `ERR_INVALID_ARGUMENT`、`ERR_NOT_FOUND`、`ERR_DISK_FULL` |
 
 ```go
 type StartRequest struct {
@@ -222,7 +222,7 @@ type ExportRequest struct {
 | API-4.2 | `GetTimelinePage` | `(sessionID string, offset, limit int) (TimelinePage, error)` | 超大通话分页 | 同上 |
 | API-4.3 | `SearchSegments` | `(q SegmentQuery) ([]Segment, error)` | 片段级检索（带跳转时间） | — |
 | API-4.5 | `StartTranscription` | `(sessionID string) (TranscriptionState, error)` | 对已存录音实例发起转写（手动触发）：`none/failed/done → queued → running`。已 `done` 时等价「重转」（旧任务取消后重新入队） | `ERR_NOT_FOUND`、`ERR_ENGINE_NOT_READY`、`ERR_MODEL_NOT_FOUND`、`ERR_PERF_SUSPENDED` |
-| API-4.6 | `CancelTranscription` | `(sessionID string) (TranscriptionState, error)` | 取消排队/运行中的任务，已转句子保留，状态回 `none` | `ERR_NOT_FOUND`、`ERR_STATE_FORBIDDEN` |
+| API-4.6 | `CancelTranscription` | `(sessionID string) (TranscriptionState, error)` | 取消排队/运行中的任务并保留已转句子；普通任务回 `none`，在线不落盘会话取消上传并标为 `failed`（无音频可重试） | `ERR_NOT_FOUND`、`ERR_STATE_FORBIDDEN` |
 | API-4.7 | `GetTranscription` | `(sessionID string) (TranscriptionState, error)` | 幂等查询进度（窗口重开、断线重连时用） | `ERR_NOT_FOUND` |
 | API-4.8 | `LiveAvailability` | `() (LiveAvailability, error)` | 边录边转当前是否可用（开关状态 + 是否有流式引擎） | — |
 | API-4.4 | `UpdateSegmentText` | `(segmentID int64, text string) error` | 人工修正（P1），置 `edited=true` | `ERR_NOT_FOUND` |
@@ -308,7 +308,7 @@ type FallbackPolicy struct {
 
 | ID | 方法 | 签名 | 说明 | 可能错误 |
 |----|------|------|------|----------|
-| API-6.1 | `ListAvailable` | `() ([]BundleInfo, error)` | 清单（远程缓存 + 内置兜底） | `ERR_DOWNLOAD_NETWORK`（仅远程刷新失败时返回缓存） |
+| API-6.1 | `ListAvailable` | `(refresh bool) BundleCatalog` | 返回条目和清单告警；`refresh=true` 绕过缓存立即刷新，仍遵守离线开关 | 回退至缓存或内置清单时在 `warning` 返回错误码，不丢弃条目 |
 | API-6.2 | `ListInstalled` | `() ([]InstalledBundle, error)` | 已装（含校验状态、占用） | — |
 | API-6.3 | `Download` | `(bundleID string) (DownloadState, error)` | 开始/继续下载 | `ERR_MODEL_BUSY`、`ERR_DOWNLOAD_DISK_FULL`、`ERR_DOWNLOAD_PROXY` |
 | API-6.4 | `PauseDownload` | `(bundleID string) error` | 暂停（保留分片） | `ERR_NOT_FOUND` |
@@ -323,6 +323,10 @@ type FallbackPolicy struct {
 | API-6.13 | `ImportOffline` | `(archivePath string) (InstalledBundle, error)` | 导入离线包（UC-08 内网部署） | `ERR_MODEL_CORRUPT` |
 
 ```go
+type BundleCatalog struct {
+    Bundles []BundleInfo `json:"bundles"`
+    Warning *ErrorDTO    `json:"warning"` // null if no catalog warning
+}
 type BundleInfo struct {
     BundleID string   `json:"bundleId"`
     Name     string   `json:"name"`
@@ -333,6 +337,9 @@ type BundleInfo struct {
     License  string   `json:"license"`
     Roles    []string `json:"roles"`   // streaming | offline | vad | speaker
     SHA256   string   `json:"sha256"`
+    Installed bool    `json:"installed"`
+    UpdateAvailable bool `json:"updateAvailable"`
+    Downloadable bool `json:"downloadable"` // 每个文件的 URL、SHA-256、路径均通过预检
 }
 type DownloadState struct {
     BundleID  string `json:"bundleId"`

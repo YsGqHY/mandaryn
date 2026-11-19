@@ -120,6 +120,7 @@
 | `duration_ms` | INTEGER | NOT NULL, 0 | **逻辑时长**（帧计数换算，ARCH §4.5.1） |
 | `audio_path` | TEXT | size 512 | **相对 `dataRoot`**（数据目录迁移不需改库） |
 | `audio_format` | TEXT | size 8 | `wav`/`flac` |
+| `vad_preset` | TEXT | NOT NULL, `standard-v1` | 开录时固定 `standard-v1` 或 `noisy-v1`，历史会话沿用标准；录中与延期转写及断点续跑统一读取 |
 | `size_bytes` | INTEGER | NOT NULL, 0 | 音频文件大小 |
 | `segment_count` | INTEGER | NOT NULL, 0 | 冗余计数（列表页免 count） |
 | `speaker_count` | INTEGER | NOT NULL, 0 | 同上 |

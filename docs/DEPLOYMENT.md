@@ -246,10 +246,12 @@ build → 签 exe → package / FORMAT=msi / FORMAT=portable → 签 installer +
 | `MANDARYN_OFFLINE` | 未设 | 置 `1` 时**禁止一切出站**（下载与在线转写均禁用） | 企业离线部署强制项（§8） |
 | `MANDARYN_HTTP_PROXY` | 未设 | 全局 HTTP 代理（标准 URL 形式，可内嵌凭据） | **模型下载与模型清单源获取共用这一份**；优先级高于设置页，详见 §4.7 |
 | `MANDARYN_HTTP_NO_PROXY` | 未设 | 全局代理的直连例外（逗号分隔，支持 `*` 与 `.suffix`） | 仅配合 `MANDARYN_HTTP_PROXY` 生效 |
-| `MANDARYN_MODEL_CATALOG` | GitHub Releases | 覆盖模型清单基址（目录或 `.json` 直链） | 企业内网自建镜像；出站**仍受**代理与离线开关约束 |
-| `MANDARYN_MODEL_MIRRORS` | 内置 hf-mirror | 覆盖清单 / 下载镜像基址（逗号分隔，最多 3 个生效） | 同上 |
+| `MANDARYN_MODEL_CATALOG` | 应用内入门清单（文件来自官方上游） | 覆盖模型清单基址（目录或 `.json` 直链） | 企业内网自建镜像；出站**仍受**代理与离线开关约束 |
+| `MANDARYN_MODEL_MIRRORS` | 无（按部署环境配置） | 覆盖清单 / 下载镜像基址（逗号分隔，最多 3 个生效） | 同上 |
 | `MANDARYN_SERVER_PORT` | `8080` | server 模式监听端口 | 仅 `-tags server` |
 | `E2E_DATA_DIR` / `E2E_PORT` / `E2E_CHANNEL` | — | Playwright E2E 专用 | 仅测试 |
+
+模型页的「模型镜像地址」接受 HTTP(S) 目录或 `.json` 清单直链，不接受凭据、查询参数或片段。留空使用内置清单；保存不联网，点击「刷新模型清单」后才请求选定源。任一个部署变量 `MANDARYN_MODEL_CATALOG` 或 `MANDARYN_MODEL_MIRRORS` 生效时，个人设置保留但暂不参与选源。相对文件 URL 以清单位置解析，下载仍受代理、离线开关与 SHA-256 校验约束。
 
 > 落地注意：脚手架当前读取 `FOUNDATION_DATA_DIR`（`internal/storage/paths.go` 的 `DataDirEnv`）。
 > 改名时必须同步 `storage` / `cryptox` / `logx` 三处常量，否则密钥与日志会落在不同根目录。
@@ -290,10 +292,10 @@ build → 签 exe → package / FORMAT=msi / FORMAT=portable → 签 installer +
 
 | 状态 | 点「更改目录」后发生什么 |
 |------|--------------------------|
-| 未被接管（`user`/`default`） | 正常流程：即刻生效（`modelRoot`）或提示重启（`dataRoot`） |
-| 被 `env`/`cli` 接管 | 写入 `app_settings.model_root_pending`，提示「**已保存，待环境变量解除后生效**」；当前生效值不变 |
+| 未被接管（`user`/`default`/`portable`） | `dataRoot` 暂存后在下次启动迁移；`modelRoot` 按模型目录的迁移流程处理 |
+| 被 `env`/`cli` 接管 | `dataRoot` 迁移请求写入独立的 `storage.json`，`modelRoot` 暂存值写入 `app_settings.model_root_pending`；解除接管并重启前，当前生效值不变 |
 
-这样既尊重运维的强制值，又不让用户在受管环境里做无效操作、也不会误以为软件坏了。
+数据目录的迁移目标必须为空或尚不存在，父目录必须已存在；不能和模型根重叠。启动时复制并校验数据库、密钥、日志和会话文件，验证通过后才切换，旧根保留。首次启动配置、进程锁和可重建的 WebView 缓存不随迁移搬走。目标冲突时继续使用旧根，设置页会显示原因并保留待迁移请求。恢复默认目录也受空目录规则约束，不会覆盖之前保留的旧数据。
 
 ### 4.4 可解除：一键说明 + 命令
 
