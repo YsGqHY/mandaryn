@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import {
   expectAudioPlayable,
   navTo,
@@ -11,6 +12,7 @@ import {
   TEST_TONE_LAUNCH,
 } from './helpers';
 import { REPO_ROOT, startServer, stopServer, waitForServer, type ServerHandle } from './serverctl';
+import { matchingToneWindows, startWindowsRecordingPlayer } from './windows-recording-player';
 
 // 产品主流程里「能真跑通」的那一半 + 转写失败路径。
 //
@@ -109,4 +111,98 @@ test('无模型时发起转写：给出可读错误，音频与元数据不受�
     timeout: 20_000,
   });
   expect(fs.statSync(audioFile).size).toBe(sizeBefore);
+});
+
+test('Windows 应用音源退出：同一会话自动暂停、留下 source-lost 并可回放', async ({ page }, testInfo) => {
+  test.skip(process.platform !== 'win32', '此用例验证 Windows 按应用捕获的退出行为。');
+  test.setTimeout(75_000);
+  await openAppAt(page, BASE);
+  await navTo(page, '录制');
+  await expect(
+    page.getByText('支持按应用分路捕获：只录制选中应用的声音。', { exact: true }),
+    '此用例需要 Windows 进程回环探测通过，不能退回设备混音',
+  ).toBeVisible({ timeout: 15_000 });
+
+  const db = new DatabaseSync(path.join(DATA_DIR, 'mandaryn.db'), { readOnly: true });
+  try {
+    const sessions = db.prepare('SELECT id, source_id, source_kind, status, duration_ms FROM sessions');
+    const existing = new Set(sessions.all().map(({ id }) => id));
+    const newSessions = () => sessions.all().filter(({ id }) => !existing.has(id));
+    const player = startWindowsRecordingPlayer(testInfo.outputPath('source-player'));
+    try {
+      const source = page.getByRole('button', { name: `选择音频源：${player.name}`, exact: true });
+      const refresh = page.getByRole('button', { name: '刷新源列表', exact: true });
+      const producing = source.getByText('正在发声', { exact: true });
+      await expect.poll(async () => {
+        player.assertRunning();
+        if (await producing.isVisible()) return true;
+        await refresh.click({ timeout: 3_000 });
+        return producing.isVisible();
+      }, { timeout: 12_000, message: '专用播放器必须作为应用源出现并发声' }).toBe(true);
+      await source.click();
+      await expect(source).toHaveAttribute('aria-pressed', 'true');
+
+      const main = page.locator('main');
+      const recording = main.getByText('录制中', { exact: true });
+      const pause = page.getByRole('button', { name: '暂停', exact: true });
+      const stop = page.getByRole('button', { name: '停止', exact: true });
+      await page.getByRole('button', { name: '开始录制', exact: true }).click();
+      await expect(recording).toBeVisible();
+      await expect(pause).toBeEnabled();
+      const started = newSessions();
+      expect(started).toHaveLength(1);
+      expect(started[0]).toMatchObject({
+        source_id: `app:${player.name}.exe`, source_kind: 'application', status: 'recording',
+      });
+      const sessionId = String(started[0].id);
+      const wavPath = path.join(DATA_DIR, 'sessions', sessionId, 'audio.wav');
+      const lossEvents = db.prepare(
+        "SELECT at_ms FROM session_events WHERE session_id = ? AND kind = 'source-lost'",
+      );
+
+      // 不调用 startRecording：它会额外在浏览器中播放测试音，掩盖捕获错源。
+      let captured: Buffer = Buffer.alloc(0);
+      await expect.poll(() => {
+        player.assertRunning();
+        captured = fs.readFileSync(wavPath);
+        return matchingToneWindows(captured, player.tonesHz);
+      }, { timeout: 10_000, message: '播放器退出前，原会话的 PCM 必须已写入至少 1.2 秒专用双音' })
+        .toBeGreaterThanOrEqual(12);
+      await expect(recording).toBeVisible();
+      await expect(pause).toBeEnabled();
+      expect(lossEvents.all(sessionId)).toHaveLength(0);
+
+      await player.exit();
+      // 没有点击暂停。录制页自动切到暂停、原会话时间轴写标记、且没有开启新会话。
+      await expect(main.getByText('已暂停', { exact: true })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole('button', { name: '继续', exact: true })).toBeVisible();
+      await expect(stop).toBeEnabled();
+      await expect.poll(() => lossEvents.all(sessionId), { timeout: 5_000 }).toHaveLength(1);
+      const lostAt = Number(lossEvents.get(sessionId)?.at_ms);
+      expect(lostAt).toBeGreaterThanOrEqual(1_200);
+      expect(newSessions().map(({ id }) => id)).toEqual([sessionId]);
+
+      await stopRecording(page);
+      const completed = newSessions();
+      expect(completed).toHaveLength(1);
+      expect(completed[0]).toMatchObject({ id: sessionId, status: 'completed' });
+      expect(completed[0].duration_ms).toBeGreaterThanOrEqual(lostAt);
+      expect(lossEvents.all(sessionId)).toEqual([{ at_ms: lostAt }]);
+      const sealed = fs.readFileSync(wavPath);
+      expect(sealed.toString('ascii', 0, 4)).toBe('RIFF');
+      expect(sealed.readUInt32LE(4)).toBe(sealed.length - 8);
+      expect(sealed.readUInt32LE(40)).toBe(sealed.length - 44);
+      expect(sealed.subarray(44, captured.length).equals(captured.subarray(44))).toBe(true);
+
+      await navTo(page, '会话库');
+      const row = page.locator(`[data-session-id="${sessionId}"]`);
+      await row.getByRole('button', { name: '回放', exact: true }).click();
+      await expect(page.locator('audio')).toHaveAttribute('src', new RegExp(`/audio/${sessionId}(?:\\?|$)`));
+      expect(await expectAudioPlayable(page)).toBeGreaterThanOrEqual(1.2);
+    } finally {
+      await player.dispose();
+    }
+  } finally {
+    db.close();
+  }
 });

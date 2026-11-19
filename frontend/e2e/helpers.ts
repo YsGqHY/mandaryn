@@ -110,7 +110,7 @@ export const stopRecording = async (page: Page): Promise<void> => {
 
 // 断言音频能真正播放：duration 有值、play() 成功、currentTime 会前进。
 // 这是「可回放」的唯一诚实判据（不是「抽屉打开了」这种永真条件）。
-export const expectAudioPlayable = async (page: Page): Promise<number> => {
+export const expectAudioPlayable = async (page: Page, volume?: number): Promise<number> => {
   const audio = page.locator('audio').first();
   await expect(audio).toHaveAttribute('src', /\/audio\//);
   // 元数据加载完成后才有 duration；0 或 NaN 都说明文件/头有问题。
@@ -121,13 +121,15 @@ export const expectAudioPlayable = async (page: Page): Promise<number> => {
   expect(Number.isFinite(duration)).toBe(true);
   expect(duration).toBeGreaterThan(0.5);
 
-  const advanced = await audio.evaluate(async (el: HTMLAudioElement) => {
+  const playback = await audio.evaluate(async (el: HTMLAudioElement, volume) => {
+    if (volume !== null) el.volume = volume;
     await el.play();
     await new Promise((resolve) => setTimeout(resolve, 900));
-    const time = el.currentTime;
+    const result = { time: el.currentTime, volume: el.volume };
     el.pause();
-    return time;
-  });
-  expect(advanced).toBeGreaterThan(0.2);
+    return result;
+  }, volume ?? null);
+  expect(playback.time).toBeGreaterThan(0.2);
+  if (volume !== undefined) expect(playback.volume).toBe(volume);
   return duration;
 };

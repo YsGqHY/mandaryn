@@ -4,6 +4,18 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { REPO_ROOT, startServer, stopServer, waitForServer, type ServerHandle } from './serverctl';
 import { ensureToneWav } from './fixtures';
+import {
+  METRIC_AUDIO_MS, METRIC_SEGMENTS, METRIC_STRIDE_MS,
+  assertPlaybackMetric, measurePlaybackWindow, openPlaybackMetric,
+  preparePlaybackWindow, seedPlaybackMetric,
+} from './playback-metric.fixture';
+
+// 显式选择 short/full/negative。未选择时不生成 115MB 的一小时夹具；skip 不代表验收通过。
+// 同一个现有 isolated spec 承载量化，不改共享 launcher / 项目匹配规则。
+const METRIC_MODE = process.env.E2E_PLAYBACK_METRIC;
+if (METRIC_MODE !== undefined && !['short', 'full', 'negative'].includes(METRIC_MODE)) {
+  throw new Error('E2E_PLAYBACK_METRIC 只能是 short、full 或 negative');
+}
 
 // 回放高亮**随播放推进**（FR-04-2 / FR-04-3，歌词式同步）。
 //
@@ -109,6 +121,7 @@ test.beforeAll(async () => {
   server = null;
 
   seed(source);
+  if (METRIC_MODE !== undefined) seedPlaybackMetric(DATA_DIR);
 
   server = startServer({ port: PORT, dataDir: DATA_DIR, fresh: false });
   await waitForServer(PORT, 20_000, server);
@@ -198,4 +211,58 @@ test('回放：点播放后高亮随播放位置推进（跨越多个句子）',
         .find((l) => l.includes('播放位置')) ?? '',
   );
   expect(posLabel, '位置标签应已推进，而不是停在 00:00').not.toContain('00:00 /');
+});
+
+// 运行示例（仓库根目录，主线先重建 server，避免旧嵌入资源造成假证据）：
+// E2E_PLAYBACK_METRIC=short pnpm --dir frontend --filter mandaryn-frontend run e2e e2e/playback-advance.spec.ts --project=isolated --grep '回放量化'
+// full：约 1 小时连续 1x，无中途 seek；short：三段 6s 预查，不能替代完整 PRD 验收。
+// negative：同一条 ≤80ms 断言预期失败（160ms 故障注入）；退出码必须非零。
+test('回放量化：一小时五千句的 DOM 提交同步误差 ≤80ms', async ({ page }) => {
+  test.skip(METRIC_MODE === undefined, '显式 E2E_PLAYBACK_METRIC=short/full/negative 才生成长会话夹具；未执行不算通过');
+  test.setTimeout(METRIC_MODE === 'full' ? METRIC_AUDIO_MS + 180_000 : 120_000);
+  await openPlaybackMetric(page, BASE);
+  test.info().annotations.push({ type: '量化范围', description: METRIC_MODE === 'full'
+    ? '真实一小时 PCM，5000 片段，连续 1x，测量中禁止 seek，每次切换 ≤80ms（不是 p95）'
+    : METRIC_MODE === 'negative'
+      ? '负对照：产品读时钟落后160ms，meter读原生时钟，同一80ms判据必须报红'
+      : '仅短窗预查：首个分页边界、中段分页边界、末尾；不是完整1小时验收' });
+
+  const starts = METRIC_MODE === 'full' || METRIC_MODE === 'negative'
+    ? [0]
+    : [198 * METRIC_STRIDE_MS, 2398 * METRIC_STRIDE_MS, 4990 * METRIC_STRIDE_MS];
+  for (const start of starts) {
+    await preparePlaybackWindow(page, start);
+    const stop = METRIC_MODE === 'full' ? METRIC_AUDIO_MS : start + 6000;
+    const report = await measurePlaybackWindow(page, stop, METRIC_MODE === 'negative' ? 160 : 0);
+    await test.info().attach(`playback-metric-${METRIC_MODE}-${start}.json`, {
+      body: JSON.stringify({ mode: METRIC_MODE, fixtureDurationMs: METRIC_AUDIO_MS,
+        fixtureSegments: METRIC_SEGMENTS, ...report }, null, 2),
+      contentType: 'application/json',
+    });
+    // 先证明负对照确实造出了 ≥120ms，而不是用 unrelated 启动错误冒充红灯。
+    if (METRIC_MODE === 'negative') expect(report.maxErrorMs, '负对照故障必须被真实DOM测量捕获').toBeGreaterThanOrEqual(120);
+    assertPlaybackMetric(report);
+    if (METRIC_MODE === 'full') {
+      expect(report.boundaries).toHaveLength(METRIC_SEGMENTS - 1);
+      expect(report.endMs).toBeGreaterThanOrEqual(METRIC_AUDIO_MS - 1);
+      expect(report.wallMs).toBeGreaterThanOrEqual(METRIC_AUDIO_MS - 1000);
+    }
+  }
+});
+
+test('回放量化负对照：≥120ms 的真实高亮滞后必须被80ms判据拒绝', async ({ page }) => {
+  test.skip(METRIC_MODE !== 'short', '内置负对照只随 short 预查执行；negative 模式用于检查真实非零退出码');
+  test.setTimeout(60_000);
+  await openPlaybackMetric(page, BASE);
+  await preparePlaybackWindow(page, 0);
+  const report = await measurePlaybackWindow(page, 6000, 160);
+  await test.info().attach('playback-metric-negative-control.json', {
+    body: JSON.stringify(report, null, 2), contentType: 'application/json',
+  });
+  expect(report.boundaries.length).toBeGreaterThanOrEqual(5);
+  expect(report.missing).toEqual([]);
+  expect(report.seekingEvents).toBe(0);
+  expect(report.maxErrorMs).toBeGreaterThanOrEqual(120);
+  // 确认同一生产判据拒绝这份真实观察结果，而非伪造一个数字的纯函数自测。
+  expect(() => assertPlaybackMetric(report)).toThrow();
 });

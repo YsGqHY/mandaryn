@@ -43,6 +43,15 @@ const ISOLATED_SPECS = [
   /playback-advance\.spec\.ts/,
   /not-automatable\.spec\.ts/,
   /debug-mode\.spec\.ts/,
+  /model-catalog\.spec\.ts/,
+  /lean-settings\.spec\.ts/,
+  /real-transcription\.spec\.ts/,
+  /role-settings\.spec\.ts/,
+  /online-settings\.spec\.ts/,
+  /audio-settings\.spec\.ts/,
+  /flac-recording\.spec\.ts/,
+  /data-root-migration\.spec\.ts/,
+  /native-playback\.spec\.ts/,
 ];
 
 export default defineConfig({

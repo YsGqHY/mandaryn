@@ -11,19 +11,6 @@ import { test } from '@playwright/test';
 
 test.describe.configure({ mode: 'serial' });
 
-test('目标应用退出（应用级捕获中断）——无法自动化', async () => {
-  test.skip(
-    true,
-    '本机 Windows Build 19045 不支持进程级捕获（产品自身报 ERR_CAPTURE_UNAVAILABLE），且模拟「目标应用退出」必须杀掉用户真实在用的应用进程',
-  );
-  test.info().annotations.push({
-    type: '人工验证',
-    description:
-      '在 Windows 11 Build 20348+ 上：录制页选一个正在播放语音的应用 → 开始录制 → 手动退出该应用 → ' +
-      '期望：录制转入 interrupted/failed 并在时间轴留下 source-lost 标记，音频可回放、已产出片段保留。步骤见 docs/DEV-ISSUES-G-e2e.md G-E2E-05。',
-  });
-});
-
 test('录制中设备切换 / 设备拔出——无法自动化', async () => {
   test.skip(
     true,
@@ -47,19 +34,6 @@ test('导出（另存为 txt/srt/csv/xlsx、另存录音文件）——server �
     description:
       '导出**引擎**本身已被 Go 单测覆盖（ROADMAP 14.1「导出服务（CSV / XLSX）有单测覆盖」），' +
       '未自动化的只是「原生另存为 → 后端落盘」这一段链路。人工步骤见 G-E2E-07。',
-  });
-});
-
-test('转写成功路径（真实语音 → 片段 → 按句回放）——隔离环境没有模型包', async () => {
-  test.skip(
-    true,
-    'E2E 数据目录是隔离且全新的（无任何模型包），设备回环在无人说话的机器上只能录到静音，VAD 分不出句子',
-  );
-  test.info().annotations.push({
-    type: '人工验证',
-    description:
-      '先到「模型」页下载本地中文模型 → 录制一段真实中文语音（或播放一段语音让它被回环采到）→ ' +
-      '会话库点「发起转写」→ 期望进度跑完、徽标变「已转写」→ 打开回放按句高亮。步骤见 G-E2E-08。',
   });
 });
 

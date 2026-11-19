@@ -38,6 +38,7 @@ export const startServer = (opts: {
   port: number;
   dataDir: string;
   fresh?: boolean;
+  managedDataRoot?: boolean;
   env?: Record<string, string>;
 }): ServerHandle => {
   const { port, dataDir } = opts;
@@ -48,7 +49,7 @@ export const startServer = (opts: {
   const logs: string[] = [];
   const child = spawn(serverBinary(), [], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, ...opts.env, WAILS_SERVER_PORT: String(port), MANDARYN_DATA_DIR: dataDir },
+    env: { ...process.env, ...opts.env, WAILS_SERVER_PORT: String(port), MANDARYN_DATA_DIR: opts.managedDataRoot === false ? '' : dataDir },
   });
   child.stdout?.on('data', (buf: Buffer) => logs.push(buf.toString('utf8')));
   child.stderr?.on('data', (buf: Buffer) => logs.push(buf.toString('utf8')));
