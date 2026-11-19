@@ -58,6 +58,8 @@ type OnlineOptions struct {
 	Recorder *outbound.Recorder
 	// RetryAfterCap 429 的 Retry-After 上限；0 用 DefaultRetryAfterCap。
 	RetryAfterCap time.Duration
+	// RefuseRedirects pins requests to the configured and consented endpoint.
+	RefuseRedirects bool
 }
 
 // OnlineEngine 是 OpenAI 兼容「/v1/audio/transcriptions」端点的引擎实现。
@@ -112,6 +114,12 @@ func NewOnlineEngine(opt OnlineOptions) (*OnlineEngine, error) {
 		} else {
 			client = httpx.Client()
 		}
+	}
+
+	if opt.RefuseRedirects {
+		pinned := *client
+		pinned.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+		client = &pinned
 	}
 
 	return &OnlineEngine{
@@ -271,6 +279,14 @@ func (e *OnlineEngine) Feed(frame []float32) (<-chan Partial, error) {
 
 // Finalize 把整句音频编码为 WAV 并 POST 到 /v1/audio/transcriptions。
 func (e *OnlineEngine) Finalize(seg AudioSegment) (FinalResult, error) {
+	return e.FinalizeContext(context.Background(), seg)
+}
+
+// FinalizeContext lets a memory-only session cancel an in-flight request on exit.
+func (e *OnlineEngine) FinalizeContext(ctx context.Context, seg AudioSegment) (FinalResult, error) {
+	if err := ctx.Err(); err != nil {
+		return FinalResult{}, err
+	}
 	if err := outbound.Guard(); err != nil {
 		apiErr := apierr.From(err, apierr.CodeOfflineEnforced)
 		e.fail(FailBlocked, apiErr)
@@ -292,7 +308,7 @@ func (e *OnlineEngine) Finalize(seg AudioSegment) (FinalResult, error) {
 	}
 
 	timeout := time.Duration(e.opt.TimeoutMs) * time.Millisecond
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	started := time.Now()

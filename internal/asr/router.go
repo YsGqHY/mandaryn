@@ -181,9 +181,11 @@ type Router struct {
 	opMu sync.Mutex
 	mu   sync.RWMutex
 
-	source string
-	local  Engine
-	online Engine
+	source         string
+	local          Engine
+	online         *onlineSlot
+	onlineRevision uint64 // increments whenever the online factory/config changes
+	onlineChanged  bool   // a replacement may recover from a failed initial Warm
 
 	// 状态快照（Source/State/EngineID/LoadMs/Degraded/DegradeNote/LastError）。
 	status     contract.EngineStatus
@@ -215,6 +217,15 @@ type Router struct {
 	unloadDelay     time.Duration
 	switchBackAfter time.Duration
 	retryAfterCap   time.Duration
+}
+
+// onlineSlot keeps a superseded engine alive until its in-flight work (including retries) ends.
+// Its lifecycle fields are protected by Router.mu.
+type onlineSlot struct {
+	engine   Engine
+	revision uint64
+	users    int
+	retired  bool
 }
 
 // NewRouter 构造路由。Options 里的零值都有合理默认，装配方只需给工厂与回调。
@@ -319,9 +330,12 @@ func (r *Router) Warm(ctx context.Context) error {
 //
 // 延后转写模式（默认）下两个实现都返回已关闭的空 channel，见各自的 Feed 注释。
 func (r *Router) Feed(frame []float32) (<-chan Partial, error) {
-	eng, _, err := r.route()
+	eng, slot, err := r.route()
 	if err != nil {
 		return nil, err
+	}
+	if slot != nil {
+		defer r.releaseOnline(slot)
 	}
 	return eng.Feed(frame)
 }
@@ -332,15 +346,16 @@ func (r *Router) Finalize(seg AudioSegment) (FinalResult, error) {
 		// 回升失败不影响本次转写，只留痕（保持 degraded）。
 		logx.For("asr").Warn("自动回升在线失败，继续保持降级", "err", err)
 	}
-	eng, useOnline, err := r.route()
+	eng, slot, err := r.route()
 	if err != nil {
 		return FinalResult{}, err
 	}
-	if !useOnline {
+	if slot == nil {
 		// 本地路径：失败只报错，**绝不**降级在线（隐私默认）。
 		return r.finalizeLocal(eng, seg)
 	}
-	return r.finalizeOnline(eng, seg)
+	defer r.releaseOnline(slot)
+	return r.finalizeOnline(slot, seg)
 }
 
 // Health 返回当前健康详情。
@@ -376,7 +391,7 @@ func (r *Router) Close() error {
 		}
 	}
 	if online != nil {
-		if err := online.Close(); err != nil && firstErr == nil {
+		if err := r.retireOnline(online); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
@@ -468,21 +483,42 @@ func (r *Router) Status() contract.EngineStatus {
 	return r.status
 }
 
-// SetOnlineFactory 替换在线引擎工厂并丢弃已缓存的在线实例。//
-// 在线端点配置（SetOnlineConfig）变更后必须调用，否则旧实例还带着旧密钥 / 旧模型。
-// 若当前生效来源就是 online，则保留实例直到下次 Reload，避免把正在用的引擎抽走。
+// SetOnlineFactory invalidates the online configuration without changing the source or connecting.
+// The next online operation reconstructs the active engine; existing operations keep their lease.
 func (r *Router) SetOnlineFactory(f OnlineFactory) {
 	r.mu.Lock()
+	r.onlineChanged = r.onlineChanged || r.onlineFactory != nil
 	r.onlineFactory = f
-	drop := r.source != contract.ModelSourceOnline && r.online != nil
-	var old Engine
-	if drop {
-		old = r.online
-		r.online = nil
+	r.onlineRevision++
+	var old *onlineSlot
+	if r.source != contract.ModelSourceOnline {
+		old, r.online = r.online, nil
 	}
 	r.mu.Unlock()
-	if old != nil {
-		_ = old.Close()
+	_ = r.retireOnline(old)
+}
+
+func (r *Router) retireOnline(slot *onlineSlot) error {
+	if slot == nil {
+		return nil
+	}
+	r.mu.Lock()
+	done := !slot.retired && slot.users == 0
+	slot.retired = true
+	r.mu.Unlock()
+	if done {
+		return slot.engine.Close()
+	}
+	return nil
+}
+
+func (r *Router) releaseOnline(slot *onlineSlot) {
+	r.mu.Lock()
+	slot.users--
+	done := slot.retired && slot.users == 0
+	r.mu.Unlock()
+	if done {
+		_ = slot.engine.Close()
 	}
 }
 
@@ -492,7 +528,11 @@ func (r *Router) SetOnlineFactory(f OnlineFactory) {
 func (r *Router) switchTo(ctx context.Context, next string, force bool) error {
 	r.mu.RLock()
 	curSrc, curState, curEngineID := r.source, r.status.State, r.status.EngineID
+	revision := r.onlineRevision
 	hasTarget := r.engineLocked(next) != nil
+	if next == contract.ModelSourceOnline && r.online != nil && r.online.revision != revision {
+		hasTarget = false
+	}
 	r.mu.RUnlock()
 
 	if !force && next == curSrc && hasTarget && curState == contract.EngineStateReady {
@@ -530,14 +570,15 @@ func (r *Router) switchTo(ctx context.Context, next string, force bool) error {
 
 	// 步骤 4：成功 → 换指针、延迟卸载旧引擎、状态 ready。
 	r.mu.Lock()
-	var old Engine
+	var oldLocal Engine
+	var oldOnline *onlineSlot
 	switch next {
 	case contract.ModelSourceLocal:
-		old = r.local
+		oldLocal = r.local
 		r.local = eng
 	default:
-		old = r.online
-		r.online = eng
+		oldOnline = r.online
+		r.online = &onlineSlot{engine: eng, revision: revision}
 	}
 	r.source = next
 	r.degraded = false
@@ -553,8 +594,11 @@ func (r *Router) switchTo(ctx context.Context, next string, force bool) error {
 	r.notify(st)
 
 	// 旧引擎延迟卸载，容错在途请求（ARCH §4.2.2 步骤 4）。
-	if old != nil && old != eng {
-		r.scheduleClose(old)
+	if oldLocal != nil && oldLocal != eng {
+		r.scheduleClose(oldLocal)
+	}
+	if oldOnline != nil && oldOnline.engine != eng {
+		time.AfterFunc(r.unloadDelay, func() { _ = r.retireOnline(oldOnline) })
 	}
 	logx.For("asr").Info("引擎热切换完成", "source", next, "engineId", eng.ID(), "loadMs", loadMs)
 	return nil
@@ -658,30 +702,94 @@ func (r *Router) scheduleClose(old Engine) {
 // engineLocked 返回某来源的引擎实例（调用方须持有 r.mu）。
 func (r *Router) engineLocked(src string) Engine {
 	if src == contract.ModelSourceOnline {
-		return r.online
+		if r.online == nil {
+			return nil
+		}
+		return r.online.engine
 	}
 	return r.local
 }
 
-// route 决定本次 Finalize / Feed 走哪个引擎，以及是否走在线路径。
-//
-// 关键规则：一旦降级，即使 source 仍是 online 也走本地（不自动切回，ARCH §4.2.4 第 4 条）。
-func (r *Router) route() (Engine, bool, error) {
-	r.mu.RLock()
-	src, degraded := r.source, r.degraded
-	local, online := r.local, r.online
-	r.mu.RUnlock()
-
-	if src == contract.ModelSourceOnline && !degraded {
-		if online == nil {
-			return nil, false, errNotReady("在线引擎尚未预热")
+// route 决定本次 Finalize / Feed 使用的引擎。调用方必须释放非空的在线租约。
+// 已降级仍走本地，保存在线配置不会绕过这个隐私边界。
+func (r *Router) route() (Engine, *onlineSlot, error) {
+	for {
+		r.mu.Lock()
+		if r.source != contract.ModelSourceOnline || r.degraded {
+			local := r.local
+			r.mu.Unlock()
+			if local == nil {
+				return nil, nil, errNotReady("本地引擎尚未预热")
+			}
+			return local, nil, nil
 		}
-		return online, true, nil
+		slot := r.online
+		if slot == nil && !(r.onlineChanged && r.status.State != contract.EngineStatePaused) {
+			r.mu.Unlock()
+			return nil, nil, errNotReady("在线引擎尚未预热")
+		}
+		if slot != nil && slot.revision == r.onlineRevision {
+			slot.users++
+			r.mu.Unlock()
+			return slot.engine, slot, nil
+		}
+		r.mu.Unlock()
+		if err := r.refreshOnline(); err != nil {
+			return nil, nil, err
+		}
 	}
-	if local == nil {
-		return nil, false, errNotReady("本地引擎尚未预热")
+}
+
+// refreshOnline reconstructs an active online engine with the latest configuration. It never calls
+// Warm: the next transcription is the first request using the new endpoint, not a separate probe.
+func (r *Router) refreshOnline() error {
+	r.opMu.Lock()
+	defer r.opMu.Unlock()
+
+	r.mu.RLock()
+	old, revision, factory := r.online, r.onlineRevision, r.onlineFactory
+	stale := old != nil && old.revision != revision
+	missing := old == nil && r.onlineChanged && r.status.State != contract.EngineStatePaused
+	needed := r.source == contract.ModelSourceOnline && !r.degraded && (stale || missing)
+	r.mu.RUnlock()
+	if !needed {
+		return nil
 	}
-	return local, false, nil
+	if factory == nil {
+		return apierr.New(apierr.CodeEngineLoad).WithDetail("在线引擎未装配（请先配置端点）")
+	}
+	eng, err := factory()
+	if err != nil {
+		return apierr.From(err, apierr.CodeEngineLoad)
+	}
+	if eng == nil {
+		return apierr.New(apierr.CodeEngineLoad).WithDetail("在线引擎工厂返回空实例")
+	}
+
+	same := old != nil && eng == old.engine
+	r.mu.Lock()
+	if r.onlineRevision != revision || r.degraded {
+		r.mu.Unlock()
+		if !same {
+			_ = eng.Close()
+		}
+		return nil
+	}
+	if same {
+		old.revision = revision
+	} else {
+		r.online = &onlineSlot{engine: eng, revision: revision}
+	}
+	r.status.EngineID = eng.ID()
+	r.status.LoadMs = 0
+	r.status.LastError = nil
+	st := r.status
+	r.mu.Unlock()
+	if !same {
+		_ = r.retireOnline(old)
+	}
+	r.notify(st)
+	return nil
 }
 
 // —— 本地路径 ——
@@ -700,7 +808,7 @@ func (r *Router) finalizeLocal(eng Engine, seg AudioSegment) (FinalResult, error
 
 // —— 在线路径（重试 + 降级矩阵）——
 
-func (r *Router) finalizeOnline(eng Engine, seg AudioSegment) (FinalResult, error) {
+func (r *Router) finalizeOnline(slot *onlineSlot, seg AudioSegment) (FinalResult, error) {
 	policy := r.Policy()
 	attempts := policy.MaxRetries + 1 // 首次 + 重试次数
 	var lastErr *EngineError
@@ -721,9 +829,9 @@ func (r *Router) finalizeOnline(eng Engine, seg AudioSegment) (FinalResult, erro
 				"attempt", attempt, "kind", string(lastErr.Kind), "waitMs", wait.Milliseconds())
 		}
 
-		res, err := eng.Finalize(seg)
+		res, err := slot.engine.Finalize(seg)
 		if err == nil {
-			r.clearDegraded()
+			r.clearDegraded(slot)
 			return res, nil
 		}
 		lastErr = classifyEngineError(err)
@@ -737,11 +845,11 @@ func (r *Router) finalizeOnline(eng Engine, seg AudioSegment) (FinalResult, erro
 	}
 
 	// 重试耗尽（或不可重试）：按矩阵决定降级。
-	return r.handleOnlineFailure(eng, seg, lastErr)
+	return r.handleOnlineFailure(slot, seg, lastErr)
 }
 
 // handleOnlineFailure 实现在线失败后的降级（ARCH §4.2.4）。
-func (r *Router) handleOnlineFailure(eng Engine, seg AudioSegment, ee *EngineError) (FinalResult, error) {
+func (r *Router) handleOnlineFailure(slot *onlineSlot, seg AudioSegment, ee *EngineError) (FinalResult, error) {
 	if ee == nil {
 		ee = &EngineError{Kind: FailServer, Err: apierr.New(apierr.CodeEngineLoad)}
 	}
@@ -755,7 +863,11 @@ func (r *Router) handleOnlineFailure(eng Engine, seg AudioSegment, ee *EngineErr
 
 	canFallback := policy.FallbackToLocal && ee.Kind.fallbackable() && local != nil
 	if !canFallback {
-		r.setLastError(apiErr)
+		r.mu.Lock()
+		if r.currentOnlineLocked(slot) {
+			r.status.LastError = toErrorDTO(apiErr)
+		}
+		r.mu.Unlock()
 		logx.For("asr").Error("在线转写失败且不降级",
 			"kind", string(ee.Kind), "code", apiErr.Code,
 			"fallbackToLocal", policy.FallbackToLocal, "localReady", local != nil)
@@ -769,14 +881,18 @@ func (r *Router) handleOnlineFailure(eng Engine, seg AudioSegment, ee *EngineErr
 
 	// 置降级标记：只打一次点，之后持续用本地直到用户显式切回 / 窗口回升成功。
 	note := degradeNote(ee)
-	r.markDegraded(note, apiErr)
+	r.markDegraded(slot, note, apiErr)
 	logx.For("asr").Warn("在线引擎失败，已降级本地",
 		"kind", string(ee.Kind), "code", apiErr.Code)
 
 	res, err := local.Finalize(seg)
 	if err != nil {
 		localErr := apierr.From(err, apierr.CodeEngineLoad)
-		r.setLastError(localErr)
+		r.mu.Lock()
+		if r.currentOnlineLocked(slot) {
+			r.status.LastError = toErrorDTO(localErr)
+		}
+		r.mu.Unlock()
 		logx.For("asr").Error("降级后本地转写也失败", "code", localErr.Code)
 		return FinalResult{}, localErr
 	}
@@ -874,9 +990,18 @@ func degradeNote(ee *EngineError) string {
 	}
 }
 
+// currentOnlineLocked ignores state updates from an in-flight, superseded configuration.
+func (r *Router) currentOnlineLocked(slot *onlineSlot) bool {
+	return r.source == contract.ModelSourceOnline && r.online == slot && r.onlineRevision == slot.revision
+}
+
 // markDegraded 置降级标记并播报。
-func (r *Router) markDegraded(note string, cause *apierr.Err) {
+func (r *Router) markDegraded(slot *onlineSlot, note string, cause *apierr.Err) {
 	r.mu.Lock()
+	if !r.currentOnlineLocked(slot) {
+		r.mu.Unlock()
+		return
+	}
 	first := !r.degraded
 	r.degraded = true
 	r.degradedAt = r.now()
@@ -899,8 +1024,12 @@ func (r *Router) markDegraded(note string, cause *apierr.Err) {
 }
 
 // clearDegraded 清降级标记（只在在线转写成功后调用）。
-func (r *Router) clearDegraded() {
+func (r *Router) clearDegraded(slot *onlineSlot) {
 	r.mu.Lock()
+	if !r.currentOnlineLocked(slot) {
+		r.mu.Unlock()
+		return
+	}
 	was := r.degraded
 	if !was && r.status.State == contract.EngineStateReady {
 		r.mu.Unlock()
@@ -910,13 +1039,15 @@ func (r *Router) clearDegraded() {
 	r.degradedAt = time.Time{}
 	r.status.Degraded = false
 	r.status.DegradeNote = ""
-	if r.source == contract.ModelSourceOnline && r.status.State == contract.EngineStateDegraded {
-		r.status.State = contract.EngineStateReady
-	}
+	stateChanged := r.status.State != contract.EngineStateReady
+	r.status.State = contract.EngineStateReady
+	r.status.LastError = nil
 	st := r.status
 	r.mu.Unlock()
 	if was {
 		logx.For("asr").Info("在线引擎恢复，降级标记已清除")
+	}
+	if was || stateChanged {
 		r.notify(st)
 	}
 }

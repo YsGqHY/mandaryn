@@ -173,6 +173,103 @@ func warmLocalThenSwitchOnline(t *testing.T, r *Router) {
 	}
 }
 
+type gatedOnlineEngine struct {
+	*fakeEngine
+	started chan struct{}
+	resume  chan struct{}
+}
+
+func (e *gatedOnlineEngine) Finalize(seg AudioSegment) (FinalResult, error) {
+	close(e.started)
+	<-e.resume
+	return e.fakeEngine.Finalize(seg)
+}
+
+func TestRouter_OnlineConfigRefreshWithoutProbe(t *testing.T) {
+	old := &gatedOnlineEngine{
+		fakeEngine: &fakeEngine{id: "online:old", finalErrs: []error{onlineErr(FailAuth, apierr.CodeEngineOnlineAuth, 0)}},
+		started:    make(chan struct{}),
+		resume:     make(chan struct{}),
+	}
+	finish := sync.OnceFunc(func() { close(old.resume) })
+	defer finish()
+	local := &fakeEngine{id: "local", finalText: "fallback"}
+	fresh := &fakeEngine{id: "online:new", finalText: "updated"}
+	r := newRouter(t,
+		func() (Engine, error) { return local, nil },
+		func() (Engine, error) { return old, nil },
+		&sleepRecorder{}, contract.FallbackPolicy{FallbackToLocal: true}, nil)
+	warmLocalThenSwitchOnline(t, r)
+	defer r.Close()
+
+	type outcome struct {
+		result FinalResult
+		err    error
+	}
+	pending := make(chan outcome, 1)
+	go func() {
+		result, err := r.Finalize(segment())
+		pending <- outcome{result, err}
+	}()
+	select {
+	case <-old.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("old engine did not start")
+	}
+
+	builds := 0
+	r.SetOnlineFactory(func() (Engine, error) {
+		builds++
+		return fresh, nil
+	})
+	if builds != 0 || fresh.warmCount.Load() != 0 || old.closeCount.Load() != 0 || r.Source() != contract.ModelSourceOnline {
+		t.Fatalf("saving must not build, probe, close in-flight work or change source: builds=%d status=%+v", builds, r.Status())
+	}
+	result, err := r.Finalize(segment())
+	if err != nil || result.Text != "updated" || result.EngineID != "online:new" || builds != 1 || fresh.warmCount.Load() != 0 {
+		t.Fatalf("next transcription must use updated configuration without warm: result=%+v err=%v builds=%d", result, err, builds)
+	}
+	if old.closeCount.Load() != 0 {
+		t.Fatal("refresh closed a still-running engine")
+	}
+
+	finish()
+	select {
+	case got := <-pending:
+		if got.err != nil || got.result.Text != "fallback" || old.closeCount.Load() != 1 {
+			t.Fatalf("in-flight transcription must finish independently, then release old engine: %+v", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("old transcription did not finish")
+	}
+	if status := r.Status(); status.Source != contract.ModelSourceOnline || status.EngineID != "online:new" || status.Degraded || status.LastError != nil {
+		t.Fatalf("superseded failure modified the new route: %+v", status)
+	}
+}
+
+func TestRouter_OnlineRefreshDoesNotBypassDegradedRoute(t *testing.T) {
+	old := &fakeEngine{id: "online:old", finalErrs: []error{onlineErr(FailAuth, apierr.CodeEngineOnlineAuth, 0)}}
+	local := &fakeEngine{id: "local", finalText: "fallback"}
+	r := newRouter(t,
+		func() (Engine, error) { return local, nil },
+		func() (Engine, error) { return old, nil },
+		&sleepRecorder{}, contract.FallbackPolicy{FallbackToLocal: true}, nil)
+	warmLocalThenSwitchOnline(t, r)
+	defer r.Close()
+
+	if _, err := r.Finalize(segment()); err != nil || !r.Status().Degraded {
+		t.Fatalf("expected local fallback; err=%v status=%+v", err, r.Status())
+	}
+	r.SetOnlineFactory(func() (Engine, error) {
+		t.Fatal("saving must not re-enable a degraded online engine")
+		return nil, nil
+	})
+	result, err := r.Finalize(segment())
+	if err != nil || result.Text != "fallback" || !r.Status().Degraded || r.Source() != contract.ModelSourceOnline {
+		t.Fatalf("save changed the degraded route: result=%+v err=%v status=%+v", result, err, r.Status())
+	}
+}
+
 // —— 1. 在线故障矩阵 ——
 
 func TestRouter_OnlineFailuresDegradeToLocal(t *testing.T) {
