@@ -50,7 +50,8 @@ func (r *Recorder) ExportAudio(ctx context.Context, sessionID, targetPath string
 	if err != nil {
 		return "", apierr.From(err, apierr.CodeNotFound)
 	}
-	if _, statErr := os.Stat(src); statErr != nil {
+	source, statErr := os.Stat(src)
+	if statErr != nil {
 		if errors.Is(statErr, os.ErrNotExist) {
 			return "", apierr.New(apierr.CodeNotFound).
 				WithDetail("会话音频文件已不存在：%s", row.AudioPath)
@@ -58,6 +59,13 @@ func (r *Recorder) ExportAudio(ctx context.Context, sessionID, targetPath string
 		return "", wrapFSError(statErr, "读取会话音频失败")
 	}
 
+	format := strings.ToLower(strings.TrimPrefix(filepath.Ext(src), "."))
+	if strings.ToLower(filepath.Ext(target)) != "."+format {
+		return "", apierr.New(apierr.CodeInvalidArgument).WithDetail("导出须使用与录音相同的 .%s 格式", format)
+	}
+	if dest, err := os.Stat(target); err == nil && os.SameFile(source, dest) {
+		return "", apierr.New(apierr.CodeInvalidArgument).WithDetail("导出路径不能是录音源文件")
+	}
 	absTarget, err := filepath.Abs(target)
 	if err != nil {
 		absTarget = target
@@ -80,30 +88,22 @@ func (r *Recorder) ExportAudio(ctx context.Context, sessionID, targetPath string
 	}
 
 	logx.For("recording").Info("导出会话音频",
-		"session", row.ID, "bytes", row.SizeBytes, "format", ExportFormatWAV)
+		"session", row.ID, "bytes", row.SizeBytes, "format", format)
 	return absTarget, nil
 }
 
-// ensureExportableFormat 校验扩展名。
-//
-// 为什么 FLAC 不做：FLAC 不是「换个容器」而是真编码（需要 libFLAC/自己写
-// 预测+莱斯编码）。为一个「另存带走」的次要需求引 CGO 依赖或手写编码器都
-// 不划算，因此**明确拒绝并给出替代方案**（WAV 无损、体积大；转码请用外部工具）。
-// 见 docs/DEV-ISSUES-S2.md S2-08。
+// ensureExportableFormat rejects implicit conversion and unknown extensions.
 func ensureExportableFormat(target string) error {
 	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(target), "."))
 	switch ext {
-	case ExportFormatWAV:
+	case AudioFormatWAV, AudioFormatFLAC:
 		return nil
-	case "flac":
-		return apierr.New(apierr.CodeInvalidArgument).
-			WithDetail("本版本不支持导出 FLAC（需额外编码器）：请选择 .wav，导出后再用外部工具转码")
 	case "":
 		return apierr.New(apierr.CodeInvalidArgument).
-			WithDetail("导出路径缺少扩展名：请以 .wav 结尾")
+			WithDetail("导出路径缺少扩展名：请使用原录音格式")
 	default:
 		return apierr.New(apierr.CodeInvalidArgument).
-			WithDetail("不支持的导出格式 %q：本版本仅支持 .wav", ext)
+			WithDetail("不支持的导出格式 %q：仅支持原始的 WAV 或 FLAC 格式", ext)
 	}
 }
 

@@ -70,7 +70,8 @@ const (
 	// AudioFileName 会话音频文件名。
 	AudioFileName = "audio.wav"
 	// AudioFormatWAV 落库的 audio_format 值。
-	AudioFormatWAV = "wav"
+	AudioFormatWAV  = "wav"
+	AudioFormatFLAC = "flac"
 )
 
 // FramesToMs 帧计数换算毫秒（DOC-02 §4.5.1 的唯一公式）。

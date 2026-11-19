@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"vip.oberon.mandaryn/internal/apierr"
+	"vip.oberon.mandaryn/internal/audioflac"
 	"vip.oberon.mandaryn/internal/capture"
 	"vip.oberon.mandaryn/internal/contract"
 	"vip.oberon.mandaryn/internal/paths"
@@ -27,7 +28,7 @@ import (
 type Options struct {
 	// Store 持久层端口（必填）。
 	Store Store
-	// DataRoot 返回当前生效的数据根目录（必填；音频落在 <dataRoot>/sessions/<id>/）。
+	// DataRoot 返回当前生效的数据根目录（持久化录音必填；内存直传模式不调用）。
 	DataRoot func() (string, error)
 	// OpenChannel 打开捕获通道，默认 capture.Open。
 	OpenChannel func(sourceID string) (capture.Channel, error)
@@ -52,10 +53,10 @@ type Options struct {
 	// 开关**只在下一个会话生效**：这里只在 Start 时读一次，录制中不重读。
 	LiveEnabled func() bool
 	// NewLiveSink 为一个会话创建音频旁路接收端；返回 nil 表示本次不旁路。
-	//
-	// 由装配层接到 `transcriptsvc.NewLiveSink`（流式引擎不可用时它返回错误，
-	// 装配层记日志并返回 nil —— 录制**绝不**因推理能力缺失而起不来，FR-03-6）。
 	NewLiveSink func(sessionID string) LiveSink
+	// NewMemorySink 为在线内存直传创建接收端。创建失败时会话不会进入 recording，
+	// 且不会创建音频文件；错误由调用方映射为启动失败。
+	NewMemorySink func(sessionID string) (MemorySink, error)
 }
 
 // Handlers 是向 L3 薄壳暴露的回调集合。
@@ -103,9 +104,7 @@ func New(opts Options) (*Recorder, error) {
 	if opts.Store == nil {
 		return nil, apierr.New(apierr.CodeInvalidArgument).WithDetail("录制器缺少 Store 依赖")
 	}
-	if opts.DataRoot == nil {
-		return nil, apierr.New(apierr.CodeInvalidArgument).WithDetail("录制器缺少 DataRoot 依赖")
-	}
+
 	if opts.OpenChannel == nil {
 		opts.OpenChannel = capture.Open
 	}
@@ -173,6 +172,29 @@ func (r *Recorder) LiveCharCount() int64 {
 // 失败路径统一走 ST-02 → ST-09（failed），并把会话标记为 failed：
 // 不允许「调用失败但状态停在 preparing」——UI 会永远显示转圈。
 func (r *Recorder) Start(req contract.StartRequest) (contract.RecordingState, error) {
+	return r.StartWithAutoName(req, true)
+}
+
+// StartWithAutoName 应用命名策略；设置读取留给调用端，不改变采集/封存链路。
+func (r *Recorder) StartWithAutoName(req contract.StartRequest, autoName bool) (contract.RecordingState, error) {
+	return r.StartWithSettings(req, autoName, AudioFormatWAV, contract.SensitivityStandard)
+}
+
+// StartWithSettings snapshots the recording options for one new session.
+func (r *Recorder) StartWithSettings(req contract.StartRequest, autoName bool, audioFormat, sensitivity string) (contract.RecordingState, error) {
+	return r.StartWithPolicy(req, autoName, audioFormat, sensitivity, "", false)
+}
+
+// StartWithPolicy starts a session using an explicit model/privacy policy snapshot.
+// noAudioPersist is honored only for online model sources.
+func (r *Recorder) StartWithPolicy(req contract.StartRequest, autoName bool, audioFormat, sensitivity, modelSource string, noAudioPersist bool) (contract.RecordingState, error) {
+	audioFormat = strings.ToLower(strings.TrimSpace(audioFormat))
+	if audioFormat == "" {
+		audioFormat = AudioFormatWAV
+	}
+	if audioFormat != AudioFormatWAV && audioFormat != AudioFormatFLAC {
+		return r.State(), apierr.New(apierr.CodeInvalidArgument).WithDetail("不支持的录音格式")
+	}
 	sourceID := strings.TrimSpace(req.SourceID)
 	if sourceID == "" {
 		return r.State(), apierr.New(apierr.CodeInvalidArgument).WithDetail("sourceId 不能为空")
@@ -194,6 +216,7 @@ func (r *Recorder) Start(req contract.StartRequest) (contract.RecordingState, er
 		r.mu.Lock()
 		if rn != nil {
 			rn.finished = true
+			rn.closeChannel()
 		}
 		r.lastErr = cause
 		// preparing → failed 是合法转换；若已不在 preparing（理论上不会）则强制对齐。
@@ -205,9 +228,17 @@ func (r *Recorder) Start(req contract.StartRequest) (contract.RecordingState, er
 			_ = rn.writer.Close()
 			r.markSessionFailedLocked(rn, cause)
 		}
-		// 旁路 sink 已经在跑就一并收掉（非阻塞，见 LiveSink.Close 契约）。
+		// 准备失败或异常终止不得让未上传音频继续排队。
 		if rn != nil && rn.sink != nil {
-			rn.sink.Close()
+			if rn.noAudioPersist {
+				if sink, ok := rn.sink.(MemorySink); ok {
+					sink.Abort()
+				} else {
+					rn.sink.Close()
+				}
+			} else {
+				rn.sink.Close()
+			}
 		}
 		st := r.stateLocked()
 		r.mu.Unlock()
@@ -220,10 +251,25 @@ func (r *Recorder) Start(req contract.StartRequest) (contract.RecordingState, er
 		return fail(apierr.From(err, apierr.CodeSourceNotFound), nil)
 	}
 
-	dataRoot, err := r.opts.DataRoot()
-	if err != nil || strings.TrimSpace(dataRoot) == "" {
-		return fail(apierr.New(apierr.CodePathUnwritable).
-			WithDetail("数据目录不可用：%v", err), nil)
+	modelSource = strings.TrimSpace(modelSource)
+	if modelSource == "" && r.opts.DefaultModelSource != nil {
+		modelSource = strings.TrimSpace(r.opts.DefaultModelSource())
+	}
+	if modelSource == "" {
+		modelSource = contract.ModelSourceLocal
+	}
+	noDisk := modelSource == contract.ModelSourceOnline && noAudioPersist
+
+	var dataRoot string
+	if !noDisk {
+		if r.opts.DataRoot == nil {
+			return fail(apierr.New(apierr.CodePathUnwritable).WithDetail("数据目录不可用"), nil)
+		}
+		dataRoot, err = r.opts.DataRoot()
+		if err != nil || strings.TrimSpace(dataRoot) == "" {
+			return fail(apierr.New(apierr.CodePathUnwritable).
+				WithDetail("数据目录不可用：%v", err), nil)
+		}
 	}
 
 	ch, err := r.opts.OpenChannel(sourceID)
@@ -238,62 +284,76 @@ func (r *Recorder) Start(req contract.StartRequest) (contract.RecordingState, er
 	}
 
 	id := newSessionID()
-	relPath := path.Join(paths.SessionsDirName, id, AudioFileName)
-	absPath := filepath.Join(dataRoot, filepath.FromSlash(relPath))
-	writer, err := CreateWriter(absPath)
-	if err != nil {
-		_ = ch.Close()
-		return fail(apierr.From(err, apierr.CodeDiskFull), nil)
+	relPath := ""
+	absPath := ""
+	var writer audioWriter
+	if noDisk {
+		writer = newMemoryWriter()
+	} else {
+		relPath = path.Join(paths.SessionsDirName, id, "audio."+audioFormat)
+		absPath = filepath.Join(dataRoot, filepath.FromSlash(relPath))
+		if audioFormat == AudioFormatFLAC {
+			writer, err = audioflac.Create(absPath)
+		} else {
+			writer, err = CreateWriter(absPath)
+		}
+		if err != nil {
+			_ = ch.Close()
+			return fail(apierr.From(err, apierr.CodeDiskFull), nil)
+		}
 	}
 
 	// 边录边转（FR-03-10）：开关只在**会话开始时**读一次，录制中不重读
 	// （语义是「只在下一个会话生效」，与模型来源切换同规则）。
-	liveOn := r.opts.LiveEnabled != nil && r.opts.LiveEnabled()
+	liveOn := noDisk || (r.opts.LiveEnabled != nil && r.opts.LiveEnabled())
 
 	now := r.opts.Now()
-	modelSource := contract.ModelSourceLocal
-	if r.opts.DefaultModelSource != nil {
-		if v := strings.TrimSpace(r.opts.DefaultModelSource()); v != "" {
-			modelSource = v
-		}
-	}
 	title := strings.TrimSpace(req.Title)
-	if title == "" {
+	// 每次新建会话读取设置；显式标题不受影响，关闭时保留空标题供界面兜底。
+	if title == "" && autoName {
 		title = defaultTitle(now, name)
 	}
 
 	rn := &run{
-		id:          id,
-		title:       title,
-		sourceID:    sourceID,
-		sourceName:  name,
-		sourceKind:  kind,
-		modelSource: modelSource,
-		audioPath:   relPath,
-		absPath:     absPath,
-		startedAt:   now,
-		ch:          ch,
-		pipeline:    pipeline,
-		writer:      writer,
-		monitor:     NewMonitor(),
-		notifyCh:    make(chan struct{}, 1),
-		ringClosed:  make(chan struct{}),
-		writerDone:  make(chan struct{}),
+		id:             id,
+		title:          title,
+		sourceID:       sourceID,
+		sourceName:     name,
+		sourceKind:     kind,
+		modelSource:    modelSource,
+		noAudioPersist: noDisk,
+		audioPath:      relPath,
+		audioFormat:    audioFormat,
+		absPath:        absPath,
+		startedAt:      now,
+		ch:             ch,
+		pipeline:       pipeline,
+		writer:         writer,
+		monitor:        NewMonitor(),
+		notifyCh:       make(chan struct{}, 1),
+		ringClosed:     make(chan struct{}),
+		writerDone:     make(chan struct{}),
 	}
 	rn.readerDone = make(chan struct{})
 	close(rn.readerDone) // 尚未启动 reader：视为「当前没有活着的 reader」
 
 	row := &storage.Session{
-		ID:                  id,
-		Title:               title,
-		SourceID:            sourceID,
-		SourceName:          name,
-		SourceKind:          kind,
-		ModelSource:         modelSource,
-		Status:              contract.StateRecording,
-		StartedAt:           now.UnixMilli(),
-		AudioPath:           relPath,
-		AudioFormat:         AudioFormatWAV,
+		ID:          id,
+		Title:       title,
+		SourceID:    sourceID,
+		SourceName:  name,
+		SourceKind:  kind,
+		ModelSource: modelSource,
+		Status:      contract.StateRecording,
+		StartedAt:   now.UnixMilli(),
+		AudioPath:   relPath,
+		AudioFormat: func() string {
+			if noDisk {
+				return ""
+			}
+			return audioFormat
+		}(),
+		VadPreset:           contract.SnapshotVadPreset(sensitivity),
 		TranscriptionStatus: contract.TranscriptionNone,
 		LiveTranscribed:     liveOn,
 	}
@@ -304,6 +364,23 @@ func (r *Recorder) Start(req contract.StartRequest) (contract.RecordingState, er
 		_ = writer.Seal()
 		_ = writer.Close()
 		return fail(apierr.From(err, apierr.CodeDBWrite), nil)
+	}
+
+	// 内存直传 sink 必须在会话行写入后、录制状态可见前准备成功。
+	// 这样失败不会暴露一个看似正在录制、却无法上传的无盘会话。
+	if noDisk {
+		if r.opts.NewMemorySink == nil {
+			return fail(apierr.New(apierr.CodeEngineNotReady).WithDetail("在线内存转写接收端不可用"), rn)
+		}
+		rn.sink, err = r.opts.NewMemorySink(id)
+		if err != nil || rn.sink == nil {
+			if err == nil {
+				err = errors.New("在线内存转写接收端为空")
+			}
+			return fail(apierr.From(err, apierr.CodeEngineNotReady), rn)
+		}
+	} else if liveOn && r.opts.NewLiveSink != nil {
+		rn.sink = r.opts.NewLiveSink(id)
 	}
 
 	r.mu.Lock()
@@ -318,13 +395,8 @@ func (r *Recorder) Start(req contract.StartRequest) (contract.RecordingState, er
 	r.emitState(st)
 
 	logx.For("recording").Info("开始录制",
-		"session", id, "source", sourceID, "format", pipeline.String(), "modelSource", modelSource)
-	// 边录边转的音频旁路（FR-03-10）：在落盘 goroutine 启动**之前**建好，
-	// 因此 writeLoop 读 rn.sink 不需要加锁（goroutine 启动是 happens-before 边界）。
-	// 建 sink 失败不影响录制：能力缺失只让边录边转缺席，录制照样跑（FR-03-6）。
-	if liveOn && r.opts.NewLiveSink != nil {
-		rn.sink = r.opts.NewLiveSink(id)
-	}
+		"session", id, "source", sourceID, "format", pipeline.String(), "modelSource", modelSource,
+		"noAudioPersist", noDisk)
 
 	// 落盘 goroutine 先起：reader 一推数据就要有人取，否则环形缓冲白转。
 	go r.writeLoop(rn)
@@ -451,6 +523,16 @@ func (r *Recorder) Stop() (contract.RecordingState, error) {
 // status=recording 的残留行，只能等下个行程由 Recover 修补（少 200ms 且
 // 用户会看到「上次异常中断」的惊吓）。
 func (r *Recorder) Shutdown() error {
+	// 应用退出不得继续排空在线内存音频：先发 Abort，再让录制主链路正常停采集。
+	r.mu.Lock()
+	if rn := r.run; rn != nil && !rn.finished && rn.noAudioPersist && rn.sink != nil {
+		rn.setShutdownAbort(true)
+		if sink, ok := rn.sink.(MemorySink); ok {
+			sink.Abort()
+		}
+	}
+	r.mu.Unlock()
+
 	state := r.sm.Current()
 	switch state {
 	case contract.StateRecording, contract.StatePaused:
@@ -493,8 +575,9 @@ func (r *Recorder) finalizeLocked(rn *run, outcome string, cause *apierr.Err) (c
 	// 3) 封口落盘（writer 自己在退出时 Seal，这里再兜一次，幂等）。
 	rn.closeRing()
 	r.waitDone(rn.writerDone, r.opts.StopTimeout, rn.id, "落盘")
-	if err := rn.writer.Seal(); err != nil {
-		logx.For("recording").Warn("封口 WAV 失败", "session", rn.id, "err", err.Error())
+	sealErr := rn.writer.Seal()
+	if sealErr != nil {
+		logx.For("recording").Warn("封存音频失败", "session", rn.id, "err", sealErr.Error())
 	}
 	// 必须显式关闭文件句柄：不关会让文件被本进程占住，
 	// 用户在资源管理器里删不掉、Windows 上「删除会话」也会失败（DEV-ISSUES-S2 S2-03）。
@@ -506,13 +589,19 @@ func (r *Recorder) finalizeLocked(rn *run, outcome string, cause *apierr.Err) (c
 	durationMs := FramesToMs(frames)
 	sizeBytes := rn.writer.SizeBytes()
 
-	// 边录边转旁路收尾：只发停止信号（**非阻塞**）。
-	//
-	// 为什么不在收尾里等它：Stop 的收尾窗口越短，崩溃丢音频的窗口越小
-	// （FR-03 铁律）。尾部那句「够长就定稿、否则丢弃」由 sink 自己的 goroutine
-	// 决定，与录制收尾无关。
-	if rn.sink != nil {
-		rn.sink.Close()
+	if sealErr != nil {
+		// Leave the non-final database row eligible for startup recovery.
+		// A damaged stream header must never be advertised as a completed file.
+		if !rn.isShutdownAbort() {
+			if sink, ok := rn.sink.(MemorySink); ok {
+				sink.Abort()
+			} else if rn.sink != nil {
+				rn.sink.Close()
+			}
+		}
+		r.lastErr = apierr.From(wrapFSError(sealErr, "封存音频失败，已保留录音供恢复"), apierr.CodePathUnwritable)
+		_ = r.sm.Force(contract.StateInterrupted)
+		return r.stateLocked(), r.lastErr
 	}
 
 	// 空录音策略（FR-03-7「不产生空录音实例」）：
@@ -550,7 +639,12 @@ func (r *Recorder) finalizeLocked(rn *run, outcome string, cause *apierr.Err) (c
 		"duration_ms":  durationMs,
 		"size_bytes":   sizeBytes,
 		"audio_path":   rn.audioPath,
-		"audio_format": AudioFormatWAV,
+		"audio_format": rn.audioFormat,
+	}
+	if rn.noAudioPersist {
+		fields["audio_path"] = ""
+		fields["audio_format"] = ""
+		fields["size_bytes"] = int64(0)
 	}
 	if emptyNote != "" {
 		fields["degrade_reason"] = emptyNote
@@ -563,6 +657,21 @@ func (r *Recorder) finalizeLocked(rn *run, outcome string, cause *apierr.Err) (c
 		outcome = contract.StateInterrupted
 		opErr = apierr.From(derr, apierr.CodeDBWrite)
 		r.lastErr = opErr
+	}
+
+	abortSink := rn.pipeline.Dropped() > 0 || outcome != contract.StateCompleted || opErr != nil || cause != nil || rn.isShutdownAbort()
+	if rn.sink != nil {
+		if abortSink {
+			if !rn.isShutdownAbort() {
+				if sink, ok := rn.sink.(MemorySink); ok {
+					sink.Abort()
+				} else {
+					rn.sink.Close()
+				}
+			}
+		} else {
+			rn.sink.Close()
+		}
 	}
 
 	if err := r.sm.To(outcome); err != nil {
@@ -684,7 +793,9 @@ func (r *Recorder) writeLoop(rn *run) {
 			report, noAudio := rn.monitor.Feed(buf[:n], rn.writer.SizeBytes())
 			// 落盘成功之后才推给旁路：推理侧永远拿不到「没进文件」的音频。
 			// sink 是有界队列、非阻塞（见 LiveSink 契约），这里绝不等待推理。
-			if rn.sink != nil {
+			if sink, ok := rn.sink.(MemorySink); rn.noAudioPersist && ok && rn.pipeline.Dropped() != 0 {
+				sink.Abort()
+			} else if rn.sink != nil {
 				rn.sink.Push(buf[:n], atFrame)
 			}
 			if noAudio {
@@ -780,6 +891,8 @@ func (r *Recorder) stateLocked() contract.RecordingState {
 	st := contract.RecordingState{State: state}
 	if rn := r.run; rn != nil {
 		st.SessionID = rn.id
+		st.AudioFormat = rn.audioFormat
+		st.NoAudioPersist = rn.noAudioPersist
 		st.SourceID = rn.sourceID
 		st.ModelSource = rn.modelSource
 		st.StartedAt = rn.startedAt.Format(time.RFC3339Nano)
@@ -1050,20 +1163,30 @@ func truncateNote(s string) string {
 }
 
 // run 是一场录制的运行时（采集 epoch + 落盘 goroutine + 计数）。
+type audioWriter interface {
+	Write([]float32) error
+	Seal() error
+	Close() error
+	Frames() int64
+	DurationMs() int64
+	SizeBytes() int64
+}
 type run struct {
-	id          string
-	title       string
-	sourceID    string
-	sourceName  string
-	sourceKind  string
-	modelSource string
-	audioPath   string // 相对 dataRoot（正斜杠）
-	absPath     string
+	id             string
+	title          string
+	sourceID       string
+	sourceName     string
+	sourceKind     string
+	modelSource    string
+	noAudioPersist bool
+	audioPath      string // 相对 dataRoot（正斜杠）
+	audioFormat    string
+	absPath        string
 
 	startedAt time.Time
 
 	pipeline *Pipeline
-	writer   *Writer
+	writer   audioWriter
 	monitor  *Monitor
 
 	// sink 是边录边转的音频旁路（FR-03-10）；nil = 未开启（默认）。
@@ -1086,6 +1209,8 @@ type run struct {
 
 	// finished 由 Recorder 的锁保护，标记已走完收尾。
 	finished bool
+	// shutdownAbort 由应用退出设置，阻止内存直传在 Stop 后继续排空。
+	shutdownAbort bool
 	// dropsLogged 环形缓冲溢出只告警一次（避免刷屏）。
 	dropsLogged bool
 }
@@ -1169,6 +1294,18 @@ func (rn *run) isStopping() bool {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
 	return rn.stopping
+}
+
+func (rn *run) setShutdownAbort(v bool) {
+	rn.mu.Lock()
+	rn.shutdownAbort = v
+	rn.mu.Unlock()
+}
+
+func (rn *run) isShutdownAbort() bool {
+	rn.mu.Lock()
+	defer rn.mu.Unlock()
+	return rn.shutdownAbort
 }
 
 func (rn *run) setLostErr(err error) {

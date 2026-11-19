@@ -26,12 +26,19 @@ type LiveSink interface {
 	// Push 投递一段内部格式（16k 单声道）音频。
 	//
 	// atFrame 是该批样本在会话时间轴上的起始**帧偏移**（= 已落盘帧数），
-	// 因此 sink 侧的时间轴与 WAV 文件严格一致（不用墙钟，ARCH §4.3）。
+	// 因此 sink 侧时间轴与录音帧计数严格一致（不用墙钟，ARCH §4.3）。
 	Push(samples []float32, atFrame int64)
-	// Close 请求退出（非阻塞、幂等）：未定稿的尾部由实现决定「够长就定稿、否则丢弃」。
+	// Close 请求正常退出（非阻塞、幂等）：实现可异步排空已接收的音频。
 	Close()
 	// CharCount 已定稿的字符数（FR-03-9：开启边录边转时录制页追加显示）。
 	CharCount() int64
+}
+
+// MemorySink 是在线内存直传接收端。Abort 必须非阻塞，并取消未完成的上传、
+// 将对应转写标记为失败；它不应将尚未发送的音频排队等待后续补发。
+type MemorySink interface {
+	LiveSink
+	Abort()
 }
 
 // framesToMs 把帧数换算成毫秒（与 writer.DurationMs 同一口径）。

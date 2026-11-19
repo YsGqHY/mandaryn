@@ -5,9 +5,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"vip.oberon.mandaryn/internal/apierr"
+	"vip.oberon.mandaryn/internal/audioflac"
 	"vip.oberon.mandaryn/internal/contract"
 	"vip.oberon.mandaryn/internal/storage"
 	"vip.oberon.mandaryn/internal/utils/logx"
@@ -101,6 +103,27 @@ func (r *Recorder) repairSession(ctx context.Context, row *storage.Session) Reco
 		Status:         contract.StateInterrupted,
 	}
 
+	if strings.TrimSpace(row.AudioPath) == "" {
+		// 无盘会话没有可恢复的文件：不访问 DataRoot，也不制造占位音频。
+		// 主状态保留为 interrupted，转写轴明确失败，避免启动后再次尝试读取音频。
+		res.Missing = true
+		res.Status = contract.StateInterrupted
+		res.Err = nil
+		fields := map[string]any{
+			"status":               res.Status,
+			"duration_ms":          0,
+			"size_bytes":           0,
+			"audio_path":           "",
+			"audio_format":         "",
+			"transcription_status": contract.TranscriptionFailed,
+			"degrade_reason":       truncateNote("无音频文件可恢复，转写已失败"),
+		}
+		if err := r.opts.Store.UpdateSession(ctx, row.ID, fields); err != nil {
+			res.Err = err
+		}
+		return res
+	}
+
 	abs, pathErr := r.audioAbsPath(row.AudioPath)
 	if pathErr == nil {
 		var frames int64
@@ -169,6 +192,9 @@ func (r *Recorder) audioAbsPath(rel string) (string, error) {
 	if rel == "" {
 		return "", apierr.New(apierr.CodeNotFound).WithDetail("会话没有音频文件记录")
 	}
+	if r.opts.DataRoot == nil {
+		return "", apierr.New(apierr.CodePathUnwritable).WithDetail("数据目录不可用")
+	}
 	root, err := r.opts.DataRoot()
 	if err != nil || root == "" {
 		return "", apierr.New(apierr.CodePathUnwritable).
@@ -188,9 +214,22 @@ func repairAudioFile(abs string) (int64, int64, error) {
 		}
 		return 0, 0, wrapFSError(err, "读取音频文件信息失败")
 	}
-	frames, err := RepairWAV(abs)
+	var frames int64
+	switch strings.ToLower(filepath.Ext(abs)) {
+	case ".flac":
+		frames, err = audioflac.Repair(abs)
+	case ".wav":
+		frames, err = RepairWAV(abs)
+	default:
+		err = apierr.New(apierr.CodeInvalidArgument).WithDetail("未知会话音频格式")
+	}
 	if err != nil {
 		return 0, st.Size(), err
+	}
+	// Recovery may truncate the incomplete last frame; use the new length.
+	st, err = os.Stat(abs)
+	if err != nil {
+		return 0, 0, wrapFSError(err, "读取修复后的音频文件失败")
 	}
 	return frames, st.Size(), nil
 }

@@ -1,6 +1,7 @@
 package recording
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -128,6 +129,42 @@ func TestExportAudioRepairsHeaderOnCopy(t *testing.T) {
 	}
 }
 
+func TestExportFLACKeepsOriginalFormat(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStore(t)
+	rec, err := New(Options{Store: store, DataRoot: func() (string, error) { return root, nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	const id = "s_FLACEXPORT000000000000000"
+	const rel = "audio.flac"
+	src := filepath.Join(root, rel)
+	// Encoding/decoding is exercised separately; export must preserve bytes exactly.
+	want := []byte("fLaC-original-bytes")
+	if err := os.WriteFile(src, want, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateSession(ctx, &storage.Session{ID: id, AudioPath: rel, AudioFormat: AudioFormatFLAC}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rec.ExportAudio(ctx, id, filepath.Join(root, "wrong.wav")); !apierr.HasCode(err, apierr.CodeInvalidArgument) {
+		t.Fatalf("mismatched extension: %v", err)
+	}
+	if _, err := rec.ExportAudio(ctx, id, src); !apierr.HasCode(err, apierr.CodeInvalidArgument) {
+		t.Fatalf("same file: %v", err)
+	}
+	path, err := rec.ExportAudio(ctx, id, filepath.Join(root, "copy.flac"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{path, src} {
+		if got, err := os.ReadFile(name); err != nil || !bytes.Equal(got, want) {
+			t.Fatalf("copy/source differs: %v", err)
+		}
+	}
+}
+
 // TestExportAudioRejectsUnsupported 断言格式与参数的拒绝路径都有明确说明。
 func TestExportAudioRejectsUnsupported(t *testing.T) {
 	rec := newTestRecorder(t, nil)
@@ -145,15 +182,6 @@ func TestExportAudioRejectsUnsupported(t *testing.T) {
 		}
 		if !contains(mustDetail(t, err), "另存为") {
 			t.Fatalf("应说明需要前端弹原生另存为，实际 %q", mustDetail(t, err))
-		}
-	})
-	t.Run("FLAC 不支持", func(t *testing.T) {
-		_, err := rec.ExportAudio(ctx, "s_x", "a.flac")
-		if !apierr.HasCode(err, apierr.CodeInvalidArgument) {
-			t.Fatalf("应返回 ERR_INVALID_ARGUMENT，实际 %v", err)
-		}
-		if !contains(mustDetail(t, err), "FLAC") {
-			t.Fatalf("应说明 FLAC 不支持，实际 %q", mustDetail(t, err))
 		}
 	})
 	t.Run("未知扩展名", func(t *testing.T) {
