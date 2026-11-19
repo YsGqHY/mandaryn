@@ -41,6 +41,7 @@ func (s *store) LoadSession(ctx context.Context, sessionID string) (transcribe.S
 		ID:                   row.ID,
 		Title:                row.Title,
 		AudioPath:            row.AudioPath,
+		VadPreset:            row.VadPreset,
 		DurationMs:           row.DurationMs,
 		State:                row.Status,
 		TranscriptionStatus:  row.TranscriptionStatus,

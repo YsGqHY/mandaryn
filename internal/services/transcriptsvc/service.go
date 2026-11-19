@@ -95,6 +95,10 @@ type Service struct {
 	reader    *transcribe.TimelineReader
 	store     *store
 	live      LiveDeps
+	allowed   func() error
+	memoryMu  sync.Mutex
+	memory    map[*transcribe.MemoryRunner]struct{}
+	closing   bool
 
 	mu      sync.RWMutex
 	onState func(contract.TranscriptionState)
@@ -119,6 +123,8 @@ func New(d Deps) (*Service, error) {
 		engine:   d.Engine,
 		store:    st,
 		live:     d.Live,
+		allowed:  d.Allowed,
+		memory:   make(map[*transcribe.MemoryRunner]struct{}),
 		onState:  d.OnState,
 	}
 
@@ -132,6 +138,7 @@ func New(d Deps) (*Service, error) {
 		Idle:    d.Idle,
 		IdleFor: d.IdleFor,
 		Allowed: d.Allowed,
+		Vad:     d.Live.Vad,
 		OnState: s.emit,
 	})
 	if err != nil {
@@ -139,6 +146,13 @@ func New(d Deps) (*Service, error) {
 	}
 	s.runner = runner
 
+	// A crash can leave a text-only session running after capture already stopped.
+	// There is no audio to resume; retain received text and mark the task failed.
+	if err := d.Holder.Current().GORM.Model(&storage.Session{}).
+		Where("audio_path = ? AND live_transcribed = ? AND transcription_status = ?", "", true, contract.TranscriptionRunning).
+		Update("transcription_status", contract.TranscriptionFailed).Error; err != nil {
+		return nil, apierr.Wrap(err, apierr.CodeDBWrite)
+	}
 	sched, err := transcribe.NewScheduler(runner, transcribe.SchedulerOptions{Poll: d.PollInterval})
 	if err != nil {
 		return nil, err
@@ -165,9 +179,70 @@ func (s *Service) setOnState(fn func(contract.TranscriptionState)) {
 
 // Close 停止调度器（取消在跑任务；已落库的进度保留）。
 func (s *Service) Close() {
+	_ = s.ServiceShutdown()
+}
+
+func (s *Service) ServiceShutdown() error {
+	s.memoryMu.Lock()
+	s.closing = true
+	runners := make([]*transcribe.MemoryRunner, 0, len(s.memory))
+	for r := range s.memory {
+		r.Abort()
+		runners = append(runners, r)
+	}
+	s.memoryMu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	for _, r := range runners {
+		if !r.Wait(ctx) {
+			logx.For("transcriptsvc").Warn("memory transcription shutdown timed out")
+			break
+		}
+	}
 	if s.scheduler != nil {
 		s.scheduler.Close()
 	}
+	return nil
+}
+
+// NewMemorySink is the internal recorder bridge, not a Wails binding.
+func NewMemorySink(ctx context.Context, s *Service, sessionID string, eng transcribe.MemoryEngine) (*transcribe.MemoryRunner, error) {
+	s.memoryMu.Lock()
+	defer s.memoryMu.Unlock()
+	if s.closing {
+		return nil, apierr.New(apierr.CodeStateForbidden).WithDetail("application is shutting down")
+	}
+	session, err := s.store.LoadSession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	r, err := transcribe.NewMemoryRunner(ctx, transcribe.MemoryOptions{
+		Store: s.store, Engine: eng, SessionID: sessionID,
+		Vad:     transcribe.VadForSessionPreset(s.live.Vad, session.VadPreset),
+		Allowed: s.allowed, OnSegment: s.live.OnSegment, OnState: s.emit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.memory[r] = struct{}{}
+	go func() {
+		r.Wait(context.Background())
+		s.memoryMu.Lock()
+		delete(s.memory, r)
+		s.memoryMu.Unlock()
+	}()
+	return r, nil
+}
+
+func (s *Service) memoryRunner(sessionID string) *transcribe.MemoryRunner {
+	s.memoryMu.Lock()
+	defer s.memoryMu.Unlock()
+	for r := range s.memory {
+		if r.SessionID() == sessionID {
+			return r
+		}
+	}
+	return nil
 }
 
 // —— API-4.5 ——
@@ -185,9 +260,13 @@ func (s *Service) StartTranscription(ctx context.Context, sessionID string) (con
 		return contract.TranscriptionState{}, apierr.New(apierr.CodeInvalidArgument).
 			WithDetail("sessionId 为空")
 	}
-	// 先确认会话存在，否则会先报引擎错误再报找不到，前端提示会误导。
-	if _, err := s.store.LoadSession(ctx, sessionID); err != nil {
+	// A memory-only session cannot be retranscribed; leave its existing text and status alone.
+	row, err := s.store.LoadSession(ctx, sessionID)
+	if err != nil {
 		return contract.TranscriptionState{}, apierr.From(err, apierr.CodeNotFound)
+	}
+	if strings.TrimSpace(row.AudioPath) == "" {
+		return s.currentState(ctx, sessionID), apierr.New(apierr.CodeNotFound).WithDetail("会话没有保存音频，无法重新转写")
 	}
 	if err := s.requireEngine(ctx); err != nil {
 		return s.currentState(ctx, sessionID), err
@@ -217,8 +296,18 @@ func (s *Service) CancelTranscription(ctx context.Context, sessionID string) (co
 		return contract.TranscriptionState{}, apierr.New(apierr.CodeInvalidArgument).
 			WithDetail("sessionId 为空")
 	}
-	if _, err := s.store.LoadSession(ctx, sessionID); err != nil {
+	row, err := s.store.LoadSession(ctx, sessionID)
+	if err != nil {
 		return contract.TranscriptionState{}, apierr.From(err, apierr.CodeNotFound)
+	}
+	if row.AudioPath == "" && row.LiveTranscribed {
+		if r := s.memoryRunner(sessionID); r != nil {
+			r.Abort()
+			waitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cancelWaitTimeout)
+			defer cancel()
+			r.Wait(waitCtx)
+			return s.GetTranscription(ctx, sessionID)
+		}
 	}
 	ok, err := s.scheduler.Cancel(ctx, sessionID)
 	if err != nil {
@@ -264,6 +353,20 @@ func (s *Service) GetTranscription(ctx context.Context, sessionID string) (contr
 	// 直接查库会让进度条看起来「卡住」。
 	if live, ok := s.runner.Live(sessionID); ok {
 		return live, nil
+	}
+	if row.AudioPath == "" && row.LiveTranscribed && row.TranscriptionStatus == contract.TranscriptionRunning && s.memoryRunner(sessionID) == nil {
+		// Re-read after observing that the worker exited: its final write may
+		// have raced with our first read. A failed final write must not make
+		// the query report an upload that no longer exists.
+		row, err = s.store.LoadSession(ctx, sessionID)
+		if err != nil {
+			return contract.TranscriptionState{}, err
+		}
+		if row.TranscriptionStatus == contract.TranscriptionRunning {
+			st := transcribe.StateOf(row, "", row.SegmentCount)
+			st.Status, st.ErrorCode = contract.TranscriptionFailed, apierr.CodeDBWrite
+			return st, nil
+		}
 	}
 	return transcribe.StateOf(row, "", row.SegmentCount), nil
 }
@@ -374,11 +477,15 @@ func (s *Service) NewLiveSink(ctx context.Context, sessionID string) (*transcrib
 		return nil, apierr.From(err, apierr.CodeEngineLoad)
 	}
 
+	session, err := s.store.LoadSession(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
 	opts := transcribe.LiveOptions{
 		Store:         s.store,
 		Engine:        eng,
 		SessionID:     sessionID,
-		Vad:           s.live.Vad,
+		Vad:           transcribe.VadForSessionPreset(s.live.Vad, session.VadPreset),
 		Refine:        s.live.Refine,
 		RefineAllowed: s.live.RefineAllowed,
 		OnPartial:     s.live.OnPartial,

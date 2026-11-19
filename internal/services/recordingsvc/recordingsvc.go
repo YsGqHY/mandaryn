@@ -83,14 +83,18 @@ func New(rec *recording.Recorder, holder *storage.Holder, emit Emit) *Service {
 // 注意 modelSource 的落库口径：本层只把「用户/设置里的当前值」写进会话快照
 // （FR-08-3 要求导出保留来源），**不在这里预热引擎** —— 预热与降级属于
 // enginesvc（API-5.x），录制不应依赖推理引擎是否就绪（默认延后转写）。
-func (s *Service) Start(_ context.Context, req contract.StartRequest) (contract.RecordingState, error) {
+func (s *Service) Start(ctx context.Context, req contract.StartRequest) (contract.RecordingState, error) {
 	id := strings.TrimSpace(req.SourceID)
 	if id == "" {
 		return s.rec.State(), apierr.New(apierr.CodeInvalidArgument).
 			WithDetail("sourceId 不能为空")
 	}
 	req.SourceID = id
-	st, err := s.rec.Start(req)
+	var settings storage.AppSettings
+	if err := s.holder.Current().GORM.WithContext(ctx).First(&settings, "id = ?", 1).Error; err != nil {
+		return s.rec.State(), apierr.Wrap(err, apierr.CodeDBWrite)
+	}
+	st, err := s.rec.StartWithPolicy(req, settings.AutoName, settings.SaveFormat, settings.Sensitivity, settings.ModelSource, settings.NoAudioPersist)
 	if err != nil {
 		return st, apierr.From(err, mapStartFallback(err))
 	}

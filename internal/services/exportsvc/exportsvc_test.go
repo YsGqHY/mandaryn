@@ -60,6 +60,9 @@ func TestWriteXLSX(t *testing.T) {
 	if idx, _ := f.GetSheetIndex(sheet); idx < 0 {
 		t.Fatalf("sheet %q not found: %v", sheet, f.GetSheetList())
 	}
+	if dimension, err := f.GetSheetDimension(sheet); err != nil || dimension != "A1:C3" {
+		t.Fatalf("worksheet dimension = %q (%v), want A1:C3", dimension, err)
+	}
 	check := func(cell, want string) {
 		t.Helper()
 		got, err := f.GetCellValue(sheet, cell)

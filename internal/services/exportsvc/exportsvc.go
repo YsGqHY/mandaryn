@@ -184,6 +184,21 @@ func buildXLSX(table Table) ([]byte, error) {
 			cols = len(r)
 		}
 	}
+	// StreamWriter serializes the existing sheet dimension before the first
+	// row. Advertise the actual range so read-only XLSX readers see every cell.
+	rows := len(table.Rows)
+	if len(table.Headers) > 0 {
+		rows++
+	}
+	if cols > 0 && rows > 0 {
+		last, err := excelize.CoordinatesToCellName(cols, rows)
+		if err != nil {
+			return nil, err
+		}
+		if err := f.SetSheetDimension(sheet, "A1:"+last); err != nil {
+			return nil, fmt.Errorf("exportsvc: sheet dimension: %w", err)
+		}
+	}
 	widths := make([]float64, cols)
 	track := func(i int, s string) {
 		if w := displayWidth(s); w > widths[i] {

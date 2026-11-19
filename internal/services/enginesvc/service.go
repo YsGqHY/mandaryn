@@ -184,7 +184,7 @@ func (s *Service) TestOnline(ctx context.Context, cfg contract.OnlineConfig) (co
 // SetOnlineConfig 保存在线端点（需已对当前域名做过隐私确认）。
 //
 // 校验与加密落库都委托 appsettings（它已实现 consent 绑定域名 + cryptox 加密），
-// 本方法只多做一件事：让 router 丢掉缓存的旧在线引擎，避免继续用旧密钥 / 旧模型。
+// 本方法通知 router 在下一次在线转写使用新配置，不探测端点、不切换来源。
 func (s *Service) SetOnlineConfig(ctx context.Context, cfg contract.OnlineConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -268,7 +268,10 @@ func (s *Service) onlineOptions(ctx context.Context, cfg contract.OnlineConfig) 
 	if err != nil {
 		return asr.OnlineOptions{}, err
 	}
+	return s.onlineOptionsForRow(row, cfg)
+}
 
+func (s *Service) onlineOptionsForRow(row storage.AppSettings, cfg contract.OnlineConfig) (asr.OnlineOptions, error) {
 	endpoint := strings.TrimSpace(cfg.Endpoint)
 	if endpoint == "" {
 		endpoint = row.OnlineEndpoint
@@ -303,6 +306,28 @@ func (s *Service) onlineOptions(ctx context.Context, cfg contract.OnlineConfig) 
 		ProxyURL:  proxyURLFor(row, true),
 		Recorder:  s.out,
 	}, nil
+}
+
+// NewMemoryOnlineEngine snapshots the consent and endpoint from the same row.
+// It bypasses Router fallback and does not contact the endpoint at construction.
+func NewMemoryOnlineEngine(ctx context.Context, s *Service) (*asr.OnlineEngine, error) {
+	if err := outbound.Guard(); err != nil {
+		return nil, err
+	}
+	row, err := s.loadRow(ctx)
+	if err != nil {
+		return nil, err
+	}
+	host := safeHost(row.OnlineEndpoint)
+	if host == "" || row.OnlineConsentAt == 0 || !strings.EqualFold(row.OnlineConsentHost, host) {
+		return nil, apierr.New(apierr.CodeSettingsConsentRequired).WithAction("configure-online")
+	}
+	opt, err := s.onlineOptionsForRow(row, contract.OnlineConfig{})
+	if err != nil {
+		return nil, err
+	}
+	opt.RefuseRedirects = true
+	return asr.NewOnlineEngine(opt)
 }
 
 // onlineFactory 返回「每次调用都读最新库值」的在线引擎工厂。
