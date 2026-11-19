@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"vip.oberon.mandaryn/internal/apierr"
 	"vip.oberon.mandaryn/internal/contract"
 	"vip.oberon.mandaryn/internal/utils/procx"
 )
@@ -411,41 +412,79 @@ func TestE2EAppRestartReconnect(t *testing.T) {
 
 // TestE2EAppExitReportsErr 目标进程退出后观察 Channel.Err()（FR-02-5）。
 //
-// 结论（实测）：进程级回环在目标消失后**只是停止出包**，不保证发事件，
-// 因此这里不判失败，只把事实记录下来；源失效的可靠判定需要靠上层轮询/校验。
+// 先证明本测试自启播放器确实有声，再只终止该播放器所属的 procx Job，
+// 最后要求捕获通道在有限时间内报告 ERR_SOURCE_NOT_FOUND。
 func TestE2EAppExitReportsErr(t *testing.T) {
 	if ok, note := processLoopbackAvailable(); !ok {
 		t.Skipf("本机不支持进程回环：%s", note)
 	}
+	requirePlaybackDevice(t)
 	wavPath := resolveE2EWav(t)
+	src, err := readWavMono(wavPath)
+	if err != nil {
+		t.Fatalf("读取测试音频失败：%v", err)
+	}
+	var sourcePeak float32
+	for _, sample := range src.Mono {
+		if peak := float32(math.Abs(float64(sample))); peak > sourcePeak {
+			sourcePeak = peak
+		}
+	}
+	if sourcePeak <= ProducingPeakThreshold {
+		t.Skipf("测试音频素材本身近乎静音：峰值 %.6f，不高于 %.6f，无法可靠验证退出通知",
+			sourcePeak, ProducingPeakThreshold)
+	}
 
 	proc, err := procx.StartCtx(context.Background(), e2ePlayerSpec(wavPath))
 	if err != nil {
-		t.Skipf("无法启动播放进程：%v", err)
+		t.Skipf("无法启动音频播放进程（跳过端到端验证）：%v", err)
 	}
+	defer func() {
+		proc.Stop() // 只终止本测试启动的 procx Job
+		_ = proc.Wait()
+	}()
 	time.Sleep(1500 * time.Millisecond)
+
+	procs, _, snapErr := snapshotProcesses()
+	if snapErr != nil {
+		t.Skipf("无法确认自启播放器 PID（跳过退出通知验证）：%v", snapErr)
+	}
+	pids, _ := findPIDsByExe(procs, e2ePlayerExe)
+	if len(pids) != 1 || pids[0] != proc.PID() {
+		t.Skipf("无法将 %s 源唯一归属到本测试自启 PID=%d（当前匹配 PID=%v）",
+			e2ePlayerExe, proc.PID(), pids)
+	}
 
 	ch, err := Open(AppSourceID(e2ePlayerExe))
 	if err != nil {
-		proc.Stop()
-		_ = proc.Wait()
 		t.Fatalf("打开失败：%v", err)
 	}
 	defer ch.Close()
 
-	proc.Stop() // 杀掉目标进程
+	_, peak := captureMono(t, ch, 2*time.Second)
+	if peak <= ProducingPeakThreshold {
+		t.Skipf("未能从自启播放器捕获有声夹具（峰值 %.6f，不高于 %.6f），无法可靠验证退出通知",
+			peak, ProducingPeakThreshold)
+	}
+	t.Logf("已确认自启播放器有声，捕获峰值 %.4f；PID=%d", peak, proc.PID())
+
+	proc.Stop()
+	if err := proc.Wait(); err != nil {
+		t.Logf("自启播放器退出结果：%v", err)
+	}
 
 	select {
 	case e := <-ch.Err():
 		if e == nil {
 			t.Fatal("Channel.Err() 收到 nil，应给出具体原因")
 		}
+		if !apierr.HasCode(e, apierr.CodeSourceNotFound) {
+			t.Fatalf("目标进程退出后错误码不符，期望 %s，实际 %v", apierr.CodeSourceNotFound, e)
+		}
 		t.Logf("目标进程退出后收到 Channel.Err()：%v", e)
-	case <-time.After(10 * time.Second):
-		t.Log("已确认：目标退出后 10s 内未收到 Channel.Err() —— 进程回环在目标消失后仅停止出包，" +
-			"源失效需由上层主动校验根进程存活（建议加 500ms 轮询触发 capture:invalid）")
+	case <-time.After(3 * time.Second):
+		t.Fatal("目标进程已退出，但 3s 内未收到 Channel.Err()")
 	}
-	_ = proc.Wait()
 }
 
 // TestE2EOpenNonAudioProcess 进程存在但不出声时也必须能打开（只是没有音频数据）。

@@ -15,7 +15,7 @@ import (
 	"vip.oberon.mandaryn/internal/apierr"
 	"vip.oberon.mandaryn/internal/capture"
 	"vip.oberon.mandaryn/internal/contract"
-	"vip.oberon.mandaryn/internal/services/preferences"
+	"vip.oberon.mandaryn/internal/services/appsettings"
 	"vip.oberon.mandaryn/internal/storage"
 	"vip.oberon.mandaryn/internal/utils/logx"
 )
@@ -28,7 +28,6 @@ const prefKeyPreferredSource = "capture.preferredSource"
 // Service 暴露给前端的音频源服务。
 type Service struct {
 	holder *storage.Holder
-	prefs  *preferences.Service
 
 	// monitor「源可用性变化」的 2s 轮询器，仅在装配层注入回调后才启动。
 	// 本层不直接 import events 包：events 依赖 Wails，用回调注入可以让
@@ -41,7 +40,7 @@ type Service struct {
 // 依赖 *storage.Holder 而不是 *storage.DB：切换数据目录会替换 DB 句柄，
 // 持有 holder 才能始终读到当前活跃实例（docs/PERSISTENCE.md）。
 //
-// 偏好读写直接复用 preferences 包，不另造一套 gorm 代码。
+// 默认来源读写复用 appsettings，旧 preferences 键仅作兼容镜像。
 //
 // onSourcesChanged 是装配期注入的「源列表变化」回调（应用启动/退出、设备增减）。
 // 用构造注入而不是导出的 `SetSourcesChangedHandler(fn func(...))`，原因有两条：
@@ -52,7 +51,6 @@ type Service struct {
 func New(holder *storage.Holder, onSourcesChanged func([]contract.Source)) *Service {
 	s := &Service{
 		holder: holder,
-		prefs:  preferences.New(holder),
 	}
 	if onSourcesChanged != nil {
 		s.monitor = capture.NewMonitor(capture.DefaultPollInterval, onSourcesChanged)
@@ -125,19 +123,16 @@ func (s *Service) SetPreferredSource(ctx context.Context, sourceID string) error
 	if _, err := capture.Probe(id); err != nil {
 		return apierr.From(err, apierr.CodeSourceNotFound)
 	}
-	if err := s.prefs.Set(ctx, prefKeyPreferredSource, id); err != nil {
-		return apierr.Wrap(err, apierr.CodeDBWrite)
-	}
-	return nil
+	return appsettings.SaveDefaultSource(ctx, s.holder, id)
 }
 
 // GetPreferredSource 返回上次选择的源 ID（API-1.5）；未设置过返回空字符串。
 func (s *Service) GetPreferredSource(ctx context.Context) (string, error) {
-	value, err := s.prefs.Get(ctx, prefKeyPreferredSource)
+	snapshot, err := appsettings.New(s.holder, nil, nil).Get(ctx)
 	if err != nil {
-		return "", apierr.Wrap(err, apierr.CodeDBWrite)
+		return "", err
 	}
-	return value, nil
+	return snapshot.Audio.DefaultSourceID, nil
 }
 
 // GetCapabilities 返回平台能力矩阵（API-1.6）。

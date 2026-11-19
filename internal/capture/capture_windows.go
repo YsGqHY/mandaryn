@@ -196,6 +196,28 @@ func (c *loopbackChannel) pump(lb *loopbackStream) {
 		default:
 		}
 
+		// 进程回环不会保证在目标进程退出时通知 WASAPI；用 OpenProcess 得到的
+		// 同步句柄检查根进程存活，最迟一个 eventWaitMs 周期报告源失效。
+		if lb.processHandle != 0 {
+			rc, err := windows.WaitForSingleObject(lb.processHandle, 0)
+			if err != nil {
+				c.fail(apierr.New(apierr.CodeCaptureUnavailable).
+					WithDetail("检查应用进程状态失败（PID=%d）：%v", lb.processPID, err).WithCause(err))
+				return
+			}
+			switch rc {
+			case windows.WAIT_OBJECT_0:
+				c.fail(sourceNotFound(fmt.Sprintf("应用进程已退出（PID=%d）", lb.processPID)))
+				return
+			case uint32(windows.WAIT_TIMEOUT):
+				// 仍在运行。
+			default:
+				c.fail(apierr.New(apierr.CodeCaptureUnavailable).
+					WithDetail("检查应用进程状态返回异常值 %d（PID=%d）", rc, lb.processPID))
+				return
+			}
+		}
+
 		// 有超时地等待：即使事件不置位也继续往下取包。
 		// 共享模式回环在「全系统静音」时事件触发频率会下降，若只在
 		// WAIT_OBJECT_0 时取包，会把静音期误判成「抓不到音频」。
@@ -342,12 +364,14 @@ func (c *loopbackChannel) fail(err error) {
 
 // loopbackStream 一组需要一起释放的 WASAPI 回环资源。
 type loopbackStream struct {
-	client     *wca.IAudioClient
-	capture    *wca.IAudioCaptureClient
-	event      windows.Handle
-	format     AudioFormat
-	bits       int
-	blockAlign int
+	client        *wca.IAudioClient
+	capture       *wca.IAudioCaptureClient
+	event         windows.Handle
+	processHandle windows.Handle // 仅进程回环使用；进程退出时内核对象变为 signaled
+	processPID    uint32
+	format        AudioFormat
+	bits          int
+	blockAlign    int
 	// keepAlive 同端点的静音保活渲染流（见 openSilentRender）；打不开时为 nil，回环照常工作。
 	keepAlive *silentRender
 }
@@ -372,6 +396,10 @@ func (s *loopbackStream) close() {
 	if s.event != 0 {
 		_ = windows.CloseHandle(s.event)
 		s.event = 0
+	}
+	if s.processHandle != 0 {
+		_ = windows.CloseHandle(s.processHandle)
+		s.processHandle = 0
 	}
 }
 

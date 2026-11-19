@@ -82,6 +82,21 @@ func openProcessLoopback(roots []int, exeName string) (*loopbackStream, error) {
 	}
 	targetPID := uint32(roots[0])
 
+	// 进程回环在目标退出后不保证由 WASAPI 发出设备失效事件。拿一个只具备
+	// SYNCHRONIZE 权限的进程句柄交给采集循环，才能把「停包」转换为 Channel.Err。
+	// 句柄只监控被选中的根进程；同 exe 的其它根进程不属于本次已激活的进程树。
+	processHandle, err := windows.OpenProcess(windows.SYNCHRONIZE, false, targetPID)
+	if err != nil {
+		return nil, apierr.New(apierr.CodeCaptureUnavailable).
+			WithDetail("无法监控应用进程退出（PID=%d / %s）：%v", targetPID, exeName, err).WithCause(err)
+	}
+	processOwned := true
+	defer func() {
+		if processOwned {
+			_ = windows.CloseHandle(processHandle)
+		}
+	}()
+
 	// 能力声明必须能被兑现（FR-02-4）：探测不过就诚实拒绝，
 	// 绝不静默退化成设备回环（FR-02-3）。
 	if ok, note := processLoopbackAvailable(); !ok {
@@ -109,6 +124,9 @@ func openProcessLoopback(roots []int, exeName string) (*loopbackStream, error) {
 		client.Release()
 		return nil, err
 	}
+	stream.processHandle = processHandle
+	stream.processPID = targetPID
+	processOwned = false
 	return stream, nil
 }
 
