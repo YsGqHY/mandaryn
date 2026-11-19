@@ -112,10 +112,12 @@ export const RecordPage = () => {
 
   // 另存录音：路径必须先由原生「另存为」拿到（禁止自己拼路径）。
   const handleExportAudio = async (): Promise<void> => {
+    if (!vm.canExportAudio) return;
+    const format = vm.recording?.audioFormat === 'flac' ? 'flac' : 'wav';
     const path = await NativeDialogs.saveFile({
       title: t('record.export.dialogTitle'),
-      filename: `${t('record.export.fileBaseName')}.wav`,
-      filters: [{ displayName: t('record.export.filterWav'), pattern: '*.wav' }],
+      filename: `${t('record.export.fileBaseName')}.${format}`,
+      filters: [{ displayName: t(format === 'flac' ? 'record.export.filterFlac' : 'record.export.filterWav'), pattern: `*.${format}` }],
     });
     if (path === null) return;
     const saved = await vm.exportAudio(path);
@@ -190,6 +192,18 @@ export const RecordPage = () => {
               {vm.selectedSource !== null
                 ? t('record.sources.unavailableBanner', { name: vm.selectedSource.displayName })
                 : t('record.sources.unknownUnavailable')}
+            </Text>
+          </Alert>
+        )}
+
+        {vm.noAudioPersist && (
+          <Alert
+            className={clsx(classes.capsAlert, classes.capsAlertWarn)}
+            icon={<IconAlertTriangle size={20} stroke={1.75} className={classes.capsIconWarn} />}
+            title={t('record.noAudio.title')}
+          >
+            <Text className={classes.capsLine}>
+              {t(vm.noAudioTranscriptionFailed ? 'record.noAudio.failed' : 'record.noAudio.hint')}
             </Text>
           </Alert>
         )}

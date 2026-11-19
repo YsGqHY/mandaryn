@@ -48,6 +48,27 @@ export const isKnownRoleColorToken = (token: string): boolean =>
   token === 'accent' || token === 'neutral' || /^role-[1-8]$/.test(token);
 
 export const SpeakerService = {
+  async getRoleNamePrefix(): Promise<string> {
+    try {
+      return await Binding.GetRoleNamePrefix();
+    } catch (err) {
+      throw toAppError(err);
+    }
+  },
+  async setRoleNamePrefix(prefix: string): Promise<void> {
+    try {
+      await Binding.SetRoleNamePrefix(prefix);
+    } catch (err) {
+      throw toAppError(err);
+    }
+  },
+  async setRoleColor(roleId: string, colorToken: string): Promise<void> {
+    try {
+      await Binding.SetRoleColor(roleId, colorToken);
+    } catch (err) {
+      throw toAppError(err);
+    }
+  },
   // 本机是否具备声纹分离能力（未装声纹模型时为 false，不是错误）。
   async hasDiarization(): Promise<boolean> {
     try {

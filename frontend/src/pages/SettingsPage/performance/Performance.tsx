@@ -1,6 +1,7 @@
 import { Slider, Text } from '@mantine/core';
 import { IconAlertTriangle, IconGauge, IconPlayerPause, IconWaveSine } from '@tabler/icons-react';
 import { useI18n, useT } from '@/i18n';
+import { useLeanMode } from '@/shared/LeanModeProvider';
 import {
   RESOURCE_CAP_MAX,
   RESOURCE_CAP_MIN,
@@ -23,6 +24,7 @@ export const Performance = () => {
   const vm = usePerformance();
   const t = useT();
   const { current } = useI18n();
+  const showDetails = !useLeanMode().isRegionHidden('settings.advanced');
 
   const usage = vm.usage;
   const level = usage ? perfLevelOf(usage.level) : null;
@@ -57,79 +59,87 @@ export const Performance = () => {
             { value: 50, label: '50%' },
             { value: RESOURCE_CAP_MAX, label: `${RESOURCE_CAP_MAX}%` },
           ]}
-          aria-label={t('settings.performance.cap.aria')}
+          thumbLabel={t('settings.performance.cap.aria')}
         />
         <Text className={classes.capHint}>{t('settings.performance.cap.hint')}</Text>
 
         {/* 口径说明：预算按「整机份额」算，不是「本应用上限」 */}
-        <div className={classes.formulaBox}>
-          <IconWaveSine size={20} stroke={1.75} className={classes.formulaIcon} />
-          <div className={classes.formulaTexts}>
-            <Text className={classes.formulaTitle}>{t('settings.performance.formula.title')}</Text>
-            <Text className={classes.formulaLine}>{t('settings.performance.formula.other')}</Text>
-            <Text className={classes.formulaLine}>{t('settings.performance.formula.headroom')}</Text>
-            <Text className={classes.formulaNote}>{t('settings.performance.formula.note')}</Text>
+        {showDetails && (
+          <div className={classes.formulaBox}>
+            <IconWaveSine size={20} stroke={1.75} className={classes.formulaIcon} />
+            <div className={classes.formulaTexts}>
+              <Text className={classes.formulaTitle}>{t('settings.performance.formula.title')}</Text>
+              <Text className={classes.formulaLine}>{t('settings.performance.formula.other')}</Text>
+              <Text className={classes.formulaLine}>{t('settings.performance.formula.headroom')}</Text>
+              <Text className={classes.formulaNote}>{t('settings.performance.formula.note')}</Text>
+            </div>
           </div>
-        </div>
+        )}
 
         <StatusLine status={vm.status} t={t} />
       </div>
 
-      {/* —— 实时读数 —— */}
-      <div className={classes.card}>
-        <div className={classes.readoutHeader}>
-          <IconGauge size={20} stroke={1.75} className={classes.readoutIcon} />
-          <Text className={classes.readoutTitle}>{t('settings.performance.readout.title')}</Text>
-          <span className={classes.levelBadge} data-paused={paused || undefined}>
-            {usage
-              ? t('settings.performance.readout.levelValue', { level: usage.level })
-              : t('settings.performance.readout.levelUnknown')}
-          </span>
-        </div>
-        <Text className={classes.readoutHint}>
-          {level
-            ? t(`settings.performance.levels.${level}`)
-            : t('settings.performance.levels.unknown')}
-        </Text>
+      {/* —— 实时读数（详细采样可收起，暂停告警始终保留） —— */}
+      {(showDetails || paused) && (
+        <div className={classes.card}>
+          {showDetails && (
+            <>
+              <div className={classes.readoutHeader}>
+                <IconGauge size={20} stroke={1.75} className={classes.readoutIcon} />
+                <Text className={classes.readoutTitle}>{t('settings.performance.readout.title')}</Text>
+                <span className={classes.levelBadge} data-paused={paused || undefined}>
+                  {usage
+                    ? t('settings.performance.readout.levelValue', { level: usage.level })
+                    : t('settings.performance.readout.levelUnknown')}
+                </span>
+              </div>
+              <Text className={classes.readoutHint}>
+                {level
+                  ? t(`settings.performance.levels.${level}`)
+                  : t('settings.performance.levels.unknown')}
+              </Text>
 
-        <div className={classes.readoutGrid}>
-          <Metric
-            label={t('settings.performance.metrics.total')}
-            value={usage ? pct(usage.totalCpuPct) : null}
-          />
-          <Metric
-            label={t('settings.performance.metrics.self')}
-            value={usage ? pct(usage.selfCpuPct) : null}
-          />
-          <Metric
-            label={t('settings.performance.metrics.other')}
-            value={usage ? pct(usage.otherPct) : null}
-          />
-          <Metric
-            label={t('settings.performance.metrics.headroom')}
-            value={usage ? pct(usage.headroomPct) : null}
-            tone="accent"
-          />
-        </div>
+              <div className={classes.readoutGrid}>
+                <Metric
+                  label={t('settings.performance.metrics.total')}
+                  value={usage ? pct(usage.totalCpuPct) : null}
+                />
+                <Metric
+                  label={t('settings.performance.metrics.self')}
+                  value={usage ? pct(usage.selfCpuPct) : null}
+                />
+                <Metric
+                  label={t('settings.performance.metrics.other')}
+                  value={usage ? pct(usage.otherPct) : null}
+                />
+                <Metric
+                  label={t('settings.performance.metrics.headroom')}
+                  value={usage ? pct(usage.headroomPct) : null}
+                  tone="accent"
+                />
+              </div>
 
-        <Text className={classes.readoutMeta}>
-          {usage && usage.sampledAt
-            ? t('settings.performance.readout.sampledAt', {
-                time: formatTime(usage.sampledAt, current.code),
-              })
-            : t('settings.performance.readout.waiting')}
-        </Text>
+              <Text className={classes.readoutMeta}>
+                {usage && usage.sampledAt
+                  ? t('settings.performance.readout.sampledAt', {
+                      time: formatTime(usage.sampledAt, current.code),
+                    })
+                  : t('settings.performance.readout.waiting')}
+              </Text>
+            </>
+          )}
 
-        {paused && (
-          <div className={classes.pausedBox} role="status">
-            <IconPlayerPause size={20} stroke={1.75} className={classes.pausedIcon} />
-            <div className={classes.pausedTexts}>
-              <Text className={classes.pausedTitle}>{t('settings.performance.paused.title')}</Text>
-              <Text className={classes.pausedBody}>{t('settings.performance.paused.body')}</Text>
+          {paused && (
+            <div className={classes.pausedBox} role="status">
+              <IconPlayerPause size={20} stroke={1.75} className={classes.pausedIcon} />
+              <div className={classes.pausedTexts}>
+                <Text className={classes.pausedTitle}>{t('settings.performance.paused.title')}</Text>
+                <Text className={classes.pausedBody}>{t('settings.performance.paused.body')}</Text>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

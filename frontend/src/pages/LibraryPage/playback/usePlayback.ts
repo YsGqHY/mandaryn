@@ -365,6 +365,13 @@ export const usePlayback = ({ session }: UsePlaybackOptions): UsePlaybackResult 
     [locate],
   );
 
+  // 页到达后也要按真实媒体位置重算。暂停时没有 rAF，原生 seeked / metadata
+  // 可能先于目标页返回：若只等「下一次 audio 事件」，高亮会永久保留旧句，
+  // 首次挂载时 metadata 早于首屏页返回还会一直没有当前句。
+  useEffect(() => {
+    syncFromAudio(true);
+  }, [timeline, syncFromAudio]);
+
   // 播放中每帧读 audio.currentTime：高亮判定不受 60ms 节流影响（误差 ≤ 1 帧）。
   useEffect(() => {
     if (!playing) return undefined;

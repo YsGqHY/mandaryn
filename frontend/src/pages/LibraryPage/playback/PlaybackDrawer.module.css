@@ -124,7 +124,7 @@
   opacity: 0.65;
 }
 
-/* —— 片段行：整行是一个按钮（纯键盘也能跳转） —— */
+/* —— 片段行：有音频时可用键盘跳转；纯文本会话使用静态行 —— */
 .lyricRow {
   display: grid;
   grid-template-columns: 52px 8px 1fr;
@@ -137,13 +137,16 @@
   border-radius: 4px;
   background-color: transparent;
   text-align: left;
-  cursor: pointer;
   color: inherit;
   font: inherit;
   transition: background-color 120ms ease, border-color 120ms ease;
 }
 
-.lyricRow:hover {
+button.lyricRow {
+  cursor: pointer;
+}
+
+button.lyricRow:hover {
   background-color: var(--fd-bg-hover);
 }
 

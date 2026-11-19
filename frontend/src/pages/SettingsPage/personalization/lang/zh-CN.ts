@@ -4,6 +4,18 @@ import type { Messages } from '@/i18n';
 export const personalizationZhCN: Messages = {
   settings: {
     personalization: {
+      desktop: {
+        title: '桌面交互', hint: '修改立即生效，并在重启后保留。',
+        tray: '启用系统托盘', click: '托盘左键行为', panel: '显示托盘面板', window: '显示主窗口',
+        cues: '录制提示音', cuesHint: '录制开始、结束或失败时播放短提示音，不改变系统音量。',
+        error: '读取或保存桌面设置失败。',
+      },
+      roles: {
+        title: '说话人角色', hint: '前缀只影响新建角色；配色会立即更新已有角色及其历史会话。',
+        prefix: '默认角色命名前缀', tooLong: '最多 20 个字符。', save: '保存角色前缀',
+        role: '已有角色', selectRole: '选择要改色的角色', color: '角色配色', numberedColor: '角色颜色 {{number}}',
+        accent: '主题强调色', neutral: '中性色', failed: '无法读取或保存角色设置，请重试。',
+      },
       theme: {
         title: '主题',
         hint: '选择应用的明暗模式。"跟随系统"会随操作系统的偏好自动切换。',

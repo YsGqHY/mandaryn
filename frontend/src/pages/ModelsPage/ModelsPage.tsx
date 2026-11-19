@@ -6,6 +6,7 @@ import {
   Paper,
   Progress,
   Text,
+  TextInput,
   Tooltip,
 } from '@mantine/core';
 import {
@@ -34,7 +35,9 @@ import {
   type MigrateState,
 } from '@/services';
 import { isManagedSource, type ResolvedPath } from '@/services/models/PathsService';
+import { useLeanMode } from '@/shared/LeanModeProvider';
 import { useModelsPage } from './useModelsPage';
+import { useModelMirror } from './useModelMirror';
 import classes from './ModelsPage.module.css';
 
 // ErrorLike：页面只用到错误码与消息（AppError 与契约 ErrorDTO 都满足）。
@@ -51,6 +54,8 @@ type ErrorLike = { code: string; message: string };
 export const ModelsPage = () => {
   const t = useT();
   const vm = useModelsPage();
+  const { isRegionHidden } = useLeanMode();
+  const showStoreStats = !isRegionHidden('models.admin');
 
   // 错误码 → 文案；命中不到时回落 errors.unknown 并带上后端 message。
   // 形参故意只要求 code / message：迁移状态里的 lastError 是 DTO，不是 AppError 实例。
@@ -243,7 +248,7 @@ export const ModelsPage = () => {
             </div>
           </div>
 
-          {vm.stats === null ? (
+          {showStoreStats && (vm.stats === null ? (
             <Text className={classes.cardHint}>{t('models.store.loading')}</Text>
           ) : (
             <div className={classes.statGrid}>
@@ -264,7 +269,7 @@ export const ModelsPage = () => {
                 <Text className={classes.statValue}>{vm.stats.bundles.length}</Text>
               </div>
             </div>
-          )}
+          ))}
 
           {/* 生效路径 + 来源（source 由后端给出，前端只按它渲染，ADR-02） */}
           <PathSourceBlock
@@ -344,11 +349,27 @@ export const ModelsPage = () => {
               </span>
               <Text className={classes.cardTitle}>{t('models.available.title')}</Text>
             </div>
-            <Text className={classes.cardHint}>
-              {t('models.available.countLabel', { count: vm.available.length })}
-            </Text>
+            <div className={classes.rowActions}>
+              <Text className={classes.cardHint}>
+                {t('models.available.countLabel', { count: vm.available.length })}
+              </Text>
+              <Button
+                variant="default"
+                size="xs"
+                leftSection={<IconRefresh size={16} stroke={1.75} />}
+                loading={vm.refreshingCatalog}
+                disabled={vm.loading}
+                onClick={() => void vm.refreshCatalog()}
+              >
+                {t('models.available.refresh')}
+              </Button>
+            </div>
           </div>
 
+          <ModelMirrorForm disabled={vm.loading || vm.refreshingCatalog} onSaved={vm.invalidateCatalog} />
+          {!vm.loading && vm.catalogError !== null && (
+            <Text className={classes.noSourceHint} role="status">{catalogErrorText(vm.catalogError)}</Text>
+          )}
           {vm.loading ? (
             <Loader size="sm" />
           ) : vm.available.length === 0 ? (
@@ -384,6 +405,25 @@ export const ModelsPage = () => {
   );
 };
 
+const ModelMirrorForm = ({ disabled, onSaved }: { disabled: boolean; onSaved: () => void }) => {
+  const t = useT();
+  const vm = useModelMirror(onSaved);
+  const managed = vm.managedBy !== '';
+  return (
+    <form onSubmit={(event) => { event.preventDefault(); if (!disabled) void vm.save(); }}>
+      <TextInput label={t('models.mirror.label')} description={t('models.mirror.hint')}
+        value={vm.value} disabled={disabled || vm.busy || managed}
+        onChange={(event) => vm.setValue(event.currentTarget.value)} autoComplete="off" />
+      <Button type="submit" variant="default" size="xs" loading={vm.busy} disabled={disabled || managed}>
+        {t('models.mirror.save')}
+      </Button>
+      {managed && <Text role="status">{t('models.mirror.managed', { variable: vm.managedBy })}</Text>}
+      {vm.status !== 'idle' && (
+        <Text role={vm.status === 'saved' ? 'status' : 'alert'}>{t(`models.mirror.${vm.status}`)}</Text>
+      )}
+    </form>
+  );
+};
 // —— 已装行（仅本页使用，不进 index.ts） ——
 interface InstalledRowProps {
   bundle: InstalledBundle;
@@ -465,7 +505,7 @@ const AvailableRow = ({ bundle, download, busy, onDownload, onPause, onCancel }:
   const t = useT();
 
   return (
-    <div className={classes.row}>
+    <div className={classes.row} data-bundle-id={bundle.bundleId}>
       <div className={classes.rowMain}>
         <div className={classes.rowTitleLine}>
           <span className={classes.rowName}>{bundle.name}</span>
@@ -499,6 +539,12 @@ const AvailableRow = ({ bundle, download, busy, onDownload, onPause, onCancel }:
           )}
         </div>
         {download !== null && <DownloadProgress state={download} />}
+        {!bundle.downloadable && (
+          // 清单条目没有可下载文件（典型情况：远程清单拉不到，当前显示的是内置兜底清单）。
+          // 此时按钮必须禁用并说明原因 —— 否则用户点下去只会拿到后端的
+          // ERR_DOWNLOAD_NETWORK（"no download sources"），表现成「点了没反应/报错」。
+          <div className={classes.noSourceHint}>{t('models.available.noSourcesHint')}</div>
+        )}
       </div>
       <div className={classes.rowActions}>
         {download === null || download.state === 'failed' || download.state === 'done' ? (
@@ -507,6 +553,7 @@ const AvailableRow = ({ bundle, download, busy, onDownload, onPause, onCancel }:
             size="xs"
             leftSection={<IconDownload size={16} stroke={1.75} />}
             loading={busy}
+            disabled={busy || !bundle.downloadable}
             onClick={onDownload}
           >
             {download?.state === 'failed'
@@ -520,6 +567,7 @@ const AvailableRow = ({ bundle, download, busy, onDownload, onPause, onCancel }:
                 variant="default"
                 size="xs"
                 leftSection={<IconPlayerPlay size={16} stroke={1.75} />}
+                disabled={busy || !bundle.downloadable}
                 onClick={onDownload}
               >
                 {t('models.available.actions.resume')}

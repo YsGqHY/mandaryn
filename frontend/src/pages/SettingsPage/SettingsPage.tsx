@@ -12,6 +12,7 @@ import { Hotkeys } from './hotkeys';
 import { About } from './about';
 import { Audio } from './audio';
 import { Proxy } from './proxy';
+import { Transcription } from './transcription';
 
 // 设置页（两列）：
 //   左列：选项列表（personalization / layout / language / database）
@@ -68,6 +69,7 @@ export const SettingsPage = () => {
         {vm.activeItem.id === 'database' && <Database />}
         {vm.activeItem.id === 'performance' && <Performance />}
         {vm.activeItem.id === 'audio' && <Audio />}
+        {vm.activeItem.id === 'transcription' && <Transcription />}
         {vm.activeItem.id === 'proxy' && <Proxy />}
         {vm.activeItem.id === 'privacy' && <Privacy />}
         {vm.activeItem.id === 'hotkeys' && <Hotkeys />}

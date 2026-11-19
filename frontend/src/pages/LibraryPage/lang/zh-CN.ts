@@ -58,6 +58,9 @@ export const libraryPageZhCN: Messages = {
       delete: '删除会话',
       speakers: '说话人与角色',
       playback: '回放',
+      openTranscript: '查看转写文本',
+      noAudio: '未保存音频',
+      noAudioRetry: '未保存音频，无法转写或重试',
     },
 
     // 转写状态（独立轴，与会话录制状态正交）
@@ -203,6 +206,7 @@ export const libraryPageZhCN: Messages = {
     // 会话回放与歌词式同步（FR-04 界面侧）
     playback: {
       close: '关闭回放',
+      closeTranscript: '关闭转写文本',
       loading: '正在读取时间轴…',
       retry: '重试',
       titleMeta: '{{time}} · {{source}} · {{count}} 句',
@@ -237,6 +241,12 @@ export const libraryPageZhCN: Messages = {
       emptyTranscribing: '正在转写，完成后这里会按句显示；音频现在就可以听。',
       emptyFailed: '上一次转写失败了。关闭回放后在会话列表里点「重试转写」再回来。',
 
+      emptyNoAudio: '这场会话没有可读的转写文本。',
+      emptyFailedNoAudio: '转写失败，没有可用音频，无法重试。',
+      audioNotSaved: {
+        title: '未保存音频',
+        message: '可以在此阅读转写，在会话列表中导出文本。无音频可供回放、导出或重新转写。',
+      },
       audioMissing: {
         title: '音频文件缺失',
         message: '这个会话的音频已经不在数据目录里（可能被手动清理）。转写文本仍可阅读，但无法回放。',

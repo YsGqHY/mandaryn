@@ -11,6 +11,7 @@ import { registerHotkeysLocales } from '../hotkeys/lang';
 import { registerAudioLocales } from '../audio/lang';
 import { registerAboutLocales } from '../about/lang';
 import { registerProxyLocales } from '../proxy/lang';
+import { registerTranscriptionLocales } from '../transcription/lang';
 
 let registered = false;
 
@@ -31,5 +32,6 @@ export const registerSettingsPageLocales = (): void => {
   registerAudioLocales();
   registerAboutLocales();
   registerProxyLocales();
+  registerTranscriptionLocales();
   registered = true;
 };

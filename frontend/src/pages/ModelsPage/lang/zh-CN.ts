@@ -39,6 +39,15 @@ export const modelsPageZhCN: Messages = {
       },
     },
 
+    mirror: {
+      label: '模型镜像地址',
+      hint: '填写镜像目录或 models.json 地址；留空使用默认来源。保存后点击刷新模型清单。',
+      save: '保存模型镜像',
+      managed: '部署环境变量 {{variable}} 已接管模型源，保存的个人设置暂不生效。',
+      saved: '已保存，刷新清单后可下载。',
+      invalid: '请输入不含凭据、查询参数或片段的 HTTP(S) 地址。',
+      failed: '无法读取或保存模型镜像，请重试。',
+    },
     available: {
       title: '可下载模型',
       countLabel: '共 {{count}} 个',
@@ -57,6 +66,9 @@ export const modelsPageZhCN: Messages = {
       rolesLabel: '用途 {{roles}}',
       installedBadge: '已安装',
       updateBadge: '可更新',
+      // 清单条目没有可下载文件时显示（内置兜底清单只有元数据）。
+      refresh: '刷新模型清单',
+      noSourcesHint: '此条目没有完整的下载信息。请联网刷新清单后再试。',
       actions: {
         download: '下载',
         pause: '暂停',

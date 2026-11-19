@@ -36,6 +36,9 @@ export interface UseModelsPageResult {
   // 正在做耗时操作（校验 / 删除 / 开始下载）的包 ID
   busyBundleId: string | null;
   reload: () => Promise<void>;
+  refreshCatalog: () => Promise<void>;
+  invalidateCatalog: () => void;
+  refreshingCatalog: boolean;
   verifyBundle: (bundleId: string) => Promise<VerifyResult | null>;
   removeBundle: (bundleId: string) => Promise<boolean>;
   startDownload: (bundleId: string) => Promise<void>;
@@ -75,6 +78,9 @@ export const useModelsPage = (): UseModelsPageResult => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<AppError | null>(null);
   const [catalogError, setCatalogError] = useState<AppError | null>(null);
+  const [refreshingCatalog, setRefreshingCatalog] = useState(false);
+  const catalogRequest = useRef(0);
+  const refreshingRef = useRef(false);
   const [busyBundleId, setBusyBundleId] = useState<string | null>(null);
   const aliveRef = useRef<boolean>(true);
 
@@ -85,23 +91,50 @@ export const useModelsPage = (): UseModelsPageResult => {
     };
   }, []);
 
+  const loadCatalog = useCallback(async (refresh = false): Promise<void> => {
+    if (refreshingRef.current) return;
+    const request = ++catalogRequest.current;
+    if (refresh) {
+      refreshingRef.current = true;
+      setRefreshingCatalog(true);
+    }
+    try {
+      const result = await ModelsService.listAvailable(refresh);
+      if (!aliveRef.current || request !== catalogRequest.current) return;
+      setAvailable(result.bundles);
+      setCatalogError(result.warning ? toAppError({ cause: result.warning }) : null);
+    } catch (err) {
+      if (aliveRef.current && request === catalogRequest.current) setCatalogError(toAppError(err));
+    } finally {
+      if (refresh) {
+        refreshingRef.current = false;
+        if (aliveRef.current) setRefreshingCatalog(false);
+      }
+    }
+  }, []);
+
+  const refreshCatalog = useCallback(() => loadCatalog(true), [loadCatalog]);
+  const invalidateCatalog = useCallback(() => {
+    ++catalogRequest.current;
+    setAvailable([]);
+    setCatalogError(null);
+  }, []);
+
   const reload = useCallback(async (): Promise<void> => {
-    const [statsResult, installedResult, availableResult] = await Promise.allSettled([
+    const [statsResult, installedResult] = await Promise.allSettled([
       ModelsService.getStoreStats(),
       ModelsService.listInstalled(),
-      ModelsService.listAvailable(),
+      loadCatalog(),
     ]);
     if (!aliveRef.current) return;
 
     if (statsResult.status === 'fulfilled') setStats(statsResult.value);
     if (installedResult.status === 'fulfilled') setInstalled(installedResult.value);
-    if (availableResult.status === 'fulfilled') setAvailable(availableResult.value);
-    setCatalogError(availableResult.status === 'rejected' ? toAppError(availableResult.reason) : null);
 
     // 只剩「统计读不到」不报错：那通常意味着目录还没建；已安装列表失败才进页头错误条。
     // 清单失败由 catalogError 在「可下载模型」卡片里说明。
     if (installedResult.status === 'rejected') setError(toAppError(installedResult.reason));
-  }, []);
+  }, [loadCatalog]);
 
   // reloadPaths 单独一条：路径来源由 pathsvc 提供，与仓库统计是两次读，
   // 迁移后要先失效解析器缓存（后端 OnModelRootChanged 已做）再读才拿得对。
@@ -352,6 +385,9 @@ export const useModelsPage = (): UseModelsPageResult => {
     catalogError,
     busyBundleId,
     reload,
+    refreshCatalog,
+    invalidateCatalog,
+    refreshingCatalog,
     verifyBundle,
     removeBundle,
     startDownload,

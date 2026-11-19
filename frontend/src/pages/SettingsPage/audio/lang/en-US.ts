@@ -5,7 +5,30 @@ export const audioEnUS: Messages = {
   settings: {
     audio: {
       title: 'Audio & recording',
-      hint: 'Recording only captures and writes audio; transcription is a separate task after you stop. The switch below runs inference during recording, so it is off by default.',
+      hint: 'Choose the default source, speaker analysis limit, and naming for new sessions. Recording only captures and writes audio; transcription is a separate task.',
+      defaults: {
+        source: 'Default audio source',
+        sourceHint: 'Shared by the recording page and recording shortcut; an active recording keeps its source.',
+        noSource: 'Choose an audio source',
+        clearSource: 'Clear default audio source',
+        noSources: 'No audio sources available',
+        unavailableOption: 'Saved audio source (unavailable)',
+        unavailable: 'The default source is unavailable. Choose another one; recording will not switch sources automatically.',
+        sourcesFailed: 'Could not load audio sources. Refresh to retry.',
+        refresh: 'Refresh audio sources',
+        sensitivity: 'Speech detection sensitivity',
+        sensitivityHint: 'Applies to the next recording. Noisy mode requires louder speech and may miss quiet voices. Neither mode changes the recording.',
+        standard: 'Standard',
+        noisy: 'Noisy environment',
+        maxSpeakers: 'Speaker limit',
+        maxSpeakersHint: 'Applies to the next speaker analysis; existing results are unchanged.',
+        auto: 'Automatic',
+        speakers: '{{count}} speakers',
+        autoName: 'Name sessions automatically',
+        autoNameHint: 'New sessions use “Date Time · Source app”. Turn off to leave new sessions unnamed; existing titles stay unchanged.',
+        format: 'Recording file format',
+        formatHint: 'WAV is more widely compatible. FLAC uses lossless compression. Applies to the next recording.',
+      },
       live: {
         title: 'Live transcription',
         desc: 'Shows text while recording: partials are overwritten as you go, and each finished sentence is finalized for good.',
@@ -30,7 +53,7 @@ export const audioEnUS: Messages = {
       },
       feedback: {
         saving: 'Saving…',
-        saved: 'Saved; it takes effect on the next session.',
+        saved: 'Saved.',
         ERR_STATE_FORBIDDEN: 'You cannot switch live transcription while recording. Stop recording first (it applies to the next session).',
       },
       errors: {

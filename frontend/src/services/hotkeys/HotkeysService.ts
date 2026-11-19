@@ -139,6 +139,10 @@ export const HotkeysService = {
     }
   },
 
+  onLeanChanged(callback: () => void): () => void {
+    return Events.On(AppEvents.LeanModeChanged, callback);
+  },
+
   // 订阅「绑定已变更」（EV-18 hotkeys:changed，含注册失败原因）。返回取消订阅函数。
   onChanged(callback: (binding: Binding) => void): () => void {
     const cancel = Events.On(AppEvents.HotkeysChanged, (event) => {

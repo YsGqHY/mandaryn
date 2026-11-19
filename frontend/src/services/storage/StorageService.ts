@@ -1,7 +1,5 @@
-// StorageService：数据库路径 / 占用空间 / 表级统计与清空。
-//
-// 切换路径是后端的"原子操作"——前端只需调用，期间业务请求会短暂阻塞
-// （单连接池），完成后正常恢复。失败时后端已回滚到旧路径，可继续使用。
+// StorageService：数据根目录与待迁移设置 / 数据库占用 / 表级统计与清空。
+// 设置目录仅暂存迁移计划；应用下次启动时才迁移，失败则保留原目录。
 import { Service as Binding } from '@bindings/vip.oberon.mandaryn/internal/services/storagesvc';
 
 export interface StorageStats {
@@ -9,6 +7,11 @@ export interface StorageStats {
   isCustom: boolean;
   defaultPath: string;
   sizeBytes: number;
+  dataRoot: string;
+  pendingRoot: string;
+  managedBy: string;
+  overrideHint: string;
+  migrationError: string;
 }
 
 // 单张表的展示元数据 + 占用。
@@ -36,6 +39,11 @@ export const StorageService = {
       isCustom: Boolean(s.isCustom),
       defaultPath: s.defaultPath ?? '',
       sizeBytes: Number(s.sizeBytes ?? 0),
+      dataRoot: s.dataRoot ?? '',
+      pendingRoot: s.pendingRoot ?? '',
+      managedBy: s.managedBy ?? '',
+      overrideHint: s.overrideHint ?? '',
+      migrationError: s.migrationError ?? '',
     };
   },
 
@@ -54,13 +62,17 @@ export const StorageService = {
     };
   },
 
-  // newPath 必须是数据库 .db 文件的完整路径（含文件名）。
-  async setCustomPath(newPath: string): Promise<void> {
-    await Binding.SetCustomPath(newPath);
+  // 目标必须是绝对目录，不能是数据库文件。
+  async setCustomPath(directory: string): Promise<void> {
+    await Binding.SetCustomPath(directory);
   },
 
   async resetPath(): Promise<void> {
     await Binding.ResetPath();
+  },
+
+  async cancelRootMigration(): Promise<void> {
+    await Binding.CancelRootMigration();
   },
 
   async clearTable(name: string): Promise<void> {

@@ -1,4 +1,6 @@
-import { ColorInput, Switch, Text, UnstyledButton, type ColorInputProps } from '@mantine/core';
+import { Button, ColorInput, Select, Stack, Switch, Text, TextInput, UnstyledButton, type ColorInputProps } from '@mantine/core';
+import { roleColorTokens, useRolePreferences } from './useRolePreferences';
+import { useDesktopPreferences } from './useDesktopPreferences';
 import { useMemo } from 'react';
 import { useT } from '@/i18n';
 import { CUSTOM_THEME_NAME } from '@/styles/themes';
@@ -21,8 +23,63 @@ export const Personalization = () => {
     <>
       <ThemeSection vm={vm} />
       <PreferencesSection vm={vm} />
+      <DesktopPreferencesSection />
+      <RolePreferencesSection />
       <CustomThemeSection vm={vm} t={t} />
     </>
+  );
+};
+
+const DesktopPreferencesSection = () => {
+  const t = useT();
+  const vm = useDesktopPreferences();
+  const key = 'settings.personalization.desktop';
+  return (
+    <section className={shared.section}>
+      <div className={shared.sectionHeader}>
+        <Text className={shared.sectionTitle}>{t(`${key}.title`)}</Text>
+        <Text className={shared.sectionHint}>{t(`${key}.hint`)}</Text>
+      </div>
+      <Stack gap="sm">
+        <Switch label={t(`${key}.tray`)} aria-label={t(`${key}.tray`)}
+          checked={vm.trayEnabled === true} disabled={vm.trayEnabled === null || vm.busy}
+          onChange={(event) => void vm.changeTrayEnabled(event.currentTarget.checked)} />
+        <Select label={t(`${key}.click`)} value={vm.trayAction} allowDeselect={false}
+          data={[{ value: 'panel', label: t(`${key}.panel`) }, { value: 'window', label: t(`${key}.window`) }]}
+          disabled={vm.trayAction === null || vm.busy} onChange={vm.changeTrayAction} />
+        <Switch label={t(`${key}.cues`)} aria-label={t(`${key}.cues`)} description={t(`${key}.cuesHint`)}
+          checked={vm.cues === true} disabled={vm.cues === null || vm.busy}
+          onChange={(event) => void vm.changeCues(event.currentTarget.checked)} />
+        {vm.error && <Text role="alert">{t(`${key}.error`)}</Text>}
+      </Stack>
+    </section>
+  );
+};
+const RolePreferencesSection = () => {
+  const t = useT();
+  const vm = useRolePreferences();
+  const key = 'settings.personalization.roles';
+  return (
+    <section className={shared.section}>
+      <div className={shared.sectionHeader}>
+        <Text className={shared.sectionTitle}>{t(`${key}.title`)}</Text>
+        <Text className={shared.sectionHint}>{t(`${key}.hint`)}</Text>
+      </div>
+      <Stack gap="sm">
+        <TextInput label={t(`${key}.prefix`)} value={vm.prefix ?? ''}
+          disabled={vm.prefix === null || vm.busy} onChange={(e) => vm.setPrefix(e.currentTarget.value)}
+          error={vm.prefix !== null && [...vm.prefix.trim()].length > 20 ? t(`${key}.tooLong`) : undefined} />
+        <Button variant="default" disabled={vm.prefix === null || vm.busy || [...(vm.prefix ?? '').trim()].length > 20}
+          onClick={() => void vm.savePrefix()}>{t(`${key}.save`)}</Button>
+        <Select label={t(`${key}.role`)} placeholder={t(`${key}.selectRole`)} value={vm.role?.id ?? null}
+          data={vm.roles.map(({ id, name }) => ({ value: id, label: name }))}
+          disabled={vm.busy || vm.roles.length === 0} onChange={vm.setRoleId} />
+        <Select label={t(`${key}.color`)} value={vm.role?.colorToken ?? null}
+          data={roleColorTokens.map((token, i) => ({ value: token, label: i < 8 ? t(`${key}.numberedColor`, { number: i + 1 }) : t(`${key}.${token}`) }))}
+          allowDeselect={false} disabled={vm.role === undefined || vm.busy} onChange={(token) => void vm.updateColor(token)} />
+        {vm.failed && <Text role="alert">{t(`${key}.failed`)}</Text>}
+      </Stack>
+    </section>
   );
 };
 

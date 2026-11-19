@@ -1,4 +1,4 @@
-import { Button, Text, UnstyledButton } from '@mantine/core';
+import { Button, Text, TextInput, UnstyledButton } from '@mantine/core';
 import { BarChart, DonutChart } from '@mantine/charts';
 import {
   IconDatabase,
@@ -9,13 +9,14 @@ import {
 } from '@tabler/icons-react';
 import { useT } from '@/i18n';
 import { NativeDialogs, type TableInfo } from '@/services';
+import { useLeanMode } from '@/shared/LeanModeProvider';
 import { MANDARYN_CSS_VARS } from '@/styles/themes';
 import { useDatabase, type DatabaseStatus } from './useDatabase';
 import classes from './Database.module.css';
 import shared from '../SettingsPage.module.css';
 
 // 数据库子页面：
-//   1) 路径与总占用 + 切换 / 重置（原生 dialog）
+//   1) 数据根、待迁移设置与当前数据库占用
 //   2) 双图：环形图（占比）+ 水平条形图（精确字节）—— @mantine/charts
 //   3) 表清单：行展示 行数 / 字节，clearable=true 的允许逐项清空（带原生确认）
 //
@@ -24,28 +25,20 @@ import shared from '../SettingsPage.module.css';
 export const Database = () => {
   const vm = useDatabase();
   const t = useT();
+  const showStats = !useLeanMode().isControlHidden('settings.databaseStats');
 
-  const busy =
-    vm.status.kind === 'changing' ||
-    vm.status.kind === 'resetting' ||
-    vm.status.kind === 'clearing';
+  const { busy, stats } = vm;
+  const managedBy = stats?.managedBy;
+  const overrideHint = stats?.overrideHint;
+  const pendingRoot = stats?.pendingRoot;
 
-  // 切换路径：原生「另存为」对话框选目标 .db。
-  const handleChange = async (): Promise<void> => {
-    if (busy) return;
-    const next = await NativeDialogs.saveFile({
+  const handleChange = () => {
+    void vm.chooseRoot(() => NativeDialogs.openDirectory({
       title: t('settings.database.dialog.title'),
       message: t('settings.database.dialog.message'),
       buttonText: t('settings.database.dialog.confirm'),
-      filename: defaultFileName(vm.stats?.path),
-      filters: [
-        { displayName: t('settings.database.dialog.filterDb'), pattern: '*.db;*.sqlite' },
-      ],
-      canCreateDirectories: true,
-    });
-    if (next) {
-      void vm.changePath(next);
-    }
+      directory: stats?.dataRoot || undefined,
+    }));
   };
 
   // 重置：原生确认框，避免误点。
@@ -83,64 +76,143 @@ export const Database = () => {
         <Text className={shared.sectionHint}>{t('settings.database.hint')}</Text>
       </div>
 
-      {/* —— 路径与总占用 —— */}
+      {/* —— 当前数据根与待迁移设置 —— */}
       <div className={classes.infoCard}>
+        <TextInput
+          label={t('settings.database.currentRootLabel')}
+          data-testid="data-root-current"
+          readOnly
+          value={stats?.dataRoot ?? ''}
+          placeholder={!stats ? t('common.loading') : undefined}
+          description={stats ? t(stats.isCustom ? 'settings.database.customBadge' : 'settings.database.defaultBadge') : undefined}
+        />
+        {managedBy && (
+          <>
+            <Text className={classes.status} role="status" data-testid="data-root-managed">
+              {managedBy === 'cli'
+                ? t('settings.database.managedByCli')
+                : managedBy === 'env'
+                  ? t('settings.database.managedByEnv')
+                  : t('settings.database.managedBy', { source: managedBy })}{' '}
+              {t('settings.database.overrideRestart')}
+            </Text>
+            {overrideHint && (
+              <div className={classes.infoRow}>
+                <div className={classes.infoValue}>
+                  <TextInput
+                    label={t('settings.database.overrideHintLabel')}
+                    readOnly
+                    value={overrideHint}
+                    data-testid="data-root-override-hint"
+                  />
+                </div>
+                <Button
+                  variant="default"
+                  className={classes.actionSecondary}
+                  onClick={() => void vm.copyOverrideHint(overrideHint)}
+                >
+                  {t('settings.database.actions.copyHint')}
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+        {pendingRoot && (
+          <TextInput
+            label={t('settings.database.pendingRootLabel')}
+            readOnly
+            value={pendingRoot}
+            data-testid="data-root-pending"
+          />
+        )}
+        {stats?.migrationError && (
+          <Text className={classes.statusError} role="alert" data-testid="data-root-migration-error">
+            {t('settings.database.migrationFailed', { message: stats.migrationError })}
+          </Text>
+        )}
+        <Text className={classes.status} data-testid="data-root-restart-notice">
+          {t('settings.database.restartRequired')}
+        </Text>
+
+        <form onSubmit={(event) => { event.preventDefault(); vm.submitRoot(); }}>
+          <TextInput
+            label={t('settings.database.targetRootLabel')}
+            description={t('settings.database.targetRootHint')}
+            autoComplete="off"
+            spellCheck={false}
+            value={vm.targetRoot}
+            onChange={(event) => vm.setTargetRoot(event.currentTarget.value)}
+            disabled={busy || !stats}
+            data-testid="data-root-target"
+          />
+          <div className={classes.actions}>
+            <Button
+              type="button"
+              variant="filled"
+              className={classes.actionPrimary}
+              leftSection={<IconFolderOpen size={20} stroke={1.75} />}
+              disabled={busy || !stats}
+              onClick={handleChange}
+            >
+              {t('settings.database.actions.change')}
+            </Button>
+            <Button
+              type="submit"
+              variant="default"
+              className={classes.actionSecondary}
+              disabled={busy || !stats || !vm.targetRoot.trim()}
+            >
+              {t('settings.database.actions.stage')}
+            </Button>
+            <Button
+              type="button"
+              variant="default"
+              className={classes.actionSecondary}
+              leftSection={<IconRestore size={20} stroke={1.75} />}
+              disabled={busy || !stats || (!stats.isCustom && !pendingRoot)}
+              onClick={handleReset}
+            >
+              {t('settings.database.actions.reset')}
+            </Button>
+            {pendingRoot && (
+              <Button
+                type="button"
+                variant="default"
+                className={classes.actionSecondary}
+                disabled={busy}
+                onClick={() => void vm.cancelRootMigration()}
+              >
+                {t('settings.database.actions.cancelMigration')}
+              </Button>
+            )}
+          </div>
+        </form>
+
+        <div role="status" aria-atomic="true">
+          <StatusLine status={vm.status} t={t} />
+        </div>
+
         <div className={classes.infoRow}>
           <Text className={classes.infoLabel}>{t('settings.database.currentPathLabel')}</Text>
-          <Text className={classes.infoValue}>
-            {vm.stats?.path ?? '…'}
-            {vm.stats && (
-              <span
-                className={classes.badge}
-                data-kind={vm.stats.isCustom ? 'custom' : 'default'}
-              >
-                {vm.stats.isCustom
-                  ? t('settings.database.customBadge')
-                  : t('settings.database.defaultBadge')}
-              </span>
-            )}
-          </Text>
+          <Text className={classes.infoValue}>{stats?.path ?? '…'}</Text>
         </div>
         <div className={classes.infoRow}>
           <Text className={classes.infoLabel}>{t('settings.database.defaultPathLabel')}</Text>
-          <Text className={classes.infoValue}>{vm.stats?.defaultPath ?? '…'}</Text>
+          <Text className={classes.infoValue}>{stats?.defaultPath ?? '…'}</Text>
         </div>
         <div className={classes.infoRow}>
           <Text className={classes.infoLabel}>{t('settings.database.sizeLabel')}</Text>
           <Text className={classes.infoValue}>
-            {vm.stats ? formatBytes(vm.stats.sizeBytes) : '…'}
+            {stats ? formatBytes(stats.sizeBytes) : '…'}
           </Text>
         </div>
-
-        <div className={classes.actions}>
-          <Button
-            variant="filled"
-            className={classes.actionPrimary}
-            leftSection={<IconFolderOpen size={20} stroke={1.75} />}
-            disabled={busy}
-            onClick={handleChange}
-          >
-            {t('settings.database.actions.change')}
-          </Button>
-          <Button
-            variant="default"
-            className={classes.actionSecondary}
-            leftSection={<IconRestore size={20} stroke={1.75} />}
-            disabled={busy || (vm.stats !== null && !vm.stats.isCustom)}
-            onClick={handleReset}
-          >
-            {t('settings.database.actions.reset')}
-          </Button>
-        </div>
-
-        <StatusLine status={vm.status} t={t} />
       </div>
 
       {/* —— 双图：占比 + 字节 —— */}
-      <ChartsBlock vm={vm} t={t} />
+      {showStats && <ChartsBlock vm={vm} t={t} />}
 
       {/* —— 表清单 —— */}
-      <TableListBlock vm={vm} t={t} busy={busy} onClear={handleClear} />
+      <TableListBlock vm={vm} t={t} busy={busy} showStats={showStats} onClear={handleClear} />
     </div>
   );
 };
@@ -157,6 +229,7 @@ interface StatusLineProps {
 const StatusLine = ({ status, t }: StatusLineProps) => {
   switch (status.kind) {
     case 'idle':
+    case 'choosing':
       return null;
     case 'changing':
       return <Text className={classes.status}>{t('settings.database.feedback.changing')}</Text>;
@@ -174,6 +247,12 @@ const StatusLine = ({ status, t }: StatusLineProps) => {
       return <Text className={classes.status}>{t('settings.database.feedback.changed')}</Text>;
     case 'reset':
       return <Text className={classes.status}>{t('settings.database.feedback.reset')}</Text>;
+    case 'cancelling':
+      return <Text className={classes.status}>{t('settings.database.feedback.cancelling')}</Text>;
+    case 'cancelled':
+      return <Text className={classes.status}>{t('settings.database.feedback.cancelled')}</Text>;
+    case 'copied':
+      return <Text className={classes.status}>{t('settings.database.feedback.copied')}</Text>;
     case 'cleared':
       return (
         <Text className={classes.status}>
@@ -321,10 +400,11 @@ interface TableListBlockProps {
   vm: Vm;
   t: T;
   busy: boolean;
+  showStats: boolean;
   onClear: (table: TableInfo) => void;
 }
 
-const TableListBlock = ({ vm, t, busy, onClear }: TableListBlockProps) => {
+const TableListBlock = ({ vm, t, busy, showStats, onClear }: TableListBlockProps) => {
   const tables = vm.tableStats?.tables ?? [];
   return (
     <div className={classes.tableList}>
@@ -333,7 +413,7 @@ const TableListBlock = ({ vm, t, busy, onClear }: TableListBlockProps) => {
         <Text className={classes.chartHint}>{t('settings.database.tables.empty')}</Text>
       ) : (
         tables.map((tb) => (
-          <TableRow key={tb.name} table={tb} t={t} busy={busy} onClear={onClear} />
+          <TableRow key={tb.name} table={tb} t={t} busy={busy} showStats={showStats} onClear={onClear} />
         ))
       )}
     </div>
@@ -344,10 +424,11 @@ interface TableRowProps {
   table: TableInfo;
   t: T;
   busy: boolean;
+  showStats: boolean;
   onClear: (table: TableInfo) => void;
 }
 
-const TableRow = ({ table, t, busy, onClear }: TableRowProps) => {
+const TableRow = ({ table, t, busy, showStats, onClear }: TableRowProps) => {
   const label = t(`settings.database.tables.${table.labelKey}.label`);
   const descRaw = t(`settings.database.tables.${table.labelKey}.description`);
   // i18n 缺失时返回 key 本身——退化为不展示描述，避免 UI 显示长 key
@@ -361,19 +442,21 @@ const TableRow = ({ table, t, busy, onClear }: TableRowProps) => {
       <div className={classes.tableRowMain}>
         <div className={classes.tableRowLabel}>
           {label}
-          {table.estimated && (
+          {showStats && table.estimated && (
             <span className={classes.badge} data-kind="estimated">
               {t('settings.database.tables.estimatedTag')}
             </span>
           )}
         </div>
         {description && <Text className={classes.chartHint}>{description}</Text>}
-        <Text className={classes.tableRowMeta}>
-          {t('settings.database.tables.meta', {
-            rows: table.rowCount,
-            size: formatBytes(table.sizeBytes),
-          })}
-        </Text>
+        {showStats && (
+          <Text className={classes.tableRowMeta}>
+            {t('settings.database.tables.meta', {
+              rows: table.rowCount,
+              size: formatBytes(table.sizeBytes),
+            })}
+          </Text>
+        )}
       </div>
       {table.clearable ? (
         <UnstyledButton
@@ -408,11 +491,4 @@ const formatBytes = (n: number): string => {
   if (n < MB) return `${(n / KB).toFixed(1)} KB`;
   if (n < GB) return `${(n / MB).toFixed(1)} MB`;
   return `${(n / GB).toFixed(2)} GB`;
-};
-
-// 从当前路径派生默认保存文件名。后端默认是 mandaryn.db；保留同名可避免改名。
-const defaultFileName = (currentPath?: string): string => {
-  if (!currentPath) return 'mandaryn.db';
-  const seg = currentPath.split(/[\\/]/).pop();
-  return seg && seg.length > 0 ? seg : 'mandaryn.db';
 };

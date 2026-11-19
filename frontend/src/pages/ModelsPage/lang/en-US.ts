@@ -38,6 +38,15 @@ export const modelsPageEnUS: Messages = {
       },
     },
 
+    mirror: {
+      label: 'Model mirror URL',
+      hint: 'Enter a mirror directory or a models.json URL. Leave blank for the default source. Refresh the catalog after saving.',
+      save: 'Save model mirror',
+      managed: 'Deployment variable {{variable}} overrides the saved personal setting.',
+      saved: 'Saved. Refresh the catalog to download models.',
+      invalid: 'Enter an HTTP(S) URL without credentials, a query, or a fragment.',
+      failed: 'Could not read or save the model mirror. Try again.',
+    },
     available: {
       title: 'Available models',
       countLabel: '{{count}} total',
@@ -56,6 +65,8 @@ export const modelsPageEnUS: Messages = {
       rolesLabel: 'Roles {{roles}}',
       installedBadge: 'Installed',
       updateBadge: 'Update available',
+      refresh: 'Refresh model catalog',
+      noSourcesHint: 'This entry has incomplete download information. Refresh the model catalog while online and try again.',
       actions: {
         download: 'Download',
         pause: 'Pause',

@@ -7,6 +7,7 @@
 // 铁律提醒（FR-05 / ARCH §4.3）：在线故障可自动回退本地（降级）；
 // 本地故障**不得**自动回退在线 —— 因此本页只暴露能力，不做任何隐式切换。
 import { Events } from '@wailsio/runtime';
+import { Service as SettingsBinding } from '@bindings/vip.oberon.mandaryn/internal/services/appsettings';
 import { Service as Binding } from '@bindings/vip.oberon.mandaryn/internal/services/enginesvc';
 import type {
   EngineStatus,
@@ -65,6 +66,33 @@ export const EngineService = {
     }
   },
 
+  // 读持久化的降级策略（包括界面未编辑的重试次数）和端点授权状态。
+  async getOnlineSettings() {
+    try {
+      const snap = await SettingsBinding.Get();
+      return {
+        consentAt: snap.onlineConsentAt,
+        consentHost: snap.onlineConsentHost,
+        policy: {
+          fallbackToLocal: snap.fallbackToLocal,
+          autoSwitchBack: snap.autoSwitchBack,
+          maxRetries: snap.maxRetries,
+        } satisfies FallbackPolicy,
+      };
+    } catch (err) {
+      throw toAppError(err);
+    }
+  },
+
+  // 仅在用户显式同意当前端点后记录授权；此 API 不发出站请求。
+  async setConsentOnline(endpoint: string): Promise<void> {
+    try {
+      await SettingsBinding.SetConsentOnline(endpoint);
+    } catch (err) {
+      throw toAppError(err);
+    }
+  },
+
   // 保存在线端点（需已对当前域名做过隐私确认）。
   async setOnlineConfig(config: OnlineConfig): Promise<void> {
     try {
@@ -83,7 +111,7 @@ export const EngineService = {
     }
   },
 
-  // 保存降级策略。注意：MaxRetries 目前只在进程内生效（后端无对应列）。
+  // 保存降级策略并同步给运行中的路由；重试次数也会持久化。
   async setFallbackPolicy(policy: FallbackPolicy): Promise<void> {
     try {
       await Binding.SetFallbackPolicy(policy);

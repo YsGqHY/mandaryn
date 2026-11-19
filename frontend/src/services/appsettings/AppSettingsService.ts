@@ -12,6 +12,8 @@ export type AppSettingsField =
   | 'customTheme'
   | 'localeChoice'
   | 'liveTranscribe'
+  | 'recordingCues'
+  | 'audio'
   | 'privacy'
   | 'debugMode';
 
@@ -23,6 +25,16 @@ export interface AppSettingsSnapshot {
   resourceCapPct: number;
   // 边录边转开关（FR-03-10，**默认 false**）。写入走 setLiveTranscribe。
   liveTranscribe: boolean;
+  recordingCues: boolean;
+}
+
+// 完整读回并按字段更新，隐藏的保存格式、灵敏度不能被新入口默认值覆盖。
+export interface AudioSettingsDTO {
+  saveFormat: string;
+  sensitivity: string;
+  maxSpeakers: number;
+  defaultSourceId: string;
+  autoName: boolean;
 }
 
 // ProxyType 是代理类型（与后端 contract.ProxyConfig.type 同一取值集）。
@@ -54,16 +66,52 @@ export interface ProxyTestResult {
 export const AppSettingsService = {
   async get(): Promise<AppSettingsSnapshot> {
     const snap = await Binding.Get();
-    // `liveTranscribe` 在绑定重新生成后才会出现在类型里；这里按结构取值，
-    // 保证「后端已加字段、绑定未重生成」的过渡期也能正确读到 false。
-    const extended = snap as unknown as { liveTranscribe?: boolean };
+    // 允许生成绑定的类型暂时落后于后端快照。
+    const extended = snap as typeof snap & { liveTranscribe?: boolean; recordingCues?: boolean };
     return {
       themeChoice: snap.themeChoice ?? '',
       customTheme: snap.customTheme ?? '',
       localeChoice: snap.localeChoice ?? '',
       resourceCapPct: snap.resourceCapPct ?? 0,
       liveTranscribe: extended.liveTranscribe ?? false,
+      recordingCues: extended.recordingCues ?? true,
     };
+  },
+
+  async getNoAudioPersist(): Promise<boolean> {
+    try {
+      const snap = await Binding.Get();
+      return snap.privacy?.noAudioPersist ?? false;
+    } catch (err) {
+      throw toAppError(err);
+    }
+  },
+
+  async setNoAudioPersist(enabled: boolean): Promise<void> {
+    try {
+      await Binding.SetNoAudioPersist(enabled);
+    } catch (err) {
+      throw toAppError(err);
+    }
+  },
+
+  async getAudio(): Promise<AudioSettingsDTO> {
+    try {
+      const snap = await Binding.Get();
+      if (!snap.audio) throw new Error('ERR_SETTINGS_AUDIO_MISSING');
+      return { ...snap.audio };
+    } catch (err) {
+      throw toAppError(err);
+    }
+  },
+
+  async updateAudio(patch: Partial<Pick<AudioSettingsDTO, 'defaultSourceId' | 'maxSpeakers' | 'autoName' | 'saveFormat' | 'sensitivity'>>): Promise<void> {
+    try {
+      const current = await AppSettingsService.getAudio();
+      await Binding.SetAudio({ ...current, ...patch });
+    } catch (err) {
+      throw toAppError(err);
+    }
   },
 
   async setThemeChoice(choice: string): Promise<void> {
@@ -102,6 +150,18 @@ export const AppSettingsService = {
       throw new Error('后端绑定缺少 SetLiveTranscribe（需要重新生成 bindings）');
     }
     await ext.SetLiveTranscribe(enabled);
+  },
+
+  async setRecordingCues(enabled: boolean): Promise<void> {
+    try {
+      const ext = Binding as typeof Binding & { SetRecordingCues?: (value: boolean) => Promise<void> };
+      if (typeof ext.SetRecordingCues !== 'function') {
+        throw new Error('Missing SetRecordingCues binding');
+      }
+      await ext.SetRecordingCues(enabled);
+    } catch (err) {
+      throw toAppError(err);
+    }
   },
 
   // 切换调试模式（API-9.16）：立即生效、无需重启，持久化在 app_settings.log_level。

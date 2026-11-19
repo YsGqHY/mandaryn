@@ -9,6 +9,7 @@ import { registerSettingsPageLocales } from '@/pages/SettingsPage/lang';
 import { PreferencesProvider } from '@/preferences';
 import { RouterProvider } from '@/router';
 import { routes } from '@/routes';
+import { LeanModeProvider } from '@/shared/LeanModeProvider';
 import { MandarynThemeProvider, registerMandarynThemes } from '@/styles/themes';
 
 // 启动时注册：
@@ -37,9 +38,11 @@ export const App = () => {
     <I18nProvider>
       <MandarynThemeProvider>
         <PreferencesProvider>
-          <RouterProvider routes={routes}>
-            <AppLayout />
-          </RouterProvider>
+          <LeanModeProvider>
+            <RouterProvider routes={routes}>
+              <AppLayout />
+            </RouterProvider>
+          </LeanModeProvider>
         </PreferencesProvider>
       </MandarynThemeProvider>
     </I18nProvider>

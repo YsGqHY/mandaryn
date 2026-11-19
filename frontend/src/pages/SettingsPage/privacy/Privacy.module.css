@@ -10,6 +10,10 @@
   background-color: var(--fd-bg-elevated);
 }
 
+.card[hidden] {
+  display: none;
+}
+
 .cardHeader {
   display: flex;
   align-items: center;

@@ -92,7 +92,7 @@ export interface UseLibraryPageResult {
   activeTranscription: (session: Session) => TranscriptionState | null;
   statusOf: (session: Session) => string;
   canTranscribe: (session: Session) => boolean;
-  startTranscription: (sessionId: string) => Promise<void>;
+  startTranscription: (session: Session) => Promise<void>;
   cancelTranscription: (sessionId: string) => Promise<void>;
   // 行级忙标记（改名 / 删除 / 转写 / 导出共用，避免重复点击）
   busyId: string | null;
@@ -146,6 +146,7 @@ export const useLibraryPage = (): UseLibraryPageResult => {
   const [appliedKeyword, setAppliedKeyword] = useState<string>('');
   const [sourceOptions, setSourceOptions] = useState<LibrarySourceOption[]>([]);
   const [transcripts, setTranscripts] = useState<Record<string, TranscriptionState>>({});
+  const transcriptEventRevisions = useRef(new Map<string, number>());
   const [busyId, setBusyId] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<Session | null>(null);
   const [renameDraft, setRenameDraft] = useState<string>('');
@@ -249,6 +250,8 @@ export const useLibraryPage = (): UseLibraryPageResult => {
   useEffect(() => {
     const cancel = SessionService.onTranscriptionState((state) => {
       if (!aliveRef.current) return;
+      const revisions = transcriptEventRevisions.current;
+      revisions.set(state.sessionId, (revisions.get(state.sessionId) ?? 0) + 1);
       setTranscripts((prev) => ({ ...prev, [state.sessionId]: state }));
       if (state.status === 'done' || state.status === 'failed') setReloadToken((token) => token + 1);
     });
@@ -384,31 +387,40 @@ export const useLibraryPage = (): UseLibraryPageResult => {
   );
 
   const canTranscribe = useCallback(
-    (session: Session): boolean => canStartTranscription(statusOf(session)),
+    (session: Session): boolean => session.hasAudio !== false && canStartTranscription(statusOf(session)),
     [statusOf],
   );
 
-  const startTranscription = useCallback(async (sessionId: string): Promise<void> => {
+  const startTranscription = useCallback(async (session: Session): Promise<void> => {
+    if (!canTranscribe(session)) return;
+    const sessionId = session.id;
     setBusyId(sessionId);
     setError(null);
     try {
+      const before = transcriptEventRevisions.current.get(sessionId);
       const state = await SessionService.startTranscription(sessionId);
       if (!aliveRef.current) return;
-      setTranscripts((prev) => ({ ...prev, [state.sessionId]: state }));
+      // A fast task can emit its terminal state before the enqueue RPC resolves.
+      if (transcriptEventRevisions.current.get(sessionId) === before) {
+        setTranscripts((prev) => ({ ...prev, [state.sessionId]: state }));
+      }
     } catch (err) {
       if (aliveRef.current) setError(toAppError(err));
     } finally {
       if (aliveRef.current) setBusyId(null);
     }
-  }, []);
+  }, [canTranscribe]);
 
   const cancelTranscription = useCallback(async (sessionId: string): Promise<void> => {
     setBusyId(sessionId);
     setError(null);
     try {
+      const before = transcriptEventRevisions.current.get(sessionId);
       const state = await SessionService.cancelTranscription(sessionId);
       if (!aliveRef.current) return;
-      setTranscripts((prev) => ({ ...prev, [state.sessionId]: state }));
+      if (transcriptEventRevisions.current.get(sessionId) === before) {
+        setTranscripts((prev) => ({ ...prev, [state.sessionId]: state }));
+      }
       setReloadToken((token) => token + 1);
     } catch (err) {
       if (aliveRef.current) setError(toAppError(err));

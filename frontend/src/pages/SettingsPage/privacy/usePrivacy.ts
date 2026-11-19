@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  AppSettingsService,
   OUTBOUND_PAGE_SIZE,
   PrivacyService,
   isOfflineEnvForced,
@@ -13,7 +14,7 @@ import {
 } from '@/services';
 
 // 反馈作用区域（视图按 area 决定把提示放在哪一块）。
-export type PrivacyArea = 'offline' | 'records' | 'audit' | 'export';
+export type PrivacyArea = 'offline' | 'audioRetention' | 'records' | 'audit' | 'export';
 
 // 操作反馈：只描述「发生了什么」，文案由视图查 i18n。
 export type PrivacyNotice =
@@ -32,6 +33,9 @@ export interface UsePrivacyResult {
   // envForced：离线由环境变量接管 —— 界面必须禁用开关，不得假装能改。
   envForced: boolean;
   toggleOffline: (enabled: boolean) => Promise<void>;
+  noAudioPersist: boolean | null;
+  audioRetentionBusy: boolean;
+  toggleNoAudioPersist: (enabled: boolean) => Promise<void>;
 
   // —— 出站记录 ——
   page: OutboundPage | null;
@@ -65,6 +69,8 @@ export const usePrivacy = (): UsePrivacyResult => {
   const [status, setStatus] = useState<PrivacyStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [offlineBusy, setOfflineBusy] = useState(false);
+  const [noAudioPersist, setNoAudioPersist] = useState<boolean | null>(null);
+  const [audioRetentionBusy, setAudioRetentionBusy] = useState(false);
 
   const [page, setPage] = useState<OutboundPage | null>(null);
   const [pageIndex, setPageIndex] = useState(0);
@@ -128,6 +134,34 @@ export const usePrivacy = (): UsePrivacyResult => {
     void loadStatus();
     void loadPage(0);
   }, [loadStatus, loadPage]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void AppSettingsService.getNoAudioPersist().then((enabled) => {
+      if (!cancelled) setNoAudioPersist(enabled);
+    }).catch((err: unknown) => {
+      if (cancelled) return;
+      const { code, message } = toAppError(err);
+      setNotice({ kind: 'error', area: 'audioRetention', code, message });
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const toggleNoAudioPersist = useCallback(async (enabled: boolean): Promise<void> => {
+    if (noAudioPersist === null || audioRetentionBusy) return;
+    setAudioRetentionBusy(true);
+    dismissNotice();
+    try {
+      await AppSettingsService.setNoAudioPersist(enabled);
+      if (aliveRef.current) setNoAudioPersist(enabled);
+    } catch (err) {
+      if (!aliveRef.current) return;
+      const { code, message } = toAppError(err);
+      setNotice({ kind: 'error', area: 'audioRetention', code, message });
+    } finally {
+      if (aliveRef.current) setAudioRetentionBusy(false);
+    }
+  }, [audioRetentionBusy, dismissNotice, noAudioPersist]);
 
   const envForced = isOfflineEnvForced(status);
 
@@ -237,6 +271,9 @@ export const usePrivacy = (): UsePrivacyResult => {
     offlineBusy,
     envForced,
     toggleOffline,
+    noAudioPersist,
+    audioRetentionBusy,
+    toggleNoAudioPersist,
     page,
     pageIndex,
     pageCount,

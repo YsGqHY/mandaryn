@@ -1,4 +1,4 @@
-import { Switch, Text } from '@mantine/core';
+import { Button, Select, Switch, Text } from '@mantine/core';
 import {
   IconAlertTriangle,
   IconCpu,
@@ -10,13 +10,7 @@ import { useAudio, type SaveStatus } from './useAudio';
 import classes from './Audio.module.css';
 import shared from '../SettingsPage.module.css';
 
-// 音频子页面（FR-03-10）。
-//
-// 只有一个开关，但要说清四件事（否则用户一定会困惑为什么开了没字）：
-//   1. 默认关闭 —— 录制与转写解耦是产品默认形态；
-//   2. 只在**下一个会话**生效（录制中不能切）；
-//   3. 需要流式模型包；缺了会明确说缺什么；
-//   4. 关掉它不影响「录完再转」。
+// 只展示已有运行时消费的音频设置；FLAC、灵敏度尚未接线，不提供假控件。
 export const Audio = () => {
   const vm = useAudio();
   const t = useT();
@@ -24,12 +18,86 @@ export const Audio = () => {
   const saving = vm.status.kind === 'saving';
   // 能力不可用时开关仍然可点（配置是配置），但必须给出原因。
   const unavailable = !vm.loading && !vm.available;
+  const controlsDisabled = saving || vm.loading || vm.audio === null;
+  const defaultId = vm.audio?.defaultSourceId ?? '';
+  const sourceUnavailable = defaultId !== '' && !vm.sources.some((source) => source.id === defaultId && source.present);
+  const sourceOptions = vm.sources.map((source) => ({
+    value: source.id,
+    label: source.displayName,
+    disabled: !source.present,
+  }));
+  if (defaultId !== '' && !sourceOptions.some((source) => source.value === defaultId)) {
+    sourceOptions.push({ value: defaultId, label: t('settings.audio.defaults.unavailableOption'), disabled: true });
+  }
 
   return (
     <div className={shared.section}>
       <div className={shared.sectionHeader}>
         <Text className={shared.sectionTitle}>{t('settings.audio.title')}</Text>
         <Text className={shared.sectionHint}>{t('settings.audio.hint')}</Text>
+      </div>
+
+      <div className={classes.card} data-testid="audio-defaults">
+        <Select
+          label={t('settings.audio.defaults.source')}
+          description={t('settings.audio.defaults.sourceHint')}
+          placeholder={t('settings.audio.defaults.noSource')}
+          value={defaultId || null}
+          data={sourceOptions}
+          searchable
+          nothingFoundMessage={t('settings.audio.defaults.noSources')}
+          disabled={controlsDisabled}
+          onChange={(id) => void vm.updateAudio({ defaultSourceId: id ?? '' })}
+        />
+        {sourceUnavailable && <Text role="status" className={classes.headDesc}>{t('settings.audio.defaults.unavailable')}</Text>}
+        {vm.sourcesFailed && <Text role="status" className={classes.headDesc}>{t('settings.audio.defaults.sourcesFailed')}</Text>}
+        {defaultId !== '' && (
+          <Button variant="default" size="xs" disabled={controlsDisabled}
+            onClick={() => void vm.updateAudio({ defaultSourceId: '' })}>
+            {t('settings.audio.defaults.clearSource')}
+          </Button>
+        )}
+        <Button variant="default" size="xs" disabled={saving || vm.loading} onClick={() => void vm.refresh()}>
+          {t('settings.audio.defaults.refresh')}
+        </Button>
+        <Select
+          label={t('settings.audio.defaults.maxSpeakers')}
+          description={t('settings.audio.defaults.maxSpeakersHint')}
+          data={[{ value: '0', label: t('settings.audio.defaults.auto') }, ...[2, 3, 4, 5, 6, 7, 8].map((count) => ({ value: String(count), label: t('settings.audio.defaults.speakers', { count }) }))]}
+          value={String(vm.audio?.maxSpeakers ?? 0)}
+          allowDeselect={false}
+          disabled={controlsDisabled}
+          onChange={(value) => { if (value !== null) void vm.updateAudio({ maxSpeakers: Number(value) }); }}
+        />
+        <Select
+          label={t('settings.audio.defaults.sensitivity')}
+          description={t('settings.audio.defaults.sensitivityHint')}
+          data={[
+            { value: 'standard', label: t('settings.audio.defaults.standard') },
+            { value: 'noisy', label: t('settings.audio.defaults.noisy') },
+          ]}
+          value={vm.audio?.sensitivity === 'noisy' ? 'noisy' : 'standard'}
+          allowDeselect={false}
+          disabled={controlsDisabled}
+          onChange={(value) => { if (value === 'standard' || value === 'noisy') void vm.updateAudio({ sensitivity: value }); }}
+        />
+        <Switch
+          label={t('settings.audio.defaults.autoName')}
+          description={t('settings.audio.defaults.autoNameHint')}
+          checked={vm.audio?.autoName ?? false}
+          disabled={controlsDisabled}
+          onChange={(event) => void vm.updateAudio({ autoName: event.currentTarget.checked })}
+        />
+        <Select
+          label={t('settings.audio.defaults.format')}
+          description={t('settings.audio.defaults.formatHint')}
+          data={[{ value: 'wav', label: 'WAV' }, { value: 'flac', label: 'FLAC' }]}
+          value={vm.audio?.saveFormat === 'flac' ? 'flac' : 'wav'}
+          allowDeselect={false}
+          disabled={controlsDisabled}
+          onChange={(value) => { if (value === 'wav' || value === 'flac') void vm.updateAudio({ saveFormat: value }); }}
+        />
+        <StatusLine status={vm.status} t={t} />
       </div>
 
       <div className={classes.card}>
@@ -91,7 +159,6 @@ export const Audio = () => {
           </div>
         )}
 
-        <StatusLine status={vm.status} t={t} />
       </div>
     </div>
   );

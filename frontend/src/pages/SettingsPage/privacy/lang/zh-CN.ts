@@ -5,6 +5,11 @@ export const privacyZhCN: Messages = {
     privacy: {
       title: '隐私边界',
       hint: '默认不联网：离线开关、出站留痕与零出站自检都在这里。任何一次外连都会留痕，你可以随时核对并清空。',
+      audioRetention: {
+        title: '在线录音保留',
+        switchLabel: '不保存在线会话的音频',
+        hint: '默认关闭。更改从下次开始的在线会话生效，不影响当前会话、已有录音或本地模式。音频仍会发送给在线转写服务；转写文本仍会保存。没有音频就无法回放、导出音频或重新转写。',
+      },
       offline: {
         title: '离线模式',
         stateOn: '离线中',

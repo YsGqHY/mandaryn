@@ -9,6 +9,7 @@ import {
 import { useCallback, useEffect, useRef, type KeyboardEvent } from 'react';
 import { useT } from '@/i18n';
 import { NativeDialogs, type ActionInfo, type HotkeyConflict } from '@/services';
+import { useLeanMode } from '@/shared/LeanModeProvider';
 import { captureFromEvent, modifierPreview } from './accelerator';
 import { useHotkeys, type HotkeyIssue } from './useHotkeys';
 import classes from './Hotkeys.module.css';
@@ -25,6 +26,7 @@ import shared from '../SettingsPage.module.css';
 // 文案 namespace：settings.hotkeys.*
 export const Hotkeys = () => {
   const vm = useHotkeys();
+  const { state: lean, loadFailed, refresh: refreshLean } = useLeanMode();
   const t = useT();
 
   const disabledPlatform = vm.available === false;
@@ -98,34 +100,42 @@ export const Hotkeys = () => {
           <Text className={classes.cardTitle}>{t('settings.hotkeys.lean.title')}</Text>
         </div>
         <Switch
-          checked={vm.lean?.enabled ?? false}
+          checked={lean?.enabled ?? false}
           onChange={(event) => void vm.setLean(event.currentTarget.checked)}
-          disabled={vm.leanBusy || vm.lean === null}
+          disabled={vm.leanBusy || lean === null}
           label={t('settings.hotkeys.lean.switchLabel')}
           aria-label={t('settings.hotkeys.lean.switchLabel')}
         />
         <Text className={classes.cardHint}>{t('settings.hotkeys.lean.hint')}</Text>
 
         {vm.leanIssue && <IssueLine issue={vm.leanIssue} />}
+        {loadFailed && (
+          <div role="status">
+            <Text className={classes.cardHint}>{t('settings.hotkeys.lean.loadFailed')}</Text>
+            <Button variant="default" size="xs" onClick={() => void refreshLean()}>
+              {t('settings.hotkeys.lean.retry')}
+            </Button>
+          </div>
+        )}
 
-        {vm.lean && (
+        {lean && (
           <div className={classes.leanGrid}>
             <LeanList
               title={t('settings.hotkeys.lean.visibleTitle')}
               tone="ok"
-              keys={vm.lean.visibleRegions}
+              keys={lean.visibleRegions}
               kind="regions"
             />
             <LeanList
               title={t('settings.hotkeys.lean.hiddenRegionsTitle')}
               tone="muted"
-              keys={vm.lean.hiddenRegions}
+              keys={lean.hiddenRegions}
               kind="regions"
             />
             <LeanList
               title={t('settings.hotkeys.lean.hiddenControlsTitle')}
               tone="muted"
-              keys={vm.lean.hiddenControls}
+              keys={lean.hiddenControls}
               kind="controls"
             />
           </div>

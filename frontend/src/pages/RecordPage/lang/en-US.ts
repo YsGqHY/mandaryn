@@ -5,7 +5,12 @@ export const recordPageEnUS: Messages = {
   record: {
     eyebrow: 'Record',
     title: 'Choose an audio source to transcribe',
-    subtitle: 'Capture Chinese speech per application. Recording only captures and writes audio; transcription is a separate task in the library that you can start later.',
+    subtitle: 'Capture Chinese speech from a selected app. You can usually transcribe a recording later from the library.',
+    noAudio: {
+      title: 'Audio is not saved for this session',
+      hint: 'Audio is used only for this online transcription. It cannot be played back or exported. If transcription fails, there is no recording to retry with.',
+      failed: 'Online transcription failed. No audio was saved, so this session cannot be transcribed again.',
+    },
 
     caps: {
       title: 'Platform capture capabilities',
@@ -107,6 +112,7 @@ export const recordPageEnUS: Messages = {
       dialogTitle: 'Save recording as',
       fileBaseName: 'recording',
       filterWav: 'WAV audio (*.wav)',
+      filterFlac: 'FLAC audio (*.flac)',
       doneTitle: 'Recording saved',
       doneMessage: 'The recording was saved to:\n{{path}}',
     },

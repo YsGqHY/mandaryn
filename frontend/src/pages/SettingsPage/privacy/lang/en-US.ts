@@ -5,6 +5,11 @@ export const privacyEnUS: Messages = {
     privacy: {
       title: 'Privacy boundary',
       hint: 'Offline by default: the offline switch, outbound ledger and zero-outbound audit all live here. Every outbound request is recorded — you can review and clear it at any time.',
+      audioRetention: {
+        title: 'Online recording retention',
+        switchLabel: 'Do not save audio from online sessions',
+        hint: 'Off by default. Changes apply starting with your next online session, not to the current session, existing recordings, or local mode. Audio is still sent to your online transcription provider, and the transcript is still saved. Without saved audio, you cannot play it back, export it, or transcribe it again.',
+      },
       offline: {
         title: 'Offline mode',
         stateOn: 'Offline',

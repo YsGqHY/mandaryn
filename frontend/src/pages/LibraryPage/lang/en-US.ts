@@ -56,6 +56,9 @@ export const libraryPageEnUS: Messages = {
       delete: 'Delete session',
       speakers: 'Speakers and roles',
       playback: 'Play back',
+      openTranscript: 'View transcript',
+      noAudio: 'No saved audio',
+      noAudioRetry: 'No audio was saved, so transcription cannot be started or retried',
     },
 
     // Transcription statuses (a separate axis, orthogonal to the recording status).
@@ -203,6 +206,7 @@ export const libraryPageEnUS: Messages = {
     // Session playback and lyric-style sync (FR-04 UI side)
     playback: {
       close: 'Close playback',
+      closeTranscript: 'Close transcript',
       loading: 'Loading timeline…',
       retry: 'Retry',
       titleMeta: '{{time}} · {{source}} · {{count}} segments',
@@ -237,6 +241,12 @@ export const libraryPageEnUS: Messages = {
       emptyTranscribing: 'Transcription is running. Segments show up here when it finishes; you can listen to the audio now.',
       emptyFailed: 'The last transcription failed. Close this drawer, hit "Retry transcription" on the row, then come back.',
 
+      emptyNoAudio: 'There is no transcript to read for this session.',
+      emptyFailedNoAudio: 'Transcription failed, and there is no audio to retry with.',
+      audioNotSaved: {
+        title: 'No saved audio',
+        message: 'Read the transcript here or export text from the session list. There is no audio to play, export, or transcribe again.',
+      },
       audioMissing: {
         title: 'Audio file is missing',
         message:

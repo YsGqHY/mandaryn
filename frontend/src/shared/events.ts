@@ -43,6 +43,7 @@ export const AppEvents = {
   PerfUsage: 'perf:usage',
   // EV-18 快捷键绑定变化（单个动作，含注册失败原因）。
   HotkeysChanged: 'hotkeys:changed',
+  LeanModeChanged: 'ux:leanChanged',
 } as const;
 
 export type AppEventName = (typeof AppEvents)[keyof typeof AppEvents];

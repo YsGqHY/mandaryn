@@ -7,8 +7,8 @@ import {
   type Binding,
   type ConflictReport,
   type HotkeyConflict,
-  type LeanState,
 } from '@/services';
+import { useLeanMode } from '@/shared/LeanModeProvider';
 
 // 单行的异常状态（视图据此标红并给原因，绝不静默）。
 export type HotkeyIssueKind = 'register' | 'conflict' | 'invalid' | 'failed';
@@ -54,7 +54,6 @@ export interface UseHotkeysResult {
   resetAction: (actionId: string) => Promise<void>;
   resetAllActions: () => Promise<void>;
   resetAllBusy: boolean;
-  lean: LeanState | null;
   leanBusy: boolean;
   setLean: (enabled: boolean) => Promise<void>;
   // 列表级 / 精简模式级错误（不属于某个动作行）
@@ -64,14 +63,14 @@ export interface UseHotkeysResult {
 }
 
 // 快捷键子页面 ViewModel（FR-09）：
-//   - mount 并行拉 平台可用性 / 动作元数据 / 当前绑定 / 精简模式
+//   - mount 并行拉平台可用性、动作元数据与当前绑定；精简模式由应用级 provider 提供
 //   - 重绑必须「先查冲突再保存」（DOC-05 §2.3），失败要把原因留在该行
 //   - 订阅 EV-18 hotkeys:changed：后端注册失败会带上 registerErr，行内直接标红
 export const useHotkeys = (): UseHotkeysResult => {
   const [available, setAvailable] = useState<boolean | null>(null);
   const [actions, setActions] = useState<ActionInfo[]>([]);
   const [bindings, setBindings] = useState<Record<string, Binding>>({});
-  const [lean, setLeanState] = useState<LeanState | null>(null);
+  const { setEnabled } = useLeanMode();
   const [loading, setLoading] = useState(true);
 
   const [capturingId, setCapturingId] = useState<string | null>(null);
@@ -91,11 +90,10 @@ export const useHotkeys = (): UseHotkeysResult => {
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
-      const [canUse, actionList, bindingList, leanState] = await Promise.all([
+      const [canUse, actionList, bindingList] = await Promise.all([
         HotkeysService.available(),
         HotkeysService.listActions(),
         HotkeysService.list(),
-        HotkeysService.getLeanState(),
       ]);
       if (!aliveRef.current) return;
       setAvailable(canUse);
@@ -103,7 +101,6 @@ export const useHotkeys = (): UseHotkeysResult => {
       const map: Record<string, Binding> = {};
       for (const binding of bindingList) map[binding.action] = binding;
       setBindings(map);
-      setLeanState(leanState);
     } catch (err) {
       if (!aliveRef.current) return;
       const appErr = toAppError(err);
@@ -360,9 +357,8 @@ export const useHotkeys = (): UseHotkeysResult => {
   const setLean = useCallback(async (enabled: boolean): Promise<void> => {
     setLeanBusy(true);
     try {
-      const next = await HotkeysService.setLeanMode(enabled);
-      if (!aliveRef.current) return;
-      setLeanState(next);
+      setIssue('__lean__', null);
+      await setEnabled(enabled);
     } catch (err) {
       if (!aliveRef.current) return;
       const appErr = toAppError(err);
@@ -379,7 +375,7 @@ export const useHotkeys = (): UseHotkeysResult => {
     } finally {
       if (aliveRef.current) setLeanBusy(false);
     }
-  }, []);
+  }, [setEnabled, setIssue]);
 
   return {
     available,
@@ -399,7 +395,6 @@ export const useHotkeys = (): UseHotkeysResult => {
     resetAction,
     resetAllActions,
     resetAllBusy,
-    lean,
     leanBusy,
     setLean,
     listIssue: issues['__list__'] ?? null,

@@ -5,37 +5,35 @@ import {
   type TableInfo,
   type TableStats,
 } from '@/services';
+import { PathsService } from '@/services/models/PathsService';
 
-export type DatabaseStatus =
-  | { kind: 'idle' }
+type BusyStatus =
+  | { kind: 'choosing' }
   | { kind: 'changing' }
   | { kind: 'resetting' }
-  | { kind: 'clearing'; tableName: string }
+  | { kind: 'cancelling' }
+  | { kind: 'clearing'; tableName: string };
+
+export type DatabaseStatus =
+  | BusyStatus
+  | { kind: 'idle' }
   | { kind: 'changed' }
   | { kind: 'reset' }
+  | { kind: 'cancelled' }
+  | { kind: 'copied' }
   | { kind: 'cleared'; tableName: string }
   | { kind: 'failed'; message: string };
 
-export interface UseDatabaseResult {
-  stats: StorageStats | null;
-  tableStats: TableStats | null;
-  status: DatabaseStatus;
-  refresh: () => Promise<void>;
-  changePath: (newPath: string) => Promise<void>;
-  resetPath: () => Promise<void>;
-  clearTable: (table: TableInfo) => Promise<void>;
-}
-
-// 数据库子页面 ViewModel：
-//   - mount 同时拉 stats 与 tableStats
-//   - changePath / resetPath / clearTable 走后端，期间 status 标当前操作
-//   - 完成后再次刷新（路径变会让 tableStats 重算；清表只重算 tableStats 即可）
-//   - 失败时把错误消息透给视图（业务方决定怎么展示）
-export const useDatabase = (): UseDatabaseResult => {
+// 数据库统计保持反映当前连接，目录改动仅暂存至下次启动。
+export const useDatabase = () => {
   const [stats, setStats] = useState<StorageStats | null>(null);
   const [tableStats, setTableStats] = useState<TableStats | null>(null);
   const [status, setStatus] = useState<DatabaseStatus>({ kind: 'idle' });
+  const [targetRoot, setTargetRoot] = useState('');
   const aliveRef = useRef(true);
+  const operationRef = useRef(false);
+  const busy = status.kind === 'choosing' || status.kind === 'changing' ||
+    status.kind === 'resetting' || status.kind === 'cancelling' || status.kind === 'clearing';
 
   useEffect(() => {
     aliveRef.current = true;
@@ -63,54 +61,78 @@ export const useDatabase = (): UseDatabaseResult => {
     void refresh();
   }, [refresh]);
 
-  const changePath = useCallback(
-    async (newPath: string): Promise<void> => {
-      setStatus({ kind: 'changing' });
-      try {
-        await StorageService.setCustomPath(newPath);
-        await refresh();
-        if (!aliveRef.current) return;
-        setStatus({ kind: 'changed' });
-      } catch (err) {
-        if (!aliveRef.current) return;
-        setStatus({ kind: 'failed', message: getErrorMessage(err) });
-      }
-    },
-    [refresh],
-  );
-
-  const resetPath = useCallback(async (): Promise<void> => {
-    setStatus({ kind: 'resetting' });
+  const run = async (start: BusyStatus, action: () => Promise<DatabaseStatus>): Promise<void> => {
+    if (operationRef.current) return;
+    operationRef.current = true;
+    setStatus(start);
     try {
-      await StorageService.resetPath();
-      await refresh();
-      if (!aliveRef.current) return;
-      setStatus({ kind: 'reset' });
+      const result = await action();
+      if (aliveRef.current) setStatus(result);
     } catch (err) {
-      if (!aliveRef.current) return;
-      setStatus({ kind: 'failed', message: getErrorMessage(err) });
+      if (aliveRef.current) setStatus({ kind: 'failed', message: getErrorMessage(err) });
+    } finally {
+      operationRef.current = false;
     }
-  }, [refresh]);
+  };
 
-  const clearTable = useCallback(
-    async (table: TableInfo): Promise<void> => {
-      if (!table.clearable) return;
-      setStatus({ kind: 'clearing', tableName: table.name });
-      try {
-        await StorageService.clearTable(table.name);
-        // 清表只刷 tableStats，path / 总文件大小由 SQLite 自己回收（非阻塞）
-        await refresh();
-        if (!aliveRef.current) return;
-        setStatus({ kind: 'cleared', tableName: table.name });
-      } catch (err) {
-        if (!aliveRef.current) return;
+  const stageRoot = async (directory: string): Promise<DatabaseStatus> => {
+    await StorageService.setCustomPath(directory);
+    await refresh();
+    if (aliveRef.current) setTargetRoot('');
+    return { kind: 'changed' };
+  };
+
+  const submitRoot = () => {
+    const directory = targetRoot.trim();
+    if (directory) void run({ kind: 'changing' }, () => stageRoot(directory));
+  };
+
+  const chooseRoot = (pick: () => Promise<string | null>) =>
+    run({ kind: 'choosing' }, async () => {
+      const directory = await pick();
+      if (!directory || !aliveRef.current) return { kind: 'idle' };
+      setStatus({ kind: 'changing' });
+      return stageRoot(directory);
+    });
+
+  const resetPath = () => run({ kind: 'resetting' }, async () => {
+    await StorageService.resetPath();
+    await refresh();
+    if (aliveRef.current) setTargetRoot('');
+    return { kind: 'reset' };
+  });
+
+  const cancelRootMigration = () => run({ kind: 'cancelling' }, async () => {
+    await StorageService.cancelRootMigration();
+    await refresh();
+    if (aliveRef.current) setTargetRoot('');
+    return { kind: 'cancelled' };
+  });
+
+  const clearTable = (table: TableInfo) => {
+    if (!table.clearable) return;
+    void run({ kind: 'clearing', tableName: table.name }, async () => {
+      await StorageService.clearTable(table.name);
+      await refresh();
+      return { kind: 'cleared', tableName: table.name };
+    });
+  };
+
+  const copyOverrideHint = async (hint: string) => {
+    try {
+      await PathsService.copyText(hint);
+      if (aliveRef.current && !operationRef.current) setStatus({ kind: 'copied' });
+    } catch (err) {
+      if (aliveRef.current && !operationRef.current) {
         setStatus({ kind: 'failed', message: getErrorMessage(err) });
       }
-    },
-    [refresh],
-  );
+    }
+  };
 
-  return { stats, tableStats, status, refresh, changePath, resetPath, clearTable };
+  return {
+    stats, tableStats, status, busy, targetRoot, setTargetRoot,
+    submitRoot, chooseRoot, resetPath, cancelRootMigration, clearTable, copyOverrideHint,
+  };
 };
 
 const getErrorMessage = (err: unknown): string => {

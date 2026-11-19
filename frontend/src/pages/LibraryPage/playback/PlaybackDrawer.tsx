@@ -109,6 +109,9 @@ export const PlaybackDrawer = ({ session, onClose }: PlaybackDrawerProps) => {
   };
 
   const title = session.title !== '' ? session.title : session.id;
+  const noSavedAudio = session.hasAudio === false;
+  const canPlayAudio = !noSavedAudio && vm.audioExists;
+  const noAudio = noSavedAudio ? 'audioNotSaved' : 'audioMissing';
 
   // 拖动中的预览位置也走 slider value，所以进度条拖到哪、气泡就显示哪。
   const sliderMax = Math.max(1, Math.round(vm.durationMs));
@@ -144,21 +147,23 @@ export const PlaybackDrawer = ({ session, onClose }: PlaybackDrawerProps) => {
           </Text>
         </div>
       }
-      closeButtonProps={{ 'aria-label': t('library.playback.close') }}
+      closeButtonProps={{ 'aria-label': t(noSavedAudio ? 'library.playback.closeTranscript' : 'library.playback.close') }}
       classNames={{ body: classes.drawerBody, header: classes.drawerHeader, content: classes.drawerContent }}
     >
       {/* 原生音频元素：隐藏不渲染控件，全部交互走下面的自定义播放条。
           key 变化 = 重试加载（仅换 key 才会重新发起请求）。 */}
-      <audio
-        ref={setAudioRef}
-        key={vm.audioKey}
-        src={vm.audioSrc}
-        preload="metadata"
-        className={classes.audioSink}
-        onError={vm.onAudioError}
-        onLoadedMetadata={vm.onAudioLoadedMetadata}
-        onEnded={vm.onAudioEnded}
-      />
+      {canPlayAudio && (
+        <audio
+          ref={setAudioRef}
+          key={vm.audioKey}
+          src={vm.audioSrc}
+          preload="metadata"
+          className={classes.audioSink}
+          onError={vm.onAudioError}
+          onLoadedMetadata={vm.onAudioLoadedMetadata}
+          onEnded={vm.onAudioEnded}
+        />
+      )}
 
       {vm.loading ? (
         <div className={classes.centered}>
@@ -191,7 +196,7 @@ export const PlaybackDrawer = ({ session, onClose }: PlaybackDrawerProps) => {
                 <EmptyState
                   icon={<IconWaveSine size={32} stroke={1.75} />}
                   title={t('library.playback.emptyTitle')}
-                  description={emptyDescription(t, vm.transcriptionStatus)}
+                  description={emptyDescription(t, vm.transcriptionStatus, canPlayAudio)}
                 />
               </div>
             ) : (
@@ -205,13 +210,13 @@ export const PlaybackDrawer = ({ session, onClose }: PlaybackDrawerProps) => {
                 listRef={vm.listRef}
                 onListScroll={vm.onListScroll}
                 onMeasured={vm.reportSlotHeight}
-                onJump={handleJump}
+                onJump={canPlayAudio ? handleJump : undefined}
                 speakerOf={vm.speakerOf}
               />
             )}
 
             {/* 手动滚动后浮出：把高亮拉回当前句（FR-04-3） */}
-            {!vm.autoScroll && vm.hasSegments && (
+            {canPlayAudio && !vm.autoScroll && vm.hasSegments && (
               <div className={classes.backToActive}>
                 <Button
                   size="xs"
@@ -226,14 +231,14 @@ export const PlaybackDrawer = ({ session, onClose }: PlaybackDrawerProps) => {
           </div>
 
           {/* —— 音频缺失：不渲染播放器，只说明原因（歌词仍可读） —— */}
-          {!vm.audioExists ? (
+          {!canPlayAudio ? (
             <div className={classes.playerBar}>
               <Alert
                 className={classes.warnAlert}
                 icon={<IconAlertTriangle size={18} stroke={1.75} />}
-                title={t('library.playback.audioMissing.title')}
+                title={t(`library.playback.${noAudio}.title`)}
               >
-                <Text className={classes.alertLine}>{t('library.playback.audioMissing.message')}</Text>
+                <Text className={classes.alertLine}>{t(`library.playback.${noAudio}.message`)}</Text>
               </Alert>
             </div>
           ) : vm.audioError ? (
@@ -423,7 +428,7 @@ interface PlaybackLyricsProps {
   listRef: React.RefObject<HTMLDivElement | null>;
   onListScroll: () => void;
   onMeasured: (index: number, height: number) => void;
-  onJump: (segment: Segment) => void;
+  onJump: ((segment: Segment) => void) | undefined;
   speakerOf: (segment: Segment) => SpeakerInfo;
 }
 
@@ -489,7 +494,7 @@ interface PlaybackSlotViewProps {
   markers: readonly Marker[];
   active: boolean;
   onMeasured: (index: number, height: number) => void;
-  onJump: (segment: Segment) => void;
+  onJump: ((segment: Segment) => void) | undefined;
   speakerOf: (segment: Segment) => SpeakerInfo;
 }
 
@@ -506,6 +511,7 @@ const PlaybackSlotView = memo(
     });
 
     const speaker = segment !== null ? speakerOf(segment) : null;
+    const Row = onJump ? 'button' : 'div';
 
     return (
       <div ref={ref} className={classes.slot} style={{ top }} data-playback-slot={index}>
@@ -520,8 +526,8 @@ const PlaybackSlotView = memo(
             <span className={classes.placeholderBarShort} />
           </div>
         ) : (
-          <button
-            type="button"
+          <Row
+            type={onJump ? 'button' : undefined}
             className={classes.lyricRow}
             data-playback-row={index}
             data-active={active ? 'true' : undefined}
@@ -531,7 +537,7 @@ const PlaybackSlotView = memo(
               start: formatTime(segment.startMs),
               end: formatTime(segment.endMs),
             })}
-            onClick={() => onJump(segment)}
+            onClick={onJump ? () => onJump(segment) : undefined}
           >
             <span className={classes.lyricClock}>{formatTime(segment.startMs)}</span>
             <span className={classes.roleDot} data-token={speaker.colorToken} aria-hidden="true" />
@@ -544,7 +550,7 @@ const PlaybackSlotView = memo(
                 <span className={classes.unfinalized}>{t('library.playback.unfinalized')}</span>
               )}
             </span>
-          </button>
+          </Row>
         )}
       </div>
     );
@@ -617,8 +623,10 @@ const rateLabel = (t: (key: string, vars?: Record<string, string | number>) => s
 const emptyDescription = (
   t: (key: string, vars?: Record<string, string | number>) => string,
   status: string,
+  canPlayAudio: boolean,
 ): string => {
   if (status === 'queued' || status === 'running') return t('library.playback.emptyTranscribing');
+  if (!canPlayAudio) return t(status === 'failed' ? 'library.playback.emptyFailedNoAudio' : 'library.playback.emptyNoAudio');
   if (status === 'failed') return t('library.playback.emptyFailed');
   return t('library.playback.emptyDescription');
 };

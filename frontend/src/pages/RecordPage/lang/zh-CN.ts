@@ -6,7 +6,12 @@ export const recordPageZhCN: Messages = {
   record: {
     eyebrow: '录制',
     title: '选择要转写的音频源',
-    subtitle: '按应用分路捕获正在播放的中文语音。录制只做采集与落盘，转写是会话库里的独立任务，可稍后再发起。',
+    subtitle: '按应用分路捕获正在播放的中文语音。通常可以在录制结束后前往会话库转写。',
+    noAudio: {
+      title: '本次会话不保存音频',
+      hint: '音频仅用于本次在线转写，无法回放或导出音频。若转写失败，没有录音可以重新转写。',
+      failed: '本次在线转写失败，且没有保存音频，无法重新转写。',
+    },
 
     caps: {
       title: '平台捕获能力',
@@ -109,6 +114,7 @@ export const recordPageZhCN: Messages = {
       dialogTitle: '另存录音文件',
       fileBaseName: 'recording',
       filterWav: 'WAV 音频 (*.wav)',
+      filterFlac: 'FLAC 音频 (*.flac)',
       doneTitle: '已另存录音文件',
       doneMessage: '录音已保存到：\n{{path}}',
     },

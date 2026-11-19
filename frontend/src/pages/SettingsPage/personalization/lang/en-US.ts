@@ -3,6 +3,18 @@ import type { Messages } from '@/i18n';
 export const personalizationEnUS: Messages = {
   settings: {
     personalization: {
+      desktop: {
+        title: 'Desktop controls', hint: 'Changes apply immediately and survive restart.',
+        tray: 'Enable system tray', click: 'Tray left click', panel: 'Show tray panel', window: 'Show main window',
+        cues: 'Recording sounds', cuesHint: 'Play a short sound when recording starts, ends, or fails without changing system volume.',
+        error: 'Could not load or save desktop settings.',
+      },
+      roles: {
+        title: 'Speaker roles', hint: 'The prefix applies to new roles only. Changing a color updates that role in existing sessions.',
+        prefix: 'Default role name prefix', tooLong: 'Use at most 20 characters.', save: 'Save role prefix',
+        role: 'Existing role', selectRole: 'Select a role to recolor', color: 'Role color', numberedColor: 'Role color {{number}}',
+        accent: 'Theme accent', neutral: 'Neutral', failed: 'Could not load or save role settings. Try again.',
+      },
       theme: {
         title: 'Theme',
         hint: 'Choose between light and dark. "Follow system" tracks your OS preference automatically.',

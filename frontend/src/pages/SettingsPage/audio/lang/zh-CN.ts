@@ -5,7 +5,30 @@ export const audioZhCN: Messages = {
   settings: {
     audio: {
       title: '音频与录制',
-      hint: '录制默认只做采集与落盘，转写是录制结束后的独立任务。这里的开关会让录制中额外跑一遍推理，因此默认关闭。',
+      hint: '选择默认来源、说话人分析上限与新会话命名方式。录制默认只采集并落盘，转写是独立任务。',
+      defaults: {
+        source: '默认音频源',
+        sourceHint: '录制页选择与录制快捷键共用此来源；当前录制不会切换来源。',
+        noSource: '请选择音频源',
+        clearSource: '清空默认音频源',
+        noSources: '没有可用音频源',
+        unavailableOption: '已保存的音频源（暂不可用）',
+        unavailable: '默认音频源当前不可用，请重新选择；不会自动改录其它来源。',
+        sourcesFailed: '无法读取音频源，请刷新重试。',
+        refresh: '刷新音频源',
+        sensitivity: '分句灵敏度',
+        sensitivityHint: '只对下次录制生效。嘈杂模式要求更高的语音电平，可能漏掉小声说话；两种模式都不改原始录音。',
+        standard: '标准',
+        noisy: '嘈杂',
+        maxSpeakers: '说话人上限',
+        maxSpeakersHint: '对下一次发起的说话人分析生效，不改动已有识别结果。',
+        auto: '自动',
+        speakers: '{{count}} 人',
+        autoName: '会话自动命名',
+        autoNameHint: '新会话使用“日期 时间 · 来源应用”。关闭后新会话保持未命名；已有名称不变。',
+        format: '录制保存格式',
+        formatHint: 'WAV 兼容性更广，FLAC 无损压缩。设置只对下次录制生效。',
+      },
       live: {
         title: '边录边转',
         desc: '录制过程中实时出字：partial 会被不断覆盖重写，一句话结束后定稿并不再变化。',
@@ -30,7 +53,7 @@ export const audioZhCN: Messages = {
       },
       feedback: {
         saving: '正在保存…',
-        saved: '已保存，将在下一个会话生效。',
+        saved: '已保存。',
         ERR_STATE_FORBIDDEN: '录制中不能切换边录边转。请先停止录制，再设置（只对下一个会话生效）。',
       },
       errors: {

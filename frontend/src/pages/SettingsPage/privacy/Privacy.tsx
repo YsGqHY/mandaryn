@@ -11,6 +11,7 @@ import {
 } from '@tabler/icons-react';
 import { useI18n, useT } from '@/i18n';
 import { NativeDialogs, SAVE_DIAGNOSTICS_SUPPORTED, type OutboundRecord } from '@/services';
+import { useLeanMode } from '@/shared/LeanModeProvider';
 import { usePrivacy, type PrivacyNotice } from './usePrivacy';
 import { DebugLogPanel } from './debug/DebugLogPanel';
 import classes from './Privacy.module.css';
@@ -28,6 +29,7 @@ export const Privacy = () => {
   const vm = usePrivacy();
   const t = useT();
   const { current } = useI18n();
+  const showDiagnostics = !useLeanMode().isRegionHidden('settings.diagnostics');
 
   const status = vm.status;
   const envVar = status?.offlineEnvVar || 'MANDARYN_OFFLINE';
@@ -141,6 +143,25 @@ export const Privacy = () => {
         </Text>
       </div>
 
+      <div className={classes.card}>
+        <div className={classes.cardHeader}>
+          <IconShieldLock size={20} stroke={1.75} className={classes.cardIcon} />
+          <Text className={classes.cardTitle}>{t('settings.privacy.audioRetention.title')}</Text>
+        </div>
+        <div className={classes.switchRow}>
+          <Switch
+            checked={vm.noAudioPersist ?? false}
+            disabled={vm.noAudioPersist === null || vm.audioRetentionBusy}
+            label={t('settings.privacy.audioRetention.switchLabel')}
+            description={t('settings.privacy.audioRetention.hint')}
+            onChange={(event) => void vm.toggleNoAudioPersist(event.currentTarget.checked)}
+          />
+        </div>
+        {vm.notice.kind === 'error' && vm.notice.area === 'audioRetention' && (
+          <NoticeLine notice={vm.notice} />
+        )}
+      </div>
+
       {/* —— 2. 出站记录 —— */}
       <div className={classes.card}>
         <div className={classes.cardHeader}>
@@ -214,10 +235,10 @@ export const Privacy = () => {
       </div>
 
       {/* —— 4. 调试模式 —— */}
-      <DebugLogPanel />
+      {showDiagnostics && <DebugLogPanel />}
 
-      {/* —— 5. 诊断包 —— */}
-      <div className={classes.card}>
+      {/* —— 5. 诊断包：保留当前结果，但精简模式不展示该区域 —— */}
+      <div className={classes.card} hidden={!showDiagnostics}>
         <div className={classes.cardHeader}>
           <IconDeviceFloppy size={20} stroke={1.75} className={classes.cardIcon} />
           <Text className={classes.cardTitle}>{t('settings.privacy.diagnostics.title')}</Text>
@@ -283,7 +304,9 @@ export const Privacy = () => {
         )}
       </div>
 
-      <NoticeLine notice={vm.notice} />
+      {!(vm.notice.kind === 'error' && vm.notice.area === 'audioRetention') && (
+        <NoticeLine notice={vm.notice} />
+      )}
     </div>
   );
 };

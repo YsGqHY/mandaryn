@@ -31,6 +31,10 @@ export const settingsPageEnUS: Messages = {
         label: 'Audio & recording',
         description: 'Live transcription switch (off by default)',
       },
+      transcription: {
+        label: 'Transcription',
+        description: 'Online endpoint, language, and fallback policy',
+      },
       proxy: {
         label: 'Network proxy',
         description: 'Proxy for model downloads and online transcription',

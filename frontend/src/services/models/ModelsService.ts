@@ -12,13 +12,14 @@
 import { Events } from '@wailsio/runtime';
 import { Service as Binding } from '@bindings/vip.oberon.mandaryn/internal/services/modelssvc';
 import type {
-  BundleInfo,
+  BundleCatalog,
   DownloadState,
   InstalledBundle,
   MigratePlan,
   MigrateRequest,
   MigrateState,
   ModelChanged,
+  ModelMirror,
   StoreStats,
   VerifyResult,
 } from '@bindings/vip.oberon.mandaryn/internal/contract/models';
@@ -34,15 +35,24 @@ export type {
   MigrateRequest,
   MigrateState,
   ModelChanged,
+  ModelMirror,
   StoreStats,
   VerifyResult,
 } from '@bindings/vip.oberon.mandaryn/internal/contract/models';
 
 export const ModelsService = {
+  async getModelMirror(): Promise<ModelMirror> {
+    try { return await Binding.GetModelMirror(); }
+    catch (err) { throw toAppError(err); }
+  },
+  async setModelMirror(url: string): Promise<ModelMirror> {
+    try { return await Binding.SetModelMirror(url); }
+    catch (err) { throw toAppError(err); }
+  },
   // 可下载清单（远端缓存 + 内置兜底，API-6.1）。
-  async listAvailable(): Promise<BundleInfo[]> {
+  async listAvailable(refresh = false): Promise<BundleCatalog> {
     try {
-      return await Binding.ListAvailable();
+      return await Binding.ListAvailable(refresh);
     } catch (err) {
       throw toAppError(err);
     }

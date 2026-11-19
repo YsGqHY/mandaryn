@@ -1,0 +1,35 @@
+.form {
+  display: grid;
+  gap: var(--mantine-spacing-md);
+  max-width: 38rem;
+  min-width: 0;
+}
+
+.consent {
+  display: grid;
+  gap: var(--mantine-spacing-xs);
+  min-width: 0;
+  padding: var(--mantine-spacing-md);
+  background: var(--fd-bg-surface);
+  border: 1px solid var(--fd-divider);
+  border-inline-start: 3px solid var(--fd-warning);
+  border-radius: var(--mantine-radius-sm);
+}
+
+.consentTitle {
+  font-size: var(--mantine-font-size-md);
+}
+
+.endpoint {
+  font-family: var(--mantine-font-family-monospace);
+  overflow-wrap: anywhere;
+}
+
+.notice {
+  color: var(--fd-text-muted);
+  font-size: var(--mantine-font-size-sm);
+}
+
+.notice[data-error] {
+  color: var(--fd-danger);
+}

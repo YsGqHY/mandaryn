@@ -381,7 +381,7 @@ export const LibraryPage = () => {
                   onExport={(spec) => void handleExport(session, spec)}
                   onSpeakers={() => vm.openSpeakers(session)}
                   onPlayback={() => vm.openPlayback(session)}
-                  onStartTranscription={() => void vm.startTranscription(session.id)}
+                  onStartTranscription={() => void vm.startTranscription(session)}
                   onCancelTranscription={() => void vm.cancelTranscription(session.id)}
                 />
               ))}
@@ -519,6 +519,8 @@ const SessionRow = ({
 }: SessionRowProps) => {
   const t = useT();
   const running = isTranscribing(status);
+  const noSavedAudio = session.hasAudio === false;
+  const openLabel = t(noSavedAudio ? 'library.list.openTranscript' : 'library.list.playback');
   // 进度优先用事件里的 progressMs；总时长用会话的帧计数时长（后端给）。
   const progressMs = transcription?.progressMs ?? session.transcribeProgressMs;
   const totalMs = transcription?.audioMs ?? session.durationMs;
@@ -528,6 +530,7 @@ const SessionRow = ({
   return (
     <div
       className={classes.sessionRow}
+      data-session-id={session.id}
       data-active={active ? 'true' : undefined}
       data-playback={playbackActive ? 'true' : undefined}
     >
@@ -537,6 +540,11 @@ const SessionRow = ({
           <span className={classes.chip} data-tone={statusTone(status)}>
             {statusLabel(status)}
           </span>
+          {noSavedAudio && (
+            <span className={classes.chip} data-tone="warning">
+              {t('library.list.noAudio')}
+            </span>
+          )}
           {session.degraded && (
             <span className={classes.chip} data-tone="warning">
               {t('library.list.degraded')}
@@ -592,6 +600,14 @@ const SessionRow = ({
               <IconX size={16} stroke={1.75} />
             </ActionIcon>
           </Tooltip>
+        ) : noSavedAudio ? (
+          <Tooltip label={t('library.list.noAudioRetry')}>
+            <span>
+              <ActionIcon variant="default" aria-label={t('library.list.noAudioRetry')} disabled>
+                <IconRotateClockwise2 size={16} stroke={1.75} />
+              </ActionIcon>
+            </span>
+          </Tooltip>
         ) : (
           <Tooltip
             label={status === 'failed' ? t('library.list.retryTranscription') : t('library.list.startTranscription')}
@@ -614,14 +630,9 @@ const SessionRow = ({
           </Tooltip>
         )}
 
-        <Tooltip label={t('library.list.playback')} withArrow>
-          <ActionIcon
-            variant="default"
-            aria-label={t('library.list.playback')}
-            disabled={busy}
-            onClick={onPlayback}
-          >
-            <IconHeadphones size={16} stroke={1.75} />
+        <Tooltip label={openLabel} withArrow>
+          <ActionIcon variant="default" aria-label={openLabel} disabled={busy} onClick={onPlayback}>
+            {noSavedAudio ? <IconFileText size={16} stroke={1.75} /> : <IconHeadphones size={16} stroke={1.75} />}
           </ActionIcon>
         </Tooltip>
 

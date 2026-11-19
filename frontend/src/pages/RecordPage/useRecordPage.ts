@@ -7,6 +7,7 @@ import {
   LiveTranscriptService,
   RecordingService,
   RecordingStates,
+  SessionService,
   SILENCE_WARN_MS,
   isRecordingActive,
   isRecordingSettled,
@@ -90,6 +91,8 @@ export interface UseRecordPageResult {
   recordingActive: boolean;
   // 已封存（completed / interrupted / failed）：可另存音频、可修补、可发起转写。
   recordingSettled: boolean;
+  noAudioPersist: boolean;
+  noAudioTranscriptionFailed: boolean;
   metrics: RecordingMetrics;
   busy: boolean;
   // —— 边录边转（FR-03-10，默认关）——
@@ -155,6 +158,7 @@ export const useRecordPage = (): UseRecordPageResult => {
   const [error, setError] = useState<AppError | null>(null);
 
   const [recording, setRecording] = useState<RecordingState | null>(null);
+  const [failedTranscriptSessionId, setFailedTranscriptSessionId] = useState('');
   const [level, setLevel] = useState<RecordingLevel | null>(null);
   const [tick, setTick] = useState<RecordingTick | null>(null);
   const [engine, setEngine] = useState<EngineStatus | null>(null);
@@ -236,6 +240,16 @@ export const useRecordPage = (): UseRecordPageResult => {
     };
   }, []);
 
+  // 设置页、其它窗口、旧 Capture API 共用一个默认音源。当前录制绑定的源不迁移。
+  useEffect(() => AppSettingsService.onChanged((field) => {
+    if (field !== 'audio') return;
+    void CaptureService.getPreferredSource().then((id) => {
+      if (aliveRef.current) setSelectedId(id);
+    }).catch((err) => {
+      if (aliveRef.current) setError(toAppError(err));
+    });
+  }), []);
+
   // 订阅源列表变化（EV-12）：应用启动 / 退出、设备增减都走这里。
   useEffect(() => {
     const cancel = CaptureService.onSourcesChanged((next) => {
@@ -278,6 +292,24 @@ export const useRecordPage = (): UseRecordPageResult => {
     });
     return cancel;
   }, [applyState]);
+
+  useEffect(() => SessionService.onTranscriptionState((next) => {
+    if (aliveRef.current && next.status === 'failed' && next.sessionId === sessionIdRef.current) {
+      setFailedTranscriptSessionId(next.sessionId);
+    }
+  }), []);
+
+  const noAudioPersist = recording?.noAudioPersist === true;
+  const noAudioSessionId = noAudioPersist ? recording?.sessionId ?? '' : '';
+  useEffect(() => {
+    if (noAudioSessionId === '') return undefined;
+    // 页面在失败事件之后打开时，用会话独立的转写状态恢复提示。
+    let cancelled = false;
+    void SessionService.getTranscription(noAudioSessionId).then((next) => {
+      if (!cancelled && next.status === 'failed') setFailedTranscriptSessionId(noAudioSessionId);
+    }).catch(() => { /* 不覆盖录制状态或错误提示。 */ });
+    return () => { cancelled = true; };
+  }, [noAudioSessionId]);
 
   // 订阅采集电平（EV-02）：后端 10Hz，这里节流到约 4Hz 再进 state。
   useEffect(() => {
@@ -455,7 +487,7 @@ export const useRecordPage = (): UseRecordPageResult => {
 
   const exportAudio = useCallback(async (targetPath: string): Promise<string | null> => {
     const sessionId = recording?.sessionId ?? '';
-    if (sessionId === '' || targetPath === '') return null;
+    if (recording?.noAudioPersist === true || sessionId === '' || targetPath === '') return null;
     setError(null);
     try {
       const saved = await RecordingService.exportAudio(sessionId, targetPath);
@@ -539,7 +571,7 @@ export const useRecordPage = (): UseRecordPageResult => {
     !loading;  const canPause = !busy && recordingState === RecordingStates.Recording;
   const canResume = !busy && recordingState === RecordingStates.Paused;
   const canStop = !busy && (recordingState === RecordingStates.Recording || recordingState === RecordingStates.Paused);
-  const canExportAudio = !busy && !recordingActive && (recording?.sessionId ?? '') !== '';
+  const canExportAudio = !busy && !recordingActive && !noAudioPersist && (recording?.sessionId ?? '') !== '';
 
   const live = useMemo<LiveTranscript>(
     () => ({
@@ -566,6 +598,8 @@ export const useRecordPage = (): UseRecordPageResult => {
     recordingState,
     recordingActive,
     recordingSettled,
+    noAudioPersist,
+    noAudioTranscriptionFailed: noAudioSessionId !== '' && failedTranscriptSessionId === noAudioSessionId,
     metrics,
     busy,
     live,

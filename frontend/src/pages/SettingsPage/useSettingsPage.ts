@@ -56,6 +56,11 @@ export const useSettingsPage = (): UseSettingsPageResult => {
         descriptionKey: 'settings.list.audio.description',
       },
       {
+        id: 'transcription',
+        labelKey: 'settings.list.transcription.label',
+        descriptionKey: 'settings.list.transcription.description',
+      },
+      {
         id: 'proxy',
         labelKey: 'settings.list.proxy.label',
         descriptionKey: 'settings.list.proxy.description',

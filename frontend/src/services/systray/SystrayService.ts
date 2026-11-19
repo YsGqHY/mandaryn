@@ -6,6 +6,8 @@
 import * as SystrayServiceBinding from '@bindings/vip.oberon.mandaryn/internal/app/systrayservice';
 
 export const SystrayService = {
+  getClickAction(): Promise<string> { return SystrayServiceBinding.GetClickAction(); },
+  setClickAction(action: 'panel' | 'window'): Promise<void> { return SystrayServiceBinding.SetClickAction(action); },
   enable(): Promise<void> {
     return SystrayServiceBinding.Enable();
   },

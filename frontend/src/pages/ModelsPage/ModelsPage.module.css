@@ -289,6 +289,13 @@
   color: var(--fd-warning);
 }
 
+/* 无下载源提示（条目来自内置兜底清单，只有元数据没有 URL） */
+.noSourceHint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fd-warning);
+}
+
 /* —— 错误提示 —— */
 .errorRow {
   display: flex;
