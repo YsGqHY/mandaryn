@@ -72,6 +72,8 @@ func (r *Repo) Run(ctx context.Context, sessionID string) (contract.DiarizeResul
 
 	// —— 步骤 1：逐片段提取声纹 ——
 	vectors := make([]SegmentVector, 0, len(segs))
+	load, closeAudio := segmentReader(ctx, r.audio, sid)
+	defer closeAudio()
 	var firstErr error
 	for _, seg := range segs {
 		if err := ctx.Err(); err != nil {
@@ -82,7 +84,7 @@ func (r *Repo) Run(ctx context.Context, sessionID string) (contract.DiarizeResul
 			result.TooShortSegments++
 			continue
 		}
-		samples, err := r.audio.LoadSegment(ctx, sid, seg.StartMs, seg.EndMs)
+		samples, err := load(seg.StartMs, seg.EndMs)
 		if err != nil {
 			if cerr := ctx.Err(); cerr != nil {
 				return result, errCancelled(cerr)

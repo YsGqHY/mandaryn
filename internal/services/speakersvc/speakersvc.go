@@ -139,6 +139,16 @@ func (s *Service) ListRoles(ctx context.Context) ([]contract.Role, error) {
 	return roles, nil
 }
 
+// GetRoleNamePrefix returns the naming preference for new roles.
+func (s *Service) GetRoleNamePrefix(ctx context.Context) (string, error) {
+	return s.repo.RoleNamePrefix(ctx)
+}
+
+// SetRoleNamePrefix updates future automatic role names only.
+func (s *Service) SetRoleNamePrefix(ctx context.Context, prefix string) error {
+	return s.repo.SetRoleNamePrefix(ctx, prefix)
+}
+
 // —— API-7.2 ——
 
 // RenameRole 角色改名，**全局立即生效**（单行 UPDATE，历史会话靠 JOIN 同步）。

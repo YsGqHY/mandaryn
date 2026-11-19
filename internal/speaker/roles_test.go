@@ -117,6 +117,41 @@ func TestRenameRoleValidation(t *testing.T) {
 	}
 }
 
+func TestRoleNamePrefixOnlyAffectsNewRoles(t *testing.T) {
+	f := newFixture(t)
+	f.seedRole("rl_old", "说话人 1", "role-1", false)
+	f.seedRole("rl_used", "主持人 1", "role-2", false)
+	repo := f.repo(Options{})
+	ctx := context.Background()
+	if got, err := repo.RoleNamePrefix(ctx); err != nil || got != "说话人" {
+		t.Fatalf("default prefix = %q, %v", got, err)
+	}
+	if err := repo.SetRoleNamePrefix(ctx, " 主持人 "); err != nil {
+		t.Fatal(err)
+	}
+	fresh := f.repo(Options{})
+	if got, err := fresh.RoleNamePrefix(ctx); err != nil || got != "主持人" {
+		t.Fatalf("persisted prefix = %q, %v", got, err)
+	}
+	newRole, err := fresh.createRoleTx(f.db.GORM)
+	if err != nil || newRole.Name != "主持人 2" {
+		t.Fatalf("created role = %+v, %v", newRole, err)
+	}
+	if err := repo.SetRoleNamePrefix(ctx, strings.Repeat("字", 21)); !apierr.HasCode(err, apierr.CodeInvalidArgument) {
+		t.Fatalf("long prefix error = %v", err)
+	}
+	if err := repo.SetRoleNamePrefix(ctx, " "); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := fresh.RoleNamePrefix(ctx); err != nil || got != "说话人" {
+		t.Fatalf("reset prefix = %q, %v", got, err)
+	}
+	var old storage.Role
+	if err := f.db.GORM.First(&old, "id = ?", "rl_old").Error; err != nil || old.Name != "说话人 1" {
+		t.Fatalf("existing role = %+v, %v", old, err)
+	}
+}
+
 // TestSetRoleColorValidation 配色只接受主题令牌。
 func TestSetRoleColorValidation(t *testing.T) {
 	f := newFixture(t)

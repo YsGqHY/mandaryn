@@ -2,6 +2,7 @@ package speaker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -701,12 +702,60 @@ func roleOfSpeakerTx(tx *gorm.DB, speakerID string) (string, error) {
 	return row.RoleID, nil
 }
 
-// createRoleTx 新建一个「说话人 N」角色。
+const (
+	rolePrefixKey     = "speaker.roleNamePrefix"
+	defaultRolePrefix = "说话人"
+	maxPrefixRunes    = 20
+)
+
+func roleNamePrefix(db *gorm.DB) (string, error) {
+	var row storage.Preference
+	if err := db.Where("key = ?", rolePrefixKey).Take(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return defaultRolePrefix, nil
+		}
+		return "", wrapWrite(err)
+	}
+	var prefix string
+	if json.Unmarshal([]byte(row.Value), &prefix) != nil || strings.TrimSpace(prefix) == "" || utf8.RuneCountInString(prefix) > maxPrefixRunes {
+		return defaultRolePrefix, nil
+	}
+	return prefix, nil
+}
+
+// RoleNamePrefix returns the prefix used for future automatically named roles.
+func (r *Repo) RoleNamePrefix(ctx context.Context) (string, error) {
+	return roleNamePrefix(r.db(ctx))
+}
+
+// SetRoleNamePrefix changes future names without renaming any existing role.
+// An empty value restores the default.
+func (r *Repo) SetRoleNamePrefix(ctx context.Context, prefix string) error {
+	prefix = strings.TrimSpace(prefix)
+	if utf8.RuneCountInString(prefix) > maxPrefixRunes {
+		return errInvalid("role name prefix exceeds %d characters", maxPrefixRunes)
+	}
+	if prefix == "" {
+		prefix = defaultRolePrefix
+	}
+	value, _ := json.Marshal(prefix)
+	row := storage.Preference{Key: rolePrefixKey, Value: string(value)}
+	return wrapWrite(r.db(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "key"}},
+		DoUpdates: clause.AssignmentColumns([]string{"value", "updated_at"}),
+	}).Create(&row).Error)
+}
+
+// createRoleTx 新建使用当前前缀的角色。
 //
 // 名字取**未占用的最小序号**（而不是「现有数量 + 1」）：用户删过角色之后，
 // 数量法会撞上已有名字，两个「说话人 3」在侧栏里无法区分。
 // 配色令牌按未系统角色数量轮转 role-1..role-8，只存令牌不存十六进制（前端铁律）。
 func (r *Repo) createRoleTx(tx *gorm.DB) (storage.Role, error) {
+	prefix, err := roleNamePrefix(tx)
+	if err != nil {
+		return storage.Role{}, err
+	}
 	var names []string
 	if err := tx.Model(&storage.Role{}).Where("is_system = ?", false).Pluck("name", &names).Error; err != nil {
 		return storage.Role{}, wrapWrite(err)
@@ -717,14 +766,14 @@ func (r *Repo) createRoleTx(tx *gorm.DB) (storage.Role, error) {
 	}
 	seq := len(names) + 1
 	for i := 1; i <= len(names)+1; i++ {
-		if _, ok := used[fmt.Sprintf("说话人 %d", i)]; !ok {
+		if _, ok := used[fmt.Sprintf("%s %d", prefix, i)]; !ok {
 			seq = i
 			break
 		}
 	}
 	row := storage.Role{
 		ID:         newRoleID(r.now()),
-		Name:       fmt.Sprintf("说话人 %d", seq),
+		Name:       fmt.Sprintf("%s %d", prefix, seq),
 		ColorToken: fmt.Sprintf("role-%d", len(names)%roleColorCount+1),
 	}
 	if err := tx.Create(&row).Error; err != nil {

@@ -1,6 +1,7 @@
 package speaker
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"math"
@@ -8,8 +9,69 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/mewkiz/flac"
+	"github.com/mewkiz/flac/frame"
+	"github.com/mewkiz/flac/meta"
+
 	"vip.oberon.mandaryn/internal/apierr"
 )
+
+const (
+	wavFormatPCM       = 1
+	wavFormatIEEEFloat = 3
+)
+
+type speakerFLACFixture struct{ *bytes.Reader }
+
+func (speakerFLACFixture) Close() error { return nil }
+
+func TestSegmentReaderReusesFLACSource(t *testing.T) {
+	const size = 64
+	var b bytes.Buffer
+	enc, err := flac.NewEncoder(&b, &meta.StreamInfo{BlockSizeMin: size, BlockSizeMax: size, SampleRate: 16000, NChannels: 1, BitsPerSample: 16, NSamples: 2 * size})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []int32{8192, -16384} {
+		pcm := make([]int32, size)
+		for i := range pcm {
+			pcm[i] = value
+		}
+		if err := enc.WriteFrame(&frame.Frame{
+			Header:    frame.Header{HasFixedBlockSize: true, BlockSize: size, SampleRate: 16000, Channels: frame.ChannelsMono, BitsPerSample: 16},
+			Subframes: []*frame.Subframe{{SubHeader: frame.SubHeader{Pred: frame.PredVerbatim}, Samples: pcm, NSamples: size}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := enc.Close(); err != nil {
+		t.Fatal(err)
+	}
+	opens := 0
+	loader, err := NewWAVLoader(func(context.Context, string) (AudioSource, error) {
+		opens++
+		return speakerFLACFixture{bytes.NewReader(b.Bytes())}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	load, closeAudio := segmentReader(context.Background(), loader, "s_flac")
+	defer closeAudio()
+	for i, want := range []float32{0.25, -0.5} {
+		got, err := load(int64(i*4+1), int64(i*4+3))
+		if err != nil || len(got) != 32 {
+			t.Fatalf("segment %d len=%d err=%v", i, len(got), err)
+		}
+		for _, x := range got {
+			if x != want {
+				t.Fatalf("segment %d sample=%g want %g", i, x, want)
+			}
+		}
+	}
+	if opens != 1 {
+		t.Fatalf("opened %d times, want 1", opens)
+	}
+}
 
 // writeTestWAV 生成一个 WAV 文件并返回路径。
 //
