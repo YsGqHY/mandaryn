@@ -14,7 +14,9 @@ import (
 // 之类的元配置，请在这里追加字段并保持向后兼容（json:"-,omitempty" 等）。
 type Config struct {
 	// DataPath 用户自定义的数据库文件路径。空字符串表示走 DefaultDBPath。
-	DataPath string `json:"dataPath,omitempty"`
+	DataPath    string        `json:"dataPath,omitempty"`
+	DataRoot    string        `json:"dataRoot,omitempty"`
+	PendingRoot *DataRootPlan `json:"pendingRoot,omitempty"`
 }
 
 // ConfigManager 管理 storage.json 的读写。它独立于数据库——
@@ -25,17 +27,29 @@ type ConfigManager struct {
 	cfg  Config
 }
 
-// LoadConfig 读取 storage.json；不存在或损坏时返回零值 Config（不报错），
-// 这样首次启动用户什么都不需要管。
+// LoadConfig reads the stable path configuration, falling back to the legacy
+// default-root location only when no configuration has been written there yet.
 func LoadConfig() (*ConfigManager, error) {
 	path, err := configFilePath()
 	if err != nil {
 		return nil, err
 	}
 	mgr := &ConfigManager{path: path}
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		if root, err := userDataDir(); err == nil {
+			legacy := filepath.Join(root, ConfigFileName)
+			if legacy != path {
+				old := &ConfigManager{path: legacy}
+				if err := old.load(); err != nil {
+					return nil, err
+				}
+				mgr.cfg = old.cfg
+				return mgr, nil
+			}
+		}
+	}
 	if err := mgr.load(); err != nil {
-		// 解析失败时仅记录到内存为零值；用户后续保存会覆盖坏文件。
-		mgr.cfg = Config{}
+		return nil, err
 	}
 	return mgr, nil
 }
@@ -44,20 +58,22 @@ func (m *ConfigManager) load() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	data, err := os.ReadFile(m.path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			m.cfg = Config{}
-			return nil
-		}
-		return err
-	}
-	var cfg Config
-	if err := json.Unmarshal(data, &cfg); err != nil {
+	cfg, err := readConfig(m.path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	m.cfg = cfg
 	return nil
+}
+
+func readConfig(path string) (Config, error) {
+	var cfg Config
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return cfg, err
+	}
+	err = json.Unmarshal(data, &cfg)
+	return cfg, err
 }
 
 // Get 返回当前 Config 的拷贝（值类型，避免外部修改污染）。

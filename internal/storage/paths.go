@@ -60,20 +60,16 @@ func DBPathIn(dataRoot string) string {
 
 // configFilePath 返回 storage.json 的完整路径。
 //
-// 语义：它放在「配置尚未生效时也能找到」的位置——即 env 层生效值（便携版/E2E）
-// 或平台默认目录，而**不是**用户自定义的 dataRoot（那正是本文件要记录的内容）。
+// Pending requests must remain visible after a deployment override is removed.
 func configFilePath() (string, error) {
-	base := ""
-	if v, ok := os.LookupEnv(paths.EnvDataRoot); ok && v != "" {
-		base = v
-	} else {
-		d, err := userDataDir()
-		if err != nil {
-			return "", err
+	base, err := userDataDir()
+	if err != nil {
+		if managed := os.Getenv(paths.EnvDataRoot); managed != "" {
+			return filepath.Join(managed, ConfigFileName), nil
 		}
-		base = d
+		return "", err
 	}
-	return filepath.Join(base, ConfigFileName), nil
+	return filepath.Join(filepath.Dir(base), AppDirName+"-config", ConfigFileName), nil
 }
 
 // ensureDir 创建目录（含父级）；已存在不报错。

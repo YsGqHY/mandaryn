@@ -70,8 +70,8 @@ type Options struct {
 	PendingValue func(Key) (string, error)
 
 	// SetUserValue / SetPendingValue 写入用户层 / 暂存层。
-	SetUserValue     func(Key, string) error
-	SetPendingValue  func(Key, string) error
+	SetUserValue    func(Key, string) error
+	SetPendingValue func(Key, string) error
 }
 
 // Resolver 解析并缓存路径。进程生命周期内解析结果不变（唯一例外：受管时写 pending）。
@@ -126,6 +126,16 @@ func (r *Resolver) Effective(key Key) (string, error) {
 		return "", err
 	}
 	return p.Effective, nil
+}
+
+// HasDataRootOverride also reports unavailable overrides: a failed probe must not
+// consume a migration request while deployment still owns the path.
+func (r *Resolver) HasDataRootOverride() bool {
+	if strings.TrimSpace(r.opts.CLI[KeyDataRoot]) != "" {
+		return true
+	}
+	value, _ := r.opts.LookupEnv(EnvDataRoot)
+	return strings.TrimSpace(value) != ""
 }
 
 // Invalidate 丢弃缓存（用户改了目录后调用；实际生效仍要求重启，见 DOC-02 §4.8）。

@@ -1,53 +1,42 @@
 // Package storagesvc 暴露"数据存储"管理：路径查看、切换、统计。
 //
-// 关键约束：切换路径会改写整个进程持有的 *storage.DB 指针。
-// 业务 service 通过 *storage.Holder 拿当前活跃 DB，避免持有过期句柄。
+// 目录切换只在重启时生效；此服务不会替换运行中的数据库或音频目录。
 package storagesvc
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
-	"sync"
 
+	"vip.oberon.mandaryn/internal/contract"
+	"vip.oberon.mandaryn/internal/paths"
 	"vip.oberon.mandaryn/internal/storage"
 )
 
 // Service 暴露给前端：路径管理 + 统计。
 type Service struct {
-	holder *storage.Holder
-	cfg    *storage.ConfigManager
-	mu     sync.Mutex // 切换路径串行
-
-	// onPathChanged 在数据目录切换成功后回调（app 用它让 paths.Resolver 缓存失效）。
-	onPathChanged func()
+	holder         *storage.Holder
+	cfg            *storage.ConfigManager
+	root           contract.ResolvedPath
+	resolver       *paths.Resolver
+	migrationError string
 }
 
-// New 构造服务。onPathChanged 在数据目录切换成功后回调（app 用它让
-// paths.Resolver 缓存失效）；为 nil 时视为无钩子。用构造注入而非导出
-// setter，避免 func 类型方法被绑定生成器扫进前端 API。
-func New(holder *storage.Holder, cfg *storage.ConfigManager, onPathChanged func()) *Service {
-	return &Service{holder: holder, cfg: cfg, onPathChanged: onPathChanged}
-}
-
-func (s *Service) notifyPathChanged() {
-	s.mu.Lock()
-	fn := s.onPathChanged
-	s.mu.Unlock()
-	if fn != nil {
-		fn()
-	}
+func New(holder *storage.Holder, cfg *storage.ConfigManager, root contract.ResolvedPath, resolver *paths.Resolver, migrationError string) *Service {
+	return &Service{holder: holder, cfg: cfg, root: root, resolver: resolver, migrationError: migrationError}
 }
 
 // Stats 设置页用于展示当前路径与占用空间。
 type Stats struct {
-	Path        string `json:"path"`
-	IsCustom    bool   `json:"isCustom"`
-	DefaultPath string `json:"defaultPath"`
-	SizeBytes   int64  `json:"sizeBytes"`
+	Path           string `json:"path"`
+	IsCustom       bool   `json:"isCustom"`
+	DefaultPath    string `json:"defaultPath"`
+	DataRoot       string `json:"dataRoot"`
+	PendingRoot    string `json:"pendingRoot"`
+	ManagedBy      string `json:"managedBy"`
+	OverrideHint   string `json:"overrideHint"`
+	MigrationError string `json:"migrationError"`
+	SizeBytes      int64  `json:"sizeBytes"`
 }
 
 // TableInfo 单张表的展示元数据 + 实际占用。
@@ -75,15 +64,24 @@ func (s *Service) GetStats(_ context.Context) (Stats, error) {
 		return Stats{}, err
 	}
 	cfg := s.cfg.Get()
+	var pending string
+	if cfg.PendingRoot != nil {
+		pending = cfg.PendingRoot.Target
+	}
 	cur := s.holder.Current().Path
 
 	size, _ := storage.FileSize(cur) // 失败时给 0，不阻断 UI
 
 	return Stats{
-		Path:        cur,
-		IsCustom:    cfg.DataPath != "",
-		DefaultPath: def,
-		SizeBytes:   size,
+		Path:           cur,
+		IsCustom:       filepath.Clean(s.root.Effective) != filepath.Dir(def),
+		DataRoot:       s.root.Effective,
+		PendingRoot:    pending,
+		ManagedBy:      s.root.EnvName,
+		OverrideHint:   s.root.OverrideHint,
+		MigrationError: s.migrationError,
+		DefaultPath:    def,
+		SizeBytes:      size,
 	}, nil
 }
 
@@ -149,172 +147,27 @@ func (s *Service) ClearTable(ctx context.Context, tableName string) error {
 		Where("1 = 1").Delete(desc.Model).Error
 }
 
-// SetCustomPath 把数据库迁移到新位置。
-//
-// 流程（保证不丢数据）：
-//  1. 校验目标目录可写
-//  2. 当前 DB 做 wal_checkpoint，落盘所有数据
-//  3. 关闭当前 DB
-//  4. 复制 .db / .db-wal / .db-shm 到新位置
-//  5. 在新位置打开（含 IntegrityCheck）
-//  6. 通过 → 删旧文件 + 写 storage.json + 替换 holder
-//  7. 任意步骤失败 → 删除新位置已写文件 + 重开旧 DB + 报错
-func (s *Service) SetCustomPath(_ context.Context, newPath string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if newPath == "" {
-		return errors.New("path required")
-	}
-	abs, err := filepath.Abs(newPath)
-	if err != nil {
-		return fmt.Errorf("abs path: %w", err)
-	}
-	current := s.holder.Current()
-	if filepath.Clean(abs) == filepath.Clean(current.Path) {
-		return nil // 无变化
-	}
-
-	if err := preflightWritable(abs); err != nil {
-		return fmt.Errorf("target not writable: %w", err)
-	}
-
-	// 1) checkpoint：让 .db 包含最新数据
-	if err := storage.WALCheckpoint(current.GORM); err != nil {
-		return fmt.Errorf("checkpoint: %w", err)
-	}
-
-	// 2) 关闭当前
-	oldPath := current.Path
-	if err := current.Close(); err != nil {
-		return fmt.Errorf("close current: %w", err)
-	}
-
-	// 3) 复制 .db / -wal / -shm
-	written, err := copyDBSet(oldPath, abs)
-	if err != nil {
-		s.tryReopenLegacy(oldPath)
-		removeAll(written)
-		return fmt.Errorf("copy db set: %w", err)
-	}
-
-	// 4) 打开新位置
-	next, err := storage.Open(abs)
-	if err != nil {
-		s.tryReopenLegacy(oldPath)
-		removeAll(written)
-		return fmt.Errorf("open new: %w", err)
-	}
-
-	// 5) 替换 holder & 持久化配置
-	prev := s.holder.Swap(next)
-	_ = prev // 已在第 2 步关闭
-
-	if err := s.cfg.SetDataPath(abs); err != nil {
-		_ = next.Close()
-		removeAll(written)
-		s.tryReopenLegacy(oldPath)
-		return fmt.Errorf("persist config: %w", err)
-	}
-
-	// 6) 删旧位置文件
-	for _, suffix := range []string{"", "-wal", "-shm"} {
-		_ = os.Remove(oldPath + suffix)
-	}
-	// 7) 通知解析器缓存失效：否则 UI 会继续显示切换前的生效路径。
-	s.notifyPathChanged()
-	return nil
+// SetCustomPath stages a directory migration; it does not change live paths.
+func (s *Service) SetCustomPath(_ context.Context, dir string) error {
+	return s.stageRoot(dir, false)
 }
 
-// ResetPath 把数据库迁回平台默认位置。
-func (s *Service) ResetPath(ctx context.Context) error {
-	def, err := storage.DefaultDBPath()
+func (s *Service) ResetPath(_ context.Context) error {
+	root, err := paths.DefaultDataRoot()
 	if err != nil {
 		return err
 	}
-	current := s.holder.Current()
-	if filepath.Clean(def) == filepath.Clean(current.Path) {
-		// 已经是默认位置：仅清空 storage.json 中的自定义路径配置
-		if err := s.cfg.ResetDataPath(); err != nil {
-			return err
-		}
-		s.notifyPathChanged()
-		return nil
-	}
-	if err := s.SetCustomPath(ctx, def); err != nil {
-		return err
-	}
-	if err := s.cfg.ResetDataPath(); err != nil {
-		return err
-	}
-	s.notifyPathChanged()
-	return nil
+	return s.stageRoot(root, true)
 }
 
-func (s *Service) tryReopenLegacy(oldPath string) {
-	db, err := storage.Open(oldPath)
-	if err != nil {
-		panic(fmt.Errorf("storagesvc: failed to reopen legacy db at %s: %w", oldPath, err))
-	}
-	s.holder.Swap(db)
-}
-
-// preflightWritable 校验目标文件所在目录可写。
-func preflightWritable(path string) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	test := filepath.Join(dir, ".mandaryn-write-test")
-	f, err := os.Create(test)
+func (s *Service) stageRoot(dir string, useDefault bool) error {
+	modelRoot, err := s.resolver.Effective(paths.KeyModelRoot)
 	if err != nil {
 		return err
 	}
-	_ = f.Close()
-	return os.Remove(test)
+	return s.cfg.StageDataRoot(s.root.Effective, s.holder.Current().Path, dir, useDefault, modelRoot)
 }
 
-// copyDBSet 把 src.db / src.db-wal / src.db-shm 复制到 dst.db 同名集。
-func copyDBSet(src, dst string) ([]string, error) {
-	var written []string
-	for _, suffix := range []string{"", "-wal", "-shm"} {
-		s := src + suffix
-		d := dst + suffix
-		if _, err := os.Stat(s); err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return written, err
-		}
-		if err := copyFile(s, d); err != nil {
-			return written, err
-		}
-		written = append(written, d)
-	}
-	return written, nil
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-	return out.Sync()
-}
-
-func removeAll(paths []string) {
-	for _, p := range paths {
-		_ = os.Remove(p)
-	}
+func (s *Service) CancelRootMigration(_ context.Context) error {
+	return s.cfg.CancelRootMigration()
 }
