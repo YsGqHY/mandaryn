@@ -61,8 +61,21 @@ func (m *Manager) TestProxy(ctx context.Context, cfg contract.ProxyConfig) (cont
 		}, apierr.From(gerr, apierr.CodeOfflineEnforced)
 	}
 
-	// 3) 目标：清单地址。清单拿不到，下载就无从谈起，所以它是下载链路最近的代表。
+	// 3) 目标：企业清单，或默认内置清单中可下载的真实资产。
 	target := catalogURL(m.manifestBase())
+	userMirror, err := m.effectiveUserMirror(ctx)
+	if err != nil {
+		return contract.TestResult{}, err
+	}
+	if userMirror != "" {
+		target = catalogURL(userMirror)
+	} else if m.opts.UseStarterCatalog {
+		target = upstreamASRRelease + "silero_vad.onnx"
+	} else if target == "" {
+		if mirrors := m.mirrorBases(); len(mirrors) != 0 {
+			target = catalogURL(mirrors[0])
+		}
+	}
 	if target == "" {
 		return contract.TestResult{Category: "unknown", Note: "未配置模型清单基址，无法测试"},
 			apierr.New(apierr.CodeInvalidArgument).WithDetail("未配置模型清单基址，无法进行代理连通性测试")
@@ -152,7 +165,7 @@ func classifyProxyError(err error) string {
 	}
 	return "network"
 }
-//
+
 // 为什么不直接用 err.Error()：*url.Error 的文本里带着含密码的完整 URL，
 // 而这条 Note 会经 L3 直接回到前端展示。只保留「错误类型 + 目标主机」级别信息。
 func proxyNote(err error) string {

@@ -62,10 +62,10 @@ type downloadStateFile struct {
 	// URLIdx 当前镜像索引（0 = 主基址）。
 	URLIdx int `json:"urlsIdx"`
 	// Retries 累计重试次数（诊断用）。
-	Retries  int   `json:"retries"`
-	ETag     string `json:"etag,omitempty"`
-	BytesDone  int64 `json:"bytesDone"`
-	BytesTotal int64 `json:"bytesTotal"`
+	Retries    int    `json:"retries"`
+	ETag       string `json:"etag,omitempty"`
+	BytesDone  int64  `json:"bytesDone"`
+	BytesTotal int64  `json:"bytesTotal"`
 	// Files 按相对路径记录每个文件的断点。
 	Files []*fileProgress `json:"files"`
 }
@@ -215,21 +215,8 @@ func (m *Manager) StartDownload(ctx context.Context, bundleID string) (contract.
 	if err != nil {
 		return contract.DownloadState{}, err
 	}
-	if len(bundle.Files) == 0 {
-		return contract.DownloadState{}, apierr.Newf(apierr.CodeDownloadNetwork,
-			"bundle %q has no download sources; refresh the catalog first", bundleID)
-	}
-	// 清单安全预检：任何一个路径越界都直接拒绝整包（不做「跳过坏条目」的宽容处理，
-	// 否则一个投毒条目会被静默忽略，掩盖供应链问题）。
-	for _, f := range bundle.Files {
-		if _, perr := sanitizeRelPath(f.Path); perr != nil {
-			return contract.DownloadState{}, apierr.Newf(apierr.CodeInvalidArgument,
-				"bundle %q has an unsafe file path: %s", bundleID, f.Path).WithCause(perr)
-		}
-	}
-	if len(bundle.Files) > 0 && bundle.Files[0].SHA256 == "" {
-		return contract.DownloadState{}, apierr.Newf(apierr.CodeDownloadChecksum,
-			"bundle %q manifest has no checksum", bundleID)
+	if err := validateDownloadBundle(bundle); err != nil {
+		return contract.DownloadState{}, err
 	}
 
 	// 已有任务：运行中直接返回快照；已结束则等它退出后重建。
@@ -497,25 +484,57 @@ func (m *Manager) executeDownload(t *downloadTask) error {
 		d.saveState(true)
 	}
 
-	// —— 5. 整包：写 manifest.json → 原子 rename ——
-	if err := writeJSONAtomic(filepath.Join(work, FileBundleManifest), t.bundle); err != nil {
+	// —— 5. 校验归档后构建安装树，写 manifest.json 并原子提交 ——
+	installBundle := t.bundle
+	installDir := work
+	starterArchive := isApprovedSenseVoiceStarterArchive(t.bundle)
+	if starterArchive {
+		staging, serr := os.MkdirTemp(modelsDir, DirStagingPrefix+"sensevoice-")
+		if serr != nil {
+			return apierr.Wrap(serr, apierr.CodePathUnwritable).WithDetail("create starter extraction staging")
+		}
+		defer func() { _ = os.RemoveAll(staging) }()
+
+		archivePath := filepath.Join(work, SenseVoiceINT8ArchivePath)
+		files, extractedBytes, xerr := extractSenseVoiceStarterArchive(t.ctx, archivePath, staging)
+		if xerr != nil {
+			return apierr.New(apierr.CodeModelCorrupt).
+				WithDetail("extract approved SenseVoice starter archive: %s", xerr.Error()).WithCause(xerr)
+		}
+		installBundle.Files = files
+		installBundle.SizeBytes = extractedBytes
+		installDir = staging
+	}
+	if err := writeJSONAtomic(filepath.Join(installDir, FileBundleManifest), installBundle); err != nil {
 		return apierr.Wrap(err, apierr.CodePathUnwritable).WithDetail("write bundle manifest")
 	}
 	t.setState(contract.DownloadVerifying)
 	d.emit(true)
 
-	if bad := verifyDir(work, t.bundle); len(bad) > 0 {
+	if bad := verifyDir(installDir, installBundle); len(bad) > 0 {
 		return apierr.Newf(apierr.CodeDownloadChecksum,
 			"bundle verification failed for %d file(s)", len(bad))
 	}
+	if err := t.ctx.Err(); err != nil {
+		return err
+	}
 
 	target := filepath.Join(modelsDir, t.id)
-	if err := commitDir(work, target); err != nil {
+	if starterArchive {
+		if err := commitSenseVoiceStarterDir(installDir, target); err != nil {
+			return apierr.Wrap(err, apierr.CodePathUnwritable).WithDetail("commit starter bundle directory")
+		}
+	} else if err := commitDir(installDir, target); err != nil {
 		return apierr.Wrap(err, apierr.CodePathUnwritable).WithDetail("commit bundle directory")
 	}
 	_ = os.Remove(statePath)
+	if starterArchive {
+		if err := os.RemoveAll(work); err != nil {
+			m.log().Warn("remove starter archive workspace failed", "bundle", t.bundle.BundleID, "error", err.Error())
+		}
+	}
 
-	m.upsertBundle(t.bundle, filepath.Join(DirModels, t.id), contract.BundleInstalled)
+	m.upsertBundle(installBundle, filepath.Join(DirModels, t.id), contract.BundleInstalled)
 	m.log().Info("model bundle installed",
 		"bundle", t.bundle.BundleID, "version", t.bundle.Version, "bytes", total)
 	return nil
@@ -533,6 +552,11 @@ func (d *downloadRun) downloadFile(f ManifestFile, rel, dest string, fp *filePro
 			return err
 		}
 		size = probed
+	}
+	if isSenseVoiceStarterBundle(d.t.bundle) && rel == SenseVoiceINT8ArchivePath &&
+		(size <= 0 || size > maxSenseVoiceArchiveBytes) {
+		return apierr.New(apierr.CodeDownloadChecksum).
+			WithDetail("SenseVoice starter archive exceeds the approved size limit")
 	}
 	fp.Size = size
 

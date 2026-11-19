@@ -101,6 +101,10 @@ type Options struct {
 	Root func() (string, error)
 	// ManifestBaseURL 清单基址（目录风格则自动拼 models.json；`.json` 结尾直链则原样用）。
 	ManifestBaseURL string
+	// UseStarterCatalog 使用随应用交付的入门清单；显式配置企业清单时不启用。
+	UseStarterCatalog bool
+	// MirrorManagedBy names the deployment variable overriding the UI value.
+	MirrorManagedBy string
 	// Mirrors 备用镜像基址，最多 3 个生效。
 	Mirrors []string
 	// Proxy 返回当前代理配置（每次出站前取一次，改设置后无需重启）。
@@ -130,18 +134,19 @@ type Manager struct {
 	// rootOverride 迁移切换后临时顶替 opts.Root，等上层解析器缓存失效后再清。
 	rootOverride atomic.Value // string
 
-	clientMu   sync.Mutex
-	client     *http.Client
-	clientKey  string
-	clientErr  error
+	clientMu  sync.Mutex
+	client    *http.Client
+	clientKey string
+	clientErr error
 
 	// fetchMu 串行化清单拉取：并发下载会同时触发 Fetch，
 	// 两个 goroutine 同时写 manifest.cache.json 会在 Windows 上撞 rename。
 	fetchMu sync.Mutex
 
-	catMu sync.Mutex
-	cat   *Manifest
-	catAt time.Time
+	catMu  sync.Mutex
+	cat    *Manifest
+	catAt  time.Time
+	catErr error
 
 	taskMu sync.Mutex
 	tasks  map[string]*downloadTask

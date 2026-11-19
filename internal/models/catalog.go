@@ -9,9 +9,13 @@ package models
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -32,6 +36,8 @@ type Manifest struct {
 	FetchedAt int64 `json:"fetchedAt,omitempty"`
 	// Source 拉取来源（只存 scheme://host，不含 query / 凭据）。
 	Source string `json:"source,omitempty"`
+	// CacheScope is set locally, never trusted from a fetched manifest.
+	CacheScope string `json:"cacheScope,omitempty"`
 	// Bundles 可下载的模型包。
 	Bundles []ManifestBundle `json:"bundles"`
 }
@@ -74,11 +80,15 @@ func catalogURL(base string) string {
 	if base == "" {
 		return ""
 	}
-	trimmed := strings.TrimRight(base, "/")
-	if strings.HasSuffix(strings.ToLower(trimmed), ".json") {
-		return trimmed
+	u, err := url.Parse(base)
+	if err != nil {
+		return base // httpx reports the invalid URL through the normal fallback path.
 	}
-	return trimmed + "/" + FileCatalog
+	if !strings.HasSuffix(strings.ToLower(u.Path), ".json") {
+		u.Path = path.Join(u.Path, FileCatalog)
+		u.RawPath = ""
+	}
+	return u.String()
 }
 
 // manifestBase 返回主清单基址。
@@ -102,6 +112,12 @@ func (m *Manager) mirrorBases() []string {
 	return out
 }
 
+func (m *Manager) catalogScope(userMirror string) string {
+	key := fmt.Sprintf("%t\x00%s\x00%s\x00%s", m.opts.UseStarterCatalog, m.manifestBase(), strings.Join(m.mirrorBases(), "\x00"), userMirror)
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:])
+}
+
 // Fetch 拉取清单：主基址 → 镜像 → 缓存 → 内置兜底。
 //
 // 返回值语义（与 API-6.1 对齐）：清单**始终非 nil**；远程刷新失败时同时返回
@@ -111,26 +127,45 @@ func (m *Manager) Fetch(ctx context.Context) (*Manifest, error) {
 	m.fetchMu.Lock()
 	defer m.fetchMu.Unlock()
 
+	userMirror, err := m.effectiveUserMirror(ctx)
+	if err != nil {
+		return builtinManifest(), err
+	}
+	scope := m.catalogScope(userMirror)
 	if err := outbound.Guard(); err != nil {
 		// 离线开关优先：错误码必须原样是 ERR_OFFLINE_ENFORCED，
 		// 不能被「清单兜底」改写成网络错误（用户要看到的是「你开了离线」）。
-		mf, _ := m.fallbackManifest(err)
-		return mf, apierr.From(err, apierr.CodeOfflineEnforced)
+		return m.fallbackManifest(scope, apierr.From(err, apierr.CodeOfflineEnforced))
+	}
+
+	if m.opts.UseStarterCatalog && userMirror == "" {
+		mf := starterManifest()
+		mf.CacheScope = scope
+		m.catMu.Lock()
+		m.cat, m.catAt, m.catErr = mf, time.Now(), nil
+		m.catMu.Unlock()
+		return mf, nil
 	}
 
 	bases := make([]string, 0, 1+maxMirrors)
-	if b := m.manifestBase(); b != "" {
-		bases = append(bases, b)
+	if userMirror != "" {
+		bases = append(bases, userMirror)
+	} else {
+		if b := m.manifestBase(); b != "" {
+			bases = append(bases, b)
+		}
+		bases = append(bases, m.mirrorBases()...)
 	}
-	bases = append(bases, m.mirrorBases()...)
 
 	var lastErr error
 	for _, base := range bases {
 		mf, err := m.fetchFrom(ctx, base)
 		if err == nil {
 			m.catMu.Lock()
+			mf.CacheScope = scope
 			m.cat = mf
 			m.catAt = time.Now()
+			m.catErr = nil
 			m.catMu.Unlock()
 			if werr := m.saveCache(mf); werr != nil {
 				// 缓存失败不影响本次可用，但要留痕。
@@ -142,7 +177,7 @@ func (m *Manager) Fetch(ctx context.Context) (*Manifest, error) {
 		m.log().Warn("manifest fetch failed", "host", hostOf(catalogURL(base)), "error", err.Error())
 	}
 
-	return m.fallbackManifest(lastErr)
+	return m.fallbackManifest(scope, lastErr)
 }
 
 // fetchFrom 从单个基址拉清单并做基本校验。
@@ -182,18 +217,16 @@ func (m *Manager) fetchFrom(ctx context.Context, base string) (*Manifest, error)
 	}
 	for i := range mf.Bundles {
 		b := &mf.Bundles[i]
-		if b.BundleID == "" || b.Version == "" {
-			return nil, fmt.Errorf("models: manifest bundle missing bundleId/version")
+		if !validBundleComponent(b.BundleID) || !validBundleComponent(b.Version) {
+			return nil, fmt.Errorf("models: invalid manifest bundle ID or version")
 		}
 		// 清单位置写进入口文件 URL：相对路径统一在此展开为绝对地址，
 		// 这样下载器只需要处理「绝对 URL + 镜像改写」两种形态。
 		for j := range b.Files {
 			f := &b.Files[j]
-			if f.URL == "" {
-				continue
-			}
-			if !isAbsoluteURL(f.URL) {
-				f.URL = joinBaseURL(base, f.URL)
+			f.URL = strings.TrimSpace(f.URL)
+			if ref, err := url.Parse(f.URL); f.URL != "" && err == nil {
+				f.URL = req.URL.ResolveReference(ref).String()
 			}
 		}
 	}
@@ -210,30 +243,46 @@ func (m *Manager) fetchFrom(ctx context.Context, base string) (*Manifest, error)
 const fallbackTTL = 30 * time.Second
 
 // fallbackManifest 在远程失败时给出缓存或内置清单。
-func (m *Manager) fallbackManifest(cause error) (*Manifest, error) {
+func (m *Manager) fallbackManifest(scope string, cause error) (*Manifest, error) {
 	var mf *Manifest
 	cached, cacheErr := m.loadCache()
-	if cacheErr == nil && cached != nil && len(cached.Bundles) > 0 {
+	if cacheErr == nil && cached != nil && cached.CacheScope == scope && len(cached.Bundles) > 0 {
 		mf = cached
 	} else {
 		mf = builtinManifest()
 	}
 
-	// 兜底内容也进内存缓存（短 TTL）：否则前端每次重试都会再打一次网络并再失败一次。
+	detail := "manifest refresh failed, showing built-in catalog"
+	if mf == cached {
+		detail = "manifest refresh failed, showing cached catalog"
+	}
+	e := apierr.New(apierr.CodeDownloadNetwork).WithDetail("%s", detail).WithCause(cause)
+	if apierr.HasCode(cause, apierr.CodeOfflineEnforced) {
+		e = apierr.From(cause, apierr.CodeOfflineEnforced).WithDetail("%s", detail)
+	}
+
+	mf.CacheScope = scope
+	// Cache the warning with the fallback, not just the bundle list.
 	m.catMu.Lock()
 	m.cat = mf
 	m.catAt = time.Now().Add(fallbackTTL - m.opts.CatalogTTL)
+	m.catErr = e
 	m.catMu.Unlock()
-
-	detail := "manifest refresh failed, showing built-in catalog"
-	if cacheErr == nil && cached != nil && len(cached.Bundles) > 0 {
-		detail = "manifest refresh failed, showing cached catalog"
-	}
-	e := apierr.New(apierr.CodeDownloadNetwork).WithDetail("%s", detail)
-	if cause != nil {
-		e = e.WithCause(cause)
-	}
 	return mf, e
+}
+
+func (m *Manager) cachedCatalog(ctx context.Context) (*Manifest, error) {
+	userMirror, err := m.effectiveUserMirror(ctx)
+	if err != nil {
+		return nil, err
+	}
+	scope := m.catalogScope(userMirror)
+	m.catMu.Lock()
+	defer m.catMu.Unlock()
+	if m.cat != nil && m.cat.CacheScope == scope && time.Since(m.catAt) < m.opts.CatalogTTL {
+		return m.cat, m.catErr
+	}
+	return nil, nil
 }
 
 // Catalog 返回清单：优先内存缓存（TTL 内），否则尝试刷新。
@@ -241,14 +290,9 @@ func (m *Manager) fallbackManifest(cause error) (*Manifest, error) {
 // 与 Fetch 的差别：Catalog 是**内部**入口（下载 / 列表共用），不把远程失败
 // 当错误上抛——它总是给出可用的清单，失败细节已经在 Fetch 里留痕。
 func (m *Manager) Catalog(ctx context.Context) *Manifest {
-	m.catMu.Lock()
-	if m.cat != nil && time.Since(m.catAt) < m.opts.CatalogTTL {
-		mf := m.cat
-		m.catMu.Unlock()
+	if mf, _ := m.cachedCatalog(ctx); mf != nil {
 		return mf
 	}
-	m.catMu.Unlock()
-
 	mf, err := m.Fetch(ctx)
 	if mf == nil {
 		// 理论上不会发生（fallback 保证非 nil），留兜底以防未来改动。
@@ -314,23 +358,23 @@ func (m *Manager) loadCache() (*Manifest, error) {
 	return &mf, nil
 }
 
-// ListAvailable 返回清单，并按已装状态补 Installed / UpdateAvailable（API-6.1）。
-//
-// 错误语义：只有**本次真的尝试了远程刷新并失败**才返回 ERR_DOWNLOAD_NETWORK
-// （此时内容来自缓存 / 内置兜底）。缓存仍在有效期内时不触发网络，直接返回 nil 错误
-// ——这样前端「重试一次」就能拿到离线内容，而不是反复被拒。
+// ListAvailable 返回清单及最近一次刷新告警；TTL 内不重新访问网络。
 func (m *Manager) ListAvailable(ctx context.Context) ([]contract.BundleInfo, error) {
+	return m.listAvailable(ctx, false)
+}
+
+// RefreshAvailable 立即尝试远端刷新，绕过内存缓存；仍遵守离线开关。
+func (m *Manager) RefreshAvailable(ctx context.Context) ([]contract.BundleInfo, error) {
+	return m.listAvailable(ctx, true)
+}
+
+func (m *Manager) listAvailable(ctx context.Context, refresh bool) ([]contract.BundleInfo, error) {
 	var mf *Manifest
 	var fetchErr error
-
-	m.catMu.Lock()
-	fresh := m.cat != nil && time.Since(m.catAt) < m.opts.CatalogTTL
-	if fresh {
-		mf = m.cat
+	if !refresh {
+		mf, fetchErr = m.cachedCatalog(ctx)
 	}
-	m.catMu.Unlock()
-
-	if !fresh {
+	if mf == nil && fetchErr == nil {
 		mf, fetchErr = m.Fetch(ctx)
 	}
 	if mf == nil {
@@ -341,15 +385,16 @@ func (m *Manager) ListAvailable(ctx context.Context) ([]contract.BundleInfo, err
 	out := make([]contract.BundleInfo, 0, len(mf.Bundles))
 	for _, b := range mf.Bundles {
 		info := contract.BundleInfo{
-			BundleID:  b.BundleID,
-			Name:      b.Name,
-			Version:   b.Version,
-			SizeBytes: totalBytesOf(b),
-			RAMHintMB: b.RAMHintMB,
-			Languages: b.Languages,
-			License:   b.License,
-			Roles:     b.Roles,
-			SHA256:    b.SHA256,
+			BundleID:     b.BundleID,
+			Name:         b.Name,
+			Version:      b.Version,
+			SizeBytes:    totalBytesOf(b),
+			RAMHintMB:    b.RAMHintMB,
+			Languages:    b.Languages,
+			License:      b.License,
+			Roles:        b.Roles,
+			SHA256:       b.SHA256,
+			Downloadable: validateDownloadBundle(b) == nil,
 		}
 		if cur, ok := installed[b.BundleID]; ok {
 			info.Installed = cur.State == contract.BundleInstalled || cur.State == contract.BundleCorrupt
@@ -360,17 +405,40 @@ func (m *Manager) ListAvailable(ctx context.Context) ([]contract.BundleInfo, err
 	return out, fetchErr
 }
 
-// —— URL 工具 ——
-
-func isAbsoluteURL(s string) bool {
-	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+// Bundle identifiers and versions become part of a single local directory name.
+func validBundleComponent(value string) bool {
+	if value == "" || len(value) > 100 || strings.HasPrefix(value, ".") || strings.HasSuffix(value, ".") {
+		return false
+	}
+	for _, c := range value {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.ContainsRune("-._+", c)) {
+			return false
+		}
+	}
+	return true
 }
 
-// joinBaseURL 把相对路径接到基址后。
-func joinBaseURL(base, rel string) string {
-	base = strings.TrimRight(strings.TrimSpace(base), "/")
-	rel = strings.TrimLeft(strings.ReplaceAll(rel, `\`, "/"), "/")
-	return base + "/" + rel
+// validateDownloadBundle keeps the catalog button and download preflight in sync.
+func validateDownloadBundle(bundle ManifestBundle) error {
+	if !validBundleComponent(bundle.BundleID) || !validBundleComponent(bundle.Version) {
+		return apierr.New(apierr.CodeInvalidArgument).WithDetail("无效的模型包标识或版本")
+	}
+	if len(bundle.Files) == 0 {
+		return apierr.Newf(apierr.CodeDownloadNetwork, "bundle %q has no download sources; refresh the catalog first", bundle.BundleID)
+	}
+	for _, f := range bundle.Files {
+		if _, err := sanitizeRelPath(f.Path); err != nil {
+			return apierr.Newf(apierr.CodeInvalidArgument, "bundle %q has an unsafe file path", bundle.BundleID).WithCause(err)
+		}
+		u, err := url.Parse(f.URL)
+		if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return apierr.Newf(apierr.CodeDownloadNetwork, "bundle %q contains a file without a valid download URL", bundle.BundleID)
+		}
+		if digest, err := hex.DecodeString(f.SHA256); err != nil || len(digest) != sha256.Size {
+			return apierr.Newf(apierr.CodeDownloadChecksum, "bundle %q contains a file without a valid SHA-256", bundle.BundleID)
+		}
+	}
+	return nil
 }
 
 // mirrorURL 按镜像索引改写文件 URL：
@@ -500,6 +568,33 @@ func builtinManifest() *Manifest {
 			},
 		},
 	}
+}
+
+const upstreamASRRelease = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
+
+// starterManifest ships only the sources whose bytes and release digests are pinned.
+// Download still goes through the ordinary outbound gate, proxy and verifier.
+func starterManifest() *Manifest {
+	mf := builtinManifest()
+	mf.GeneratedAt = "starter"
+	for i := range mf.Bundles {
+		b := &mf.Bundles[i]
+		var f ManifestFile
+		switch b.BundleID {
+		case "sensevoice-small":
+			f = ManifestFile{Path: SenseVoiceINT8ArchivePath, Size: 163002883,
+				URL:    upstreamASRRelease + "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2",
+				SHA256: SenseVoiceINT8ArchiveSHA256}
+		case "silero-vad":
+			f = ManifestFile{Path: "silero_vad.onnx", Size: 643854,
+				URL:    upstreamASRRelease + "silero_vad.onnx",
+				SHA256: "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"}
+		default:
+			continue
+		}
+		b.Files, b.SizeBytes = []ManifestFile{f}, f.Size
+	}
+	return mf
 }
 
 // recordOutbound 落出站留痕（只写域名，不写完整 URL）。

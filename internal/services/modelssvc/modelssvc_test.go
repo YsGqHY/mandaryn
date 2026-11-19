@@ -75,15 +75,32 @@ func TestServiceListAvailable(t *testing.T) {
 	}})
 	svc, _ := newService(t, srv.URL)
 
-	list, err := svc.ListAvailable(context.Background())
-	if err != nil {
-		t.Fatalf("ListAvailable: %v", err)
+	result := svc.ListAvailable(context.Background(), false)
+	if result.Warning != nil {
+		t.Fatalf("ListAvailable: %+v", result.Warning)
 	}
+	list := result.Bundles
 	if len(list) != 1 || list[0].BundleID != "sensevoice-small" {
 		t.Fatalf("list = %+v", list)
 	}
 	if list[0].SizeBytes != 1024 || list[0].Installed {
 		t.Fatalf("entry = %+v", list[0])
+	}
+}
+
+func TestServiceListAvailablePreservesFallbackWarning(t *testing.T) {
+	srv := fakeCatalog(t, nil)
+	svc, _ := newService(t, srv.URL)
+	for _, refresh := range []bool{false, false, true} {
+		result := svc.ListAvailable(context.Background(), refresh)
+		if len(result.Bundles) == 0 || result.Warning == nil || result.Warning.Code != apierr.CodeDownloadNetwork {
+			t.Fatalf("expected bundles and warning together (refresh=%v): %+v", refresh, result)
+		}
+		for _, bundle := range result.Bundles {
+			if bundle.Downloadable {
+				t.Fatalf("fallback bundle %q is downloadable", bundle.BundleID)
+			}
+		}
 	}
 }
 
@@ -168,14 +185,14 @@ func TestServiceCatalogHelpers(t *testing.T) {
 		t.Fatalf("catalogMirrors = %v", got)
 	}
 
-	// 未设环境变量时回落到内置默认值。
+	// 未配置时使用内置清单，不再请求已下线的清单源。
 	t.Setenv(EnvCatalogURL, "")
-	if got := catalogURL(); got != defaultCatalogURL {
-		t.Fatalf("default catalogURL = %s", got)
+	if got := catalogURL(); got != "" {
+		t.Fatalf("default external catalogURL = %s", got)
 	}
 	t.Setenv(EnvCatalogMirrors, "")
-	if got := catalogMirrors(); len(got) != 1 || got[0] != defaultCatalogMirror {
-		t.Fatalf("default mirrors = %v", got)
+	if got := catalogMirrors(); len(got) != 0 {
+		t.Fatalf("default external mirrors = %v", got)
 	}
 }
 

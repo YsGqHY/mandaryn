@@ -35,14 +35,23 @@ func TestCatalogFallsBackToBuiltin(t *testing.T) {
 	if list[0].BundleID == "" || list[0].Installed {
 		t.Fatalf("builtin entry = %+v", list[0])
 	}
-
-	// 兜底内容进内存缓存：短时间内重试应直接拿到内容且无错误（前端「重试」可用）。
-	list2, err2 := m.ListAvailable(context.Background())
-	if err2 != nil {
-		t.Fatalf("second call error = %v, want nil within fallback TTL", err2)
+	// 内置兜底清单只有元数据、没有 URL：必须如实标记 Downloadable=false，
+	// 否则前端会渲染一个点了必然失败的「下载」按钮。见 contract.BundleInfo.Downloadable。
+	for _, it := range list {
+		if it.Downloadable {
+			t.Fatalf("builtin entry %q marked downloadable, want false", it.BundleID)
+		}
 	}
-	if len(list2) != len(list) {
-		t.Fatalf("second call returned %d bundles, want %d", len(list2), len(list))
+
+	// SetCatalog 恢复远端，但被动读取在 TTL 内仍返回同一份兜底及告警。
+	srv.setCatalog(t, bundle)
+	list2, err2 := m.ListAvailable(context.Background())
+	if !apierr.HasCode(err2, apierr.CodeDownloadNetwork) || len(list2) != len(list) {
+		t.Fatalf("cached fallback = %+v, %v", list2, err2)
+	}
+	got, err := m.RefreshAvailable(context.Background())
+	if err != nil || len(got) != 1 || got[0].BundleID != bundle.BundleID || !got[0].Downloadable {
+		t.Fatalf("explicit refresh = %+v, %v", got, err)
 	}
 }
 
@@ -107,6 +116,12 @@ func TestListAvailableMarksInstalledAndUpdate(t *testing.T) {
 	if list[0].SizeBytes != 16 {
 		t.Fatalf("sizeBytes = %d, want 16", list[0].SizeBytes)
 	}
+	// 远端清单里的条目带 URL 与 sha256 → 必须标记为可下载（前端据此启用按钮）。
+	for _, it := range list {
+		if !it.Downloadable {
+			t.Fatalf("entry %q from served catalog marked not downloadable, want true", it.BundleID)
+		}
+	}
 }
 
 func TestFetchRejectsBadManifest(t *testing.T) {
@@ -114,10 +129,10 @@ func TestFetchRejectsBadManifest(t *testing.T) {
 	root := t.TempDir()
 
 	cases := map[string]string{
-		"empty":       `{"schemaVersion":1,"bundles":[]}`,
-		"no-version":  `{"schemaVersion":1,"bundles":[{"bundleId":"x"}]}`,
-		"bad-schema":  `{"schemaVersion":99,"bundles":[{"bundleId":"x","version":"1"}]}`,
-		"not-json":    `not json at all`,
+		"empty":      `{"schemaVersion":1,"bundles":[]}`,
+		"no-version": `{"schemaVersion":1,"bundles":[{"bundleId":"x"}]}`,
+		"bad-schema": `{"schemaVersion":99,"bundles":[{"bundleId":"x","version":"1"}]}`,
+		"not-json":   `not json at all`,
 	}
 	for name, body := range cases {
 		srv.setFile(FileCatalog, &testFile{Data: []byte(body), ETag: `"c"`})
@@ -189,15 +204,60 @@ func TestBuiltinManifestIsSane(t *testing.T) {
 
 func TestCatalogURLResolution(t *testing.T) {
 	cases := map[string]string{
-		"https://host/dir":              "https://host/dir/" + FileCatalog,
-		"https://host/dir/":             "https://host/dir/" + FileCatalog,
-		"https://host/dir/models.json":  "https://host/dir/models.json",
-		"":                              "",
+		"https://host/dir":             "https://host/dir/" + FileCatalog,
+		"https://host/dir/":            "https://host/dir/" + FileCatalog,
+		"https://host/dir/models.json": "https://host/dir/models.json",
+		"":                             "",
 	}
 	for in, want := range cases {
 		if got := catalogURL(in); got != want {
 			t.Errorf("catalogURL(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestCatalogDirectURLAndBundlePreflight(t *testing.T) {
+	srv := newRangeServer(t)
+	bundle := newBundle(srv, "good", "1.0.0", []string{RoleOffline},
+		map[string][]byte{"model.onnx": payload(1, 16)})
+	bundle.Files[0].URL = "model.onnx"
+	broken := bundle
+	broken.BundleID = "broken"
+	broken.Files = append(append([]ManifestFile(nil), bundle.Files...), ManifestFile{
+		Path: "tokens.txt", URL: "tokens.txt", Size: 16,
+	})
+	srv.setCatalog(t, bundle, broken)
+	m := newRawManager(t, testOptions(t.TempDir(), srv.URL+"/"+FileCatalog+"?v=1"))
+	ctx := context.Background()
+	got, err := m.ListAvailable(ctx)
+	if err != nil || len(got) != 2 || !got[0].Downloadable || got[1].Downloadable {
+		t.Fatalf("available = %+v, %v", got, err)
+	}
+	if mf := m.Catalog(ctx); mf.Bundles[0].Files[0].URL != srv.URL+"/model.onnx" {
+		t.Fatalf("resolved URL = %q", mf.Bundles[0].Files[0].URL)
+	}
+	if _, err := m.StartDownload(ctx, broken.BundleID); !apierr.HasCode(err, apierr.CodeDownloadChecksum) {
+		t.Fatalf("expected preflight to reject missing later-file checksum, got %v", err)
+	}
+}
+
+func TestStarterCatalogUsesPinnedSourcesWithoutFetching(t *testing.T) {
+	srv := newRangeServer(t)
+	opts := testOptions(t.TempDir(), srv.URL)
+	opts.UseStarterCatalog = true
+	m := newRawManager(t, opts)
+	list, err := m.RefreshAvailable(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range list {
+		want := b.BundleID == "sensevoice-small" || b.BundleID == "silero-vad"
+		if b.Downloadable != want {
+			t.Fatalf("unexpected starter bundle: %+v", b)
+		}
+	}
+	if len(list) != 4 || len(srv.takeRequests()) != 0 {
+		t.Fatalf("starter list = %+v; want four entries and no requests", list)
 	}
 }
 

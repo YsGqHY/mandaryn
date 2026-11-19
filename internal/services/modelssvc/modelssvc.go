@@ -29,13 +29,6 @@ const (
 	EnvCatalogMirrors = "MANDARYN_MODEL_MIRRORS"
 )
 
-// 默认清单来源：GitHub Releases（github.com 在企业网络里通常可达，
-// huggingface.co 多数环境不可达，故不作主源）。
-const (
-	defaultCatalogURL     = "https://github.com/oberon-vip/mandaryn-models/releases/download/models-v1"
-	defaultCatalogMirror  = "https://hf-mirror.com/oberon-vip/mandaryn-models/resolve/models-v1"
-)
-
 // Service 暴露模型仓库与迁移能力。
 type Service struct {
 	mgr      *models.Manager
@@ -48,13 +41,22 @@ type Service struct {
 func New(holder *storage.Holder, resolver *paths.Resolver, recorder *outbound.Recorder) *Service {
 	s := &Service{resolver: resolver}
 
+	base, mirrors := catalogURL(), catalogMirrors()
+	managedBy := ""
+	if base != "" {
+		managedBy = EnvCatalogURL
+	} else if strings.TrimSpace(os.Getenv(EnvCatalogMirrors)) != "" {
+		managedBy = EnvCatalogMirrors
+	}
 	mgr := models.New(models.Options{
-		Holder:          holder,
-		Recorder:        recorder,
-		Root:            s.currentRoot,
-		ManifestBaseURL: catalogURL(),
-		Mirrors:         catalogMirrors(),
-		Proxy:           s.proxyConfig,
+		Holder:            holder,
+		Recorder:          recorder,
+		Root:              s.currentRoot,
+		ManifestBaseURL:   base,
+		UseStarterCatalog: managedBy == "",
+		MirrorManagedBy:   managedBy,
+		Mirrors:           mirrors,
+		Proxy:             s.proxyConfig,
 		OnDownload: func(st contract.DownloadState) {
 			emit(events.ModelsDownload, st)
 		},
@@ -115,13 +117,31 @@ func (s *Service) proxyConfig() (contract.ProxyConfig, error) {
 
 // —— API-6.1 ~ API-6.8 ——
 
+func (s *Service) GetModelMirror(ctx context.Context) (contract.ModelMirror, error) {
+	return s.mgr.ModelMirror(ctx)
+}
+
+func (s *Service) SetModelMirror(ctx context.Context, value string) (contract.ModelMirror, error) {
+	return s.mgr.SetModelMirror(ctx, value)
+}
+
 // ListAvailable 清单（远程缓存 + 内置兜底）。（API-6.1）
-func (s *Service) ListAvailable(ctx context.Context) ([]contract.BundleInfo, error) {
-	list, err := s.mgr.ListAvailable(ctx)
-	if err != nil {
-		return list, mapErr(err, apierr.CodeDownloadNetwork)
+func (s *Service) ListAvailable(ctx context.Context, refresh bool) contract.BundleCatalog {
+	if refresh {
+		return catalogResult(s.mgr.RefreshAvailable(ctx))
 	}
-	return list, nil
+	return catalogResult(s.mgr.ListAvailable(ctx))
+}
+
+func catalogResult(list []contract.BundleInfo, err error) contract.BundleCatalog {
+	result := contract.BundleCatalog{Bundles: list}
+	if err != nil {
+		e := mapErr(err, apierr.CodeDownloadNetwork)
+		result.Warning = &contract.ErrorDTO{
+			Code: e.Code, Message: e.Message, Action: e.Action, Detail: e.Detail, Retryable: e.Retryable,
+		}
+	}
+	return result
 }
 
 // ListInstalled 已装包列表（含校验状态与占用）。（API-6.2）
@@ -291,10 +311,10 @@ func catalogURL() string {
 	if v := strings.TrimSpace(os.Getenv(EnvCatalogURL)); v != "" {
 		return v
 	}
-	return defaultCatalogURL
+	return ""
 }
 
-// catalogMirrors 返回镜像基址列表（环境变量优先，否则内置一个 hf-mirror）。
+// catalogMirrors 返回镜像基址列表（仅显式配置）。
 func catalogMirrors() []string {
 	if v := strings.TrimSpace(os.Getenv(EnvCatalogMirrors)); v != "" {
 		out := make([]string, 0, 3)
@@ -305,7 +325,5 @@ func catalogMirrors() []string {
 		}
 		return out
 	}
-	return []string{defaultCatalogMirror}
+	return nil
 }
-
-
